@@ -519,7 +519,7 @@ local function InitMinimapIcon()
     local LDB = LibStub("LibDataBroker-1.1")
     local icon = LibStub("LibDBIcon-1.0")
 
-    local lureIcon = C_Item.GetItemIconByID(LURES[1].itemID) or "Interface\\Icons\\INV_Misc_Fish_01"
+    local lureIcon = "Interface\\AddOns\\MajesticBeastTracker\\icon"
 
     local dataObj = LDB:NewDataObject("MajesticBeastTracker", {
         type = "data source",
