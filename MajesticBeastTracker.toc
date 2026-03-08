@@ -1,0 +1,16 @@
+## Interface: 120001
+## Title: Majestic Beast Tracker
+## Notes: Tracks daily Majestic Lure beast cooldowns across all characters
+## Author: Vichob
+## Version: 1.0
+## SavedVariables: MajesticBeastTrackerDB
+## OptionalDeps: !Mechanic
+
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+Core.lua
+Templates.xml
+UI.lua

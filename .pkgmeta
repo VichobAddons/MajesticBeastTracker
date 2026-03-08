@@ -1,0 +1,24 @@
+package-as: MajesticBeastTracker
+
+externals:
+  libs/LibStub:
+    url: https://repos.curseforge.com/wow/libstub/trunk
+    tag: latest
+  libs/CallbackHandler-1.0:
+    url: https://repos.curseforge.com/wow/callbackhandler/trunk/CallbackHandler-1.0
+    tag: latest
+  libs/LibDataBroker-1.1:
+    url: https://repos.curseforge.com/wow/libdatabroker-1-1
+    tag: latest
+  libs/LibDBIcon-1.0:
+    url: https://repos.curseforge.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
+    tag: latest
+
+ignore:
+  - .git
+  - .github
+  - .luacheckrc
+  - .pkgmeta
+  - README.md
+  - CLAUDE.md
+  - .editorconfig

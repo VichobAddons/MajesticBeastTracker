@@ -1,0 +1,15 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe:*)",
+      "Bash(powershell:*)",
+      "mcp__mechanic__addon-lint",
+      "Bash(export:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "mechanic"
+  ]
+}
