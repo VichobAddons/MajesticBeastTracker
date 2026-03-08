@@ -17,6 +17,8 @@ If you have multiple skinners, it's impossible to remember which character has u
 
 ## Features
 
+<img width="271" height="296" alt="CVk4AR7FE0" src="https://github.com/user-attachments/assets/87dea4d8-026e-4024-bf2b-c3fe5d7260fe" />
+
 - **Multi-character tracking** - See all your skinners' cooldowns in one grid
 - **Auto-detection** - Detects kills via loot events, no manual input needed
 - **Click to mark/clear** - Manually mark kills as a fallback
