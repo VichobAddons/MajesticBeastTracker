@@ -17,8 +17,13 @@ externals:
 ignore:
   - .git
   - .github
+  - .claude
   - .luacheckrc
   - .pkgmeta
+  - .mcp.json
+  - .gitignore
+  - .editorconfig
   - README.md
   - CLAUDE.md
-  - .editorconfig
+  - LureTracker-Documentation.md
+  - docs
