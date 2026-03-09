@@ -29,7 +29,8 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Gear popup** - Click a character's name to see their equipped skinning tools and accessories
 - **Map waypoints** - Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
 - **Minimap button** - Left-click toggles window, right-click opens settings
-- **Settings panel** - Full Interface > AddOns settings page
+- **Hide in combat** - Optionally hide the tracker during combat
+- **Settings panel** - Full Interface > AddOns settings page with chat notifications, combat hide, scale, and more
 - **Profession talent detection** - Automatically reads your Talented Tracker points to show only available lures
 
 ## Lure Locations
