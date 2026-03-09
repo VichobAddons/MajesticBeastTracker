@@ -1,6 +1,6 @@
 # Majestic Beast Tracker
 
-<img width="1021" height="335" alt="xMriPhgQtP" src="https://github.com/user-attachments/assets/2e21b175-f1de-4a37-8c1d-ed19e122fdc0" />
+<img width="998" height="303" alt="ef7zcDUuNm" src="https://github.com/user-attachments/assets/81669730-9d54-4b16-8f5c-aea2351b9faa" />
 
 WoW Midnight (12.0) addon that tracks daily Majestic Lure beast cooldowns across all your skinning characters.
 
@@ -16,8 +16,6 @@ Majestic Lures have a daily cooldown that resets with the daily server reset (sa
 If you have multiple skinners, it's impossible to remember which character has used which lure today.
 
 ## Features
-
-<img width="271" height="296" alt="CVk4AR7FE0" src="https://github.com/user-attachments/assets/87dea4d8-026e-4024-bf2b-c3fe5d7260fe" />
 
 - **Multi-character tracking** - See all your skinners' cooldowns in one grid
 - **Auto-detection** - Detects kills via loot events, no manual input needed
