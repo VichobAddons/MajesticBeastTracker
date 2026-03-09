@@ -164,6 +164,8 @@ local SETTINGS_DEFAULTS = {
     locked = false,
     showMinimap = true,
     autoCraft = true,
+    chatNotify = true,
+    hideInCombat = false,
     windowScale = 1.0,
     minimap = { hide = false },
 }

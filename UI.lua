@@ -28,7 +28,7 @@ local TRAVEL_ITEMS = {
     { itemID = 253629, name = "Personal Key to the Arcantina", isToy = true },
 }
 -- Wormhole Generator: conditional on Engineering profession + item in bags
-local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas", spellID = 1229928, requiresEngineering = true }
+local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas", spellID = 1229928, requiresEngineering = true, isToy = true }
 local TRAVEL_ICON_SIZE = 22
 local TRAVEL_SPACING = 4
 local TRAVEL_ROW_HEIGHT = TRAVEL_ICON_SIZE + 8
@@ -54,30 +54,8 @@ local BACKDROP = {
 local function GetCraftableCount(recipeID)
     if not recipeID then return 0 end
     local ok, schematic = pcall(C_TradeSkillUI.GetRecipeSchematic, recipeID, false)
-    if not ok then
-        -- DEBUG: print error once per recipe
-        if not ns._debugRecipe then ns._debugRecipe = {} end
-        if not ns._debugRecipe[recipeID] then
-            ns._debugRecipe[recipeID] = true
-            print("|cff3FC7EB[MBT DEBUG]|r GetRecipeSchematic(" .. recipeID .. ") failed: " .. tostring(schematic))
-        end
-        return 0
-    end
+    if not ok then return 0 end
     if not schematic or not schematic.reagentSlotSchematics then return 0 end
-
-    -- DEBUG: print reagent info once per recipe
-    if not ns._debugRecipe then ns._debugRecipe = {} end
-    if not ns._debugRecipe[recipeID] then
-        ns._debugRecipe[recipeID] = true
-        print("|cff3FC7EB[MBT DEBUG]|r Recipe " .. recipeID .. ": " .. #schematic.reagentSlotSchematics .. " slots")
-        for si, slot in ipairs(schematic.reagentSlotSchematics) do
-            local reagentNames = {}
-            for _, r in ipairs(slot.reagents) do
-                reagentNames[#reagentNames + 1] = tostring(r.itemID)
-            end
-            print("  Slot " .. si .. ": type=" .. tostring(slot.reagentType) .. " req=" .. tostring(slot.required) .. " qty=" .. tostring(slot.quantityRequired) .. " items=[" .. table.concat(reagentNames, ",") .. "]")
-        end
-    end
 
     local minCrafts = math.huge
     for _, slot in ipairs(schematic.reagentSlotSchematics) do
@@ -102,13 +80,6 @@ local function GetCraftableCount(recipeID)
                     end
                     have = have + count
                 end
-            end
-            -- DEBUG: print have/needed once
-            if not ns._debugHave then ns._debugHave = {} end
-            local slotKey = recipeID .. "-" .. tostring(slot.reagents[1] and slot.reagents[1].itemID)
-            if not ns._debugHave[slotKey] then
-                ns._debugHave[slotKey] = true
-                print("|cff3FC7EB[MBT DEBUG]|r Reagent " .. slotKey .. ": have=" .. have .. " need=" .. needed)
             end
             minCrafts = math.min(minCrafts, math.floor(have / needed))
         end
@@ -147,13 +118,17 @@ end)
 
 -- Logout button (left of close button)
 local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
-logoutBtn:SetSize(18, 18)
-logoutBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -22, -4)
-logoutBtn:SetNormalAtlas("transmog-icon-revert")
-logoutBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-MinimizeButton-Highlight")
+logoutBtn:SetHeight(16)
 logoutBtn:SetAttribute("type", "macro")
 logoutBtn:SetAttribute("macrotext", "/logout")
 logoutBtn:RegisterForClicks("AnyUp", "AnyDown")
+local logoutText = logoutBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+logoutText:SetFont(logoutText:GetFont(), 9)
+logoutText:SetText("|cff999999Logout|r")
+logoutText:SetPoint("CENTER")
+logoutBtn:SetWidth(logoutText:GetStringWidth() + 8)
+logoutBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, 4)
+logoutBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-MinimizeButton-Highlight")
 logoutBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
     GameTooltip:AddLine("Logout", 1, 1, 1)
@@ -296,12 +271,17 @@ for i, lure in ipairs(LURES) do
                 end
             end
         elseif button == "RightButton" then
+            local now = GetTime()
+            if (now - (self._lastWaypoint or 0)) < 0.5 then return end
+            self._lastWaypoint = now
             local wp = lure.waypoint
             if wp then
                 local mapPoint = UiMapPoint.CreateFromCoordinates(wp.map, wp.x, wp.y)
                 C_Map.SetUserWaypoint(mapPoint)
                 C_SuperTrack.SetSuperTrackedUserWaypoint(true)
-                print("|cff3FC7EB[MBT]|r Waypoint set: " .. lure.color .. lure.name .. "|r")
+                if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                    print("|cff3FC7EB[MBT]|r Waypoint set: " .. lure.color .. lure.name .. "|r")
+                end
             end
         end
     end)
@@ -410,7 +390,9 @@ for i, cons in ipairs(CONSUMABLES) do
                 self:SetAttribute("type", nil)
                 -- Only print on mouse down, not on up (AnyUp+AnyDown fires twice)
                 if not self._blockedMsg or (GetTime() - self._blockedMsg) > 1 then
-                    print("|cff3FC7EB[MBT]|r Buff still has " .. math.ceil(remaining / 60) .. "m left. Not consumed.")
+                    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                        print("|cff3FC7EB[MBT]|r Buff still has " .. math.ceil(remaining / 60) .. "m left. Not consumed.")
+                    end
                     self._blockedMsg = GetTime()
                 end
             end
@@ -429,7 +411,9 @@ for i, cons in ipairs(CONSUMABLES) do
                     AuctionHouseFrame.SearchBar.SearchButton:Click()
                 end
             else
-                print("|cff3FC7EB[MBT]|r Open the Auction House first!")
+                if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                    print("|cff3FC7EB[MBT]|r Open the Auction House first!")
+                end
             end
         end
     end)
@@ -942,11 +926,15 @@ function ns.UpdateUI()
                     if not ts or ns.IsLureReady(ts) then
                         -- Mark as killed now
                         cd.lures[lure.name] = GetServerTime()
-                        print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r marked for " .. key)
+                        if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                            print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r marked for " .. key)
+                        end
                     else
                         -- Clear the mark
                         cd.lures[lure.name] = nil
-                        print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r cleared for " .. key)
+                        if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                            print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r cleared for " .. key)
+                        end
                     end
                     ns.UpdateUI()
                 end)
@@ -1024,7 +1012,7 @@ function ns.UpdateUI()
         activeTravelBtns[#activeTravelBtns + 1] = btn
     end
     -- Wormhole: show only if player has Engineering + item in bags
-    local showWormhole = HasEngineering() and C_Item.GetItemCount(WORMHOLE_ITEM.itemID) > 0
+    local showWormhole = HasEngineering() and PlayerHasToy(WORMHOLE_ITEM.itemID)
     if showWormhole then
         activeTravelBtns[#activeTravelBtns + 1] = wormholeBtn
     end
@@ -1129,6 +1117,30 @@ auraFrame:RegisterEvent("BAG_UPDATE")
 auraFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "UNIT_AURA" and unit ~= "player" then return end
     ns.UpdateUI()
+end)
+
+-- Hide in combat
+local combatFrame = CreateFrame("Frame")
+combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatFrame:SetScript("OnEvent", function(_, event)
+    ns.EnsureDB()
+    if not MajesticBeastTrackerDB.settings.hideInCombat then return end
+    if event == "PLAYER_REGEN_DISABLED" then
+        if frame:IsShown() then
+            frame._hiddenByCombat = true
+            frame:Hide()
+            consumableBox:Hide()
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if frame._hiddenByCombat then
+            frame._hiddenByCombat = nil
+            if MajesticBeastTrackerDB.settings.showFrame ~= false then
+                frame:Show()
+                ns.UpdateUI()
+            end
+        end
+    end
 end)
 
 local elapsed = 0
@@ -1362,10 +1374,15 @@ local function InitSettings()
         end
     end)
 
-    -- Auto-Craft
-    local s2 = Settings.RegisterAddOnSetting(category, "MBT_autoCraft", "autoCraft",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto-Craft on Double-Click", true)
-    Settings.CreateCheckbox(category, s2, "Double-clicking a lure icon will craft the recipe if the profession window is open.")
+    -- Chat Notifications
+    local s2 = Settings.RegisterAddOnSetting(category, "MBT_chatNotify", "chatNotify",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Chat Notifications", true)
+    Settings.CreateCheckbox(category, s2, "Show [MBT] messages in chat (waypoints, mark/clear, buff warnings).")
+
+    -- Hide in Combat
+    local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide in Combat", false)
+    Settings.CreateCheckbox(category, s2b, "Automatically hide the tracker window during combat.")
 
     -- Lock Frame
     local s3 = Settings.RegisterAddOnSetting(category, "MBT_locked", "locked",
