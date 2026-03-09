@@ -1,5 +1,4 @@
 package-as: MajesticBeastTracker
-curseforge-id: 1481252
 
 externals:
   libs/LibStub:

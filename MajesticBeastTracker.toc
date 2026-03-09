@@ -4,6 +4,7 @@
 ## Author: Vichob
 ## Version: 1.0.4
 ## SavedVariables: MajesticBeastTrackerDB
+## X-Curse-Project-ID: 1481252
 ## OptionalDeps: !Mechanic
 
 libs\LibStub\LibStub.lua
