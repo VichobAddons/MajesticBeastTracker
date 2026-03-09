@@ -22,7 +22,11 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Multi-character tracking** - See all your skinners' cooldowns in one grid
 - **Auto-detection** - Detects kills via loot events, no manual input needed
 - **Click to mark/clear** - Manually mark kills as a fallback
-- **Recipe shortcuts** - Left-click lure icon to open recipe, double-click to craft
+- **Lure shortcuts** - Click to use lure, Shift-click to open recipe/craft, Right-click to set waypoint
+- **Craftable count** - Shows how many lures you can craft, including materials in Warbound bank
+- **Consumable tracking** - Track Sanguithorn Tea and Haranir Phial of Perception with buff timers and bag count
+- **Travel buttons** - Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
+- **Gear popup** - Click a character's name to see their equipped skinning tools and accessories
 - **Map waypoints** - Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
 - **Minimap button** - Left-click toggles window, right-click opens settings
 - **Settings panel** - Full Interface > AddOns settings page
