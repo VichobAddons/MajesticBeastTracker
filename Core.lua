@@ -87,8 +87,10 @@ local function GetLureStatus(timestamp)
     end
 end
 
+-- Returns: true (has skinning), false (no skinning), nil (API not ready)
 local function HasSkinning()
     local prof1, prof2 = GetProfessions()
+    if not prof1 and not prof2 then return nil end -- API may not be ready
     if prof1 then
         local _, _, _, _, _, _, skillLineID = GetProfessionInfo(prof1)
         if skillLineID == 393 then return true end
@@ -219,18 +221,71 @@ local function RecordLureKill(index)
     print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r beast killed! Cooldown tracked.")
 end
 
+-- Detect skinning profession gear using C_TradeSkillUI.GetProfessionSlots
+-- Returns the actual inventory slot IDs for the skinning profession
+local function DetectSkinningGear()
+    local prof1, prof2 = GetProfessions()
+    local skinningProfID = nil  -- the profession enum/ID for GetProfessionSlots
+    if prof1 then
+        local name, _, _, _, _, _, skillLineID, _, _, _, _, profID = GetProfessionInfo(prof1)
+        if skillLineID == 393 then skinningProfID = profID or Enum.Profession.Skinning end
+    end
+    if not skinningProfID and prof2 then
+        local name, _, _, _, _, _, skillLineID, _, _, _, _, profID = GetProfessionInfo(prof2)
+        if skillLineID == 393 then skinningProfID = profID or Enum.Profession.Skinning end
+    end
+    if not skinningProfID then return nil end
+
+    -- Get the actual slot IDs for this profession
+    local ok, slots = pcall(C_TradeSkillUI.GetProfessionSlots, skinningProfID)
+    if not ok or not slots or #slots == 0 then
+        -- Fallback: try Enum.Profession.Skinning directly
+        ok, slots = pcall(C_TradeSkillUI.GetProfessionSlots, Enum.Profession.Skinning)
+        if not ok or not slots or #slots == 0 then return nil end
+    end
+
+    local gear = {}
+    for idx, slotID in ipairs(slots) do
+        local itemID = GetInventoryItemID("player", slotID)
+        if itemID then
+            local itemName = C_Item.GetItemNameByID(itemID)
+            local itemLink = GetInventoryItemLink("player", slotID)
+            local icon = C_Item.GetItemIconByID(itemID)
+            gear[#gear + 1] = {
+                slotID = slotID,
+                itemID = itemID,
+                name = itemName or "",
+                link = itemLink or "",
+                icon = icon,
+                slotType = idx == 1 and "tool" or "accessory",
+            }
+        end
+    end
+    return gear
+end
+
 local function DetectSkinningAndTalent()
     EnsureChar(charKey)
     local charData = MajesticBeastTrackerDB.chars[charKey]
     local skinning = HasSkinning()
-    if skinning then
+    if skinning == true then
         charData.hasSkinning = true
         local points = DetectTalentedTrackerPoints()
         if points > 0 then
             charData.talentPoints = points
         end
+        -- Save profession gear
+        local gear = DetectSkinningGear()
+        if gear then
+            charData.gear = gear
+        end
+    elseif skinning == false then
+        -- API confirmed no skinning, safe to clear
+        charData.hasSkinning = false
+        charData.talentPoints = 0
+        charData.gear = nil
     end
-    -- Don't clear hasSkinning/talentPoints on failure — API may not be ready yet
+    -- skinning == nil: API not ready, keep existing data
 end
 
 function ns.CanSeeLure(charData, lureIndex)

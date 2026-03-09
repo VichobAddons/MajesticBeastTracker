@@ -15,6 +15,24 @@ local TITLE_HEIGHT = 22
 local ICON_ROW_HEIGHT = ICON_SIZE + 6
 local PAD = 8
 
+-- Consumables to track (test with Holiday Cheesewheel)
+local CONSUMABLES = {
+    { itemID = 242299, name = "Sanguithorn Tea", buffName = "Relaxed", itemName = "Sanguithorn Tea" },
+    { itemID = 241317, name = "Haranir Phial of Perception", buffName = "Haranir Phial of Perception", spellID = 1236763, itemName = "Haranir Phial of Perception" },
+}
+local NUM_EXTRA_COLS = #CONSUMABLES
+
+-- Travel items (shown at bottom of frame)
+local TRAVEL_ITEMS = {
+    { itemID = 6948, name = "Hearthstone" },
+    { itemID = 253629, name = "Personal Key to the Arcantina", isToy = true },
+}
+-- Wormhole Generator: conditional on Engineering profession + item in bags
+local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas", spellID = 1229928, requiresEngineering = true }
+local TRAVEL_ICON_SIZE = 22
+local TRAVEL_SPACING = 4
+local TRAVEL_ROW_HEIGHT = TRAVEL_ICON_SIZE + 8
+
 -- Colors
 local C_ACCENT = CreateColor(0.25, 0.78, 0.92)
 local C_BORDER_RGB = { 0.25, 0.78, 0.92 }
@@ -32,6 +50,71 @@ local BACKDROP = {
 -- Helpers
 ------------------------------------------------------
 
+-- Calculate how many times a recipe can be crafted with current reagents
+local function GetCraftableCount(recipeID)
+    if not recipeID then return 0 end
+    local ok, schematic = pcall(C_TradeSkillUI.GetRecipeSchematic, recipeID, false)
+    if not ok then
+        -- DEBUG: print error once per recipe
+        if not ns._debugRecipe then ns._debugRecipe = {} end
+        if not ns._debugRecipe[recipeID] then
+            ns._debugRecipe[recipeID] = true
+            print("|cff3FC7EB[MBT DEBUG]|r GetRecipeSchematic(" .. recipeID .. ") failed: " .. tostring(schematic))
+        end
+        return 0
+    end
+    if not schematic or not schematic.reagentSlotSchematics then return 0 end
+
+    -- DEBUG: print reagent info once per recipe
+    if not ns._debugRecipe then ns._debugRecipe = {} end
+    if not ns._debugRecipe[recipeID] then
+        ns._debugRecipe[recipeID] = true
+        print("|cff3FC7EB[MBT DEBUG]|r Recipe " .. recipeID .. ": " .. #schematic.reagentSlotSchematics .. " slots")
+        for si, slot in ipairs(schematic.reagentSlotSchematics) do
+            local reagentNames = {}
+            for _, r in ipairs(slot.reagents) do
+                reagentNames[#reagentNames + 1] = tostring(r.itemID)
+            end
+            print("  Slot " .. si .. ": type=" .. tostring(slot.reagentType) .. " req=" .. tostring(slot.required) .. " qty=" .. tostring(slot.quantityRequired) .. " items=[" .. table.concat(reagentNames, ",") .. "]")
+        end
+    end
+
+    local minCrafts = math.huge
+    for _, slot in ipairs(schematic.reagentSlotSchematics) do
+        if slot.reagentType == Enum.CraftingReagentType.Basic and slot.required then
+            local needed = slot.quantityRequired
+            if not needed or needed <= 0 then
+                if slot.GetQuantityRequired then
+                    needed = slot:GetQuantityRequired()
+                end
+                if not needed or needed <= 0 then needed = 1 end
+            end
+            local have = 0
+            for _, reagent in ipairs(slot.reagents) do
+                if reagent.itemID then
+                    -- Try item name first (counts all quality variants), fallback to ID
+                    local itemName = C_Item.GetItemNameByID(reagent.itemID)
+                    local count = 0
+                    if itemName then
+                        count = C_Item.GetItemCount(itemName, true, false, true, true)
+                    else
+                        count = C_Item.GetItemCount(reagent.itemID, true, false, true, true)
+                    end
+                    have = have + count
+                end
+            end
+            -- DEBUG: print have/needed once
+            if not ns._debugHave then ns._debugHave = {} end
+            local slotKey = recipeID .. "-" .. tostring(slot.reagents[1] and slot.reagents[1].itemID)
+            if not ns._debugHave[slotKey] then
+                ns._debugHave[slotKey] = true
+                print("|cff3FC7EB[MBT DEBUG]|r Reagent " .. slotKey .. ": have=" .. have .. " need=" .. needed)
+            end
+            minCrafts = math.min(minCrafts, math.floor(have / needed))
+        end
+    end
+    return minCrafts == math.huge and 0 or minCrafts
+end
 
 ------------------------------------------------------
 -- Main Frame
@@ -62,6 +145,23 @@ frame:SetScript("OnDragStop", function(self)
     MajesticBeastTrackerDB.settings.framePosition = { point, "UIParent", relPoint, x, y }
 end)
 
+-- Logout button (left of close button)
+local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
+logoutBtn:SetSize(18, 18)
+logoutBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -22, -4)
+logoutBtn:SetNormalAtlas("transmog-icon-revert")
+logoutBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-MinimizeButton-Highlight")
+logoutBtn:SetAttribute("type", "macro")
+logoutBtn:SetAttribute("macrotext", "/logout")
+logoutBtn:RegisterForClicks("AnyUp", "AnyDown")
+logoutBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    GameTooltip:AddLine("Logout", 1, 1, 1)
+    GameTooltip:AddLine("Switch character quickly", 0.5, 0.8, 1)
+    GameTooltip:Show()
+end)
+logoutBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 -- Close button (native)
 local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
@@ -70,6 +170,7 @@ closeBtn:SetScript("OnClick", function()
 end)
 
 -- Title
+-- Title (positioned after consumable icons area)
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 title:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, -PAD)
 title:SetText(C_ACCENT:WrapTextInColorCode("Majestic Beast Tracker"))
@@ -88,45 +189,110 @@ lockIcon:Hide()
 
 local contentTop = -(TITLE_HEIGHT + 2)
 
--- Header icons
+-- Header icons (lures) - SecureActionButton for item use
 local headerIcons = {}
 for i, lure in ipairs(LURES) do
-    local iconFrame = CreateFrame("Frame", nil, frame)
+    local iconFrame = CreateFrame("Button", "MBT_LureIcon" .. i, frame, "SecureActionButtonTemplate")
     iconFrame:SetSize(ICON_SIZE, ICON_SIZE)
     iconFrame:SetPoint("TOPLEFT", frame, "TOPLEFT",
         PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
         contentTop - 2)
+    iconFrame:SetAttribute("type", "item")
+    iconFrame:SetAttribute("item", lure.name)
+    iconFrame:RegisterForClicks("AnyUp", "AnyDown")
+    -- Cache item name async
+    C_Item.RequestLoadItemDataByID(lure.itemID)
+    local lureTicker
+    lureTicker = C_Timer.NewTicker(1, function()
+        local itemName = C_Item.GetItemNameByID(lure.itemID)
+        if itemName and not InCombatLockdown() then
+            iconFrame:SetAttribute("item", itemName)
+            lureTicker:Cancel()
+        end
+    end, 10)
 
     local icon = iconFrame:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     iconFrame.icon = icon
 
-    iconFrame:EnableMouse(true)
+    -- Lure count text (bottom-right corner of icon)
+    local countText = iconFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    countText:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", 0, 1)
+    countText:SetJustifyH("RIGHT")
+    countText:SetText("")
+    iconFrame.countText = countText
+
+    -- Glow border (yellow when lure in bags + usable)
+    local glowSize = 2
+    local glowColor = {1, 0.75, 0, 0.9}
+    local gT = iconFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    gT:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
+    gT:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
+    gT:SetHeight(glowSize)
+    gT:SetColorTexture(unpack(glowColor))
+    local gB = iconFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    gB:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
+    gB:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
+    gB:SetHeight(glowSize)
+    gB:SetColorTexture(unpack(glowColor))
+    local gL = iconFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    gL:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
+    gL:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
+    gL:SetWidth(glowSize)
+    gL:SetColorTexture(unpack(glowColor))
+    local gR = iconFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    gR:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
+    gR:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
+    gR:SetWidth(glowSize)
+    gR:SetColorTexture(unpack(glowColor))
+    local lureGlowParts = {gT, gB, gL, gR}
+    for _, g in ipairs(lureGlowParts) do g:Hide() end
+    iconFrame.glow = {
+        Show = function() for _, g in ipairs(lureGlowParts) do g:Show() end end,
+        Hide = function() for _, g in ipairs(lureGlowParts) do g:Hide() end end,
+    }
+
     iconFrame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
         local r, g, b = unpack(lure.colorRGB)
         GameTooltip:AddLine(lure.name, r, g, b)
-        GameTooltip:AddLine(lure.requiredPoints .. " pts", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(lure.requiredPoints .. " pts required", 0.6, 0.6, 0.6)
+        local lureBagName = C_Item.GetItemNameByID(lure.itemID)
+        local bags = lureBagName and C_Item.GetItemCount(lureBagName) or C_Item.GetItemCount(lure.itemID)
+        if bags > 0 then
+            GameTooltip:AddLine("In bags: " .. bags, 1, 1, 1)
+        end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click: Open recipe", 0.5, 0.8, 1)
-        GameTooltip:AddLine("Double-click: Craft", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Click: Use lure", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Shift-click: Open recipe / Craft", 0.5, 0.8, 1)
         GameTooltip:AddLine("Right-click: Set waypoint", 0.5, 0.8, 1)
         GameTooltip:Show()
     end)
     iconFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    iconFrame.lastClicked = 0
-    iconFrame:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
+    -- PreClick: shift = open recipe (block item use), right = waypoint (block item use)
+    iconFrame:SetScript("PreClick", function(self, button)
+        if InCombatLockdown() then return end
+        if button == "RightButton" or IsShiftKeyDown() then
+            self:SetAttribute("type", nil)
+        end
+    end)
+    iconFrame:SetScript("PostClick", function(self, button)
+        -- Restore secure type
+        if not InCombatLockdown() then
+            self:SetAttribute("type", "item")
+        end
+        if IsShiftKeyDown() and button == "LeftButton" then
+            local now = GetTime()
+            -- Throttle AnyUp/AnyDown pair (< 0.1s apart)
+            if (now - (self._lastPostClick or 0)) < 0.1 then return end
+            self._lastPostClick = now
             if lure.recipeID then
-                local now = GetTime()
-                if MajesticBeastTrackerDB.settings.autoCraft and C_TradeSkillUI.IsTradeSkillReady() and (now - self.lastClicked) < 1.5 then
+                if C_TradeSkillUI.IsTradeSkillReady() then
                     C_TradeSkillUI.CraftRecipe(lure.recipeID)
-                    self.lastClicked = 0
                 else
                     C_TradeSkillUI.OpenRecipe(lure.recipeID)
-                    self.lastClicked = now
                 end
             end
         elseif button == "RightButton" then
@@ -142,12 +308,230 @@ for i, lure in ipairs(LURES) do
     headerIcons[i] = iconFrame
 end
 
+-- Consumable box (floating panel anchored to frame, same row as lure icons)
+local CONS_ICON_SIZE = 20
+local CONS_SPACING = 4
+local CONS_PAD = 8
+local CONS_BOX_WIDTH = #CONSUMABLES * (CONS_ICON_SIZE + CONS_SPACING + 28) + CONS_PAD * 2
+local CONS_BOX_HEIGHT = ICON_SIZE + 12
+
+local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
+consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 + 4)
+consumableBox:SetBackdrop(BACKDROP)
+consumableBox:SetBackdropColor(0, 0, 0, 0.9)
+consumableBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+consumableBox:SetFrameStrata("MEDIUM")
+consumableBox:SetFrameLevel(201)
+local consumableIcons = {}
+local consumableButtons = {}
+local consumableLabels = {}
+for i, cons in ipairs(CONSUMABLES) do
+    local btn = CreateFrame("Button", "MBT_ConsumableBtn" .. i, consumableBox, "SecureActionButtonTemplate")
+    btn:SetSize(CONS_ICON_SIZE, CONS_ICON_SIZE)
+    btn:SetFrameLevel(consumableBox:GetFrameLevel() + 1)
+    btn:SetAttribute("type", "item")
+    btn:SetAttribute("item", cons.itemName or "")
+    btn:RegisterForClicks("AnyUp", "AnyDown")
+    btn:Hide()
+    -- Cache item name async
+    C_Item.RequestLoadItemDataByID(cons.itemID)
+    local ticker
+    ticker = C_Timer.NewTicker(1, function()
+        local name = C_Item.GetItemNameByID(cons.itemID)
+        if name and not InCombatLockdown() then
+            btn:SetAttribute("item", name)
+            ticker:Cancel()
+        end
+    end, 10)
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.icon = icon
+
+    -- Golden border glow (shown when item in bags but buff inactive)
+    -- Four edge textures around the icon
+    local glowSize = 2
+    local glowColor = {1, 0.75, 0, 0.9}
+    local glowTop = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    glowTop:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
+    glowTop:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
+    glowTop:SetHeight(glowSize)
+    glowTop:SetColorTexture(unpack(glowColor))
+    local glowBot = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    glowBot:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
+    glowBot:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
+    glowBot:SetHeight(glowSize)
+    glowBot:SetColorTexture(unpack(glowColor))
+    local glowLeft = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    glowLeft:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
+    glowLeft:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
+    glowLeft:SetWidth(glowSize)
+    glowLeft:SetColorTexture(unpack(glowColor))
+    local glowRight = btn:CreateTexture(nil, "OVERLAY", nil, 7)
+    glowRight:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
+    glowRight:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
+    glowRight:SetWidth(glowSize)
+    glowRight:SetColorTexture(unpack(glowColor))
+    local glowParts = {glowTop, glowBot, glowLeft, glowRight}
+    for _, g in ipairs(glowParts) do g:Hide() end
+    btn.glow = {
+        Show = function() for _, g in ipairs(glowParts) do g:Show() end end,
+        Hide = function() for _, g in ipairs(glowParts) do g:Hide() end end,
+    }
+
+    -- Tooltip
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+        GameTooltip:SetItemByID(cons.itemID)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Click: Use item", 0.5, 0.8, 1)
+        GameTooltip:AddLine("Shift-click: Search in AH", 0.5, 0.8, 1)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- PreClick: block on shift (AH search) or if buff has >20% remaining
+    btn:SetScript("PreClick", function(self)
+        if InCombatLockdown() then return end
+        if IsShiftKeyDown() then
+            self:SetAttribute("type", nil)
+            return
+        end
+        -- Block if buff still has >20% duration left
+        local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
+        if not buffInfo and cons.itemName ~= cons.buffName then
+            buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
+        end
+        if buffInfo and buffInfo.duration and buffInfo.duration > 0 and buffInfo.expirationTime then
+            local remaining = buffInfo.expirationTime - GetTime()
+            if remaining / buffInfo.duration > 0.2 then
+                self:SetAttribute("type", nil)
+                -- Only print on mouse down, not on up (AnyUp+AnyDown fires twice)
+                if not self._blockedMsg or (GetTime() - self._blockedMsg) > 1 then
+                    print("|cff3FC7EB[MBT]|r Buff still has " .. math.ceil(remaining / 60) .. "m left. Not consumed.")
+                    self._blockedMsg = GetTime()
+                end
+            end
+        end
+    end)
+    btn:SetScript("PostClick", function(self)
+        -- Restore type attribute
+        if not InCombatLockdown() then
+            self:SetAttribute("type", "item")
+        end
+        if IsShiftKeyDown() then
+            if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
+                local itemName = C_Item.GetItemNameByID(cons.itemID)
+                if itemName then
+                    AuctionHouseFrame.SearchBar.SearchBox:SetText(itemName)
+                    AuctionHouseFrame.SearchBar.SearchButton:Click()
+                end
+            else
+                print("|cff3FC7EB[MBT]|r Open the Auction House first!")
+            end
+        end
+    end)
+
+    -- Status label to the right of icon (on consumableBox, high strata)
+    local label = consumableBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetFont(label:GetFont(), 10)
+    label:SetJustifyH("LEFT")
+
+    consumableIcons[i] = btn
+    consumableButtons[i] = btn
+    consumableLabels[i] = label
+end
+
 -- Separator under icons
 local iconSep = frame:CreateTexture(nil, "ARTWORK")
 iconSep:SetHeight(1)
 iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - ICON_ROW_HEIGHT - 2)
 iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
 iconSep:SetColorTexture(unpack(C_SEPARATOR))
+
+------------------------------------------------------
+-- Travel buttons (bottom of frame, below character rows)
+------------------------------------------------------
+
+local travelButtons = {}
+local travelSep = frame:CreateTexture(nil, "ARTWORK")
+travelSep:SetHeight(1)
+travelSep:SetColorTexture(unpack(C_SEPARATOR))
+travelSep:Hide()
+
+local function CreateTravelButton(index, itemInfo)
+    local btn = CreateFrame("Button", "MBT_TravelBtn" .. index, frame, "SecureActionButtonTemplate")
+    btn:SetSize(TRAVEL_ICON_SIZE, TRAVEL_ICON_SIZE)
+    btn:RegisterForClicks("AnyUp", "AnyDown")
+    btn:Hide()
+
+    if itemInfo.isToy then
+        btn:SetAttribute("type", "toy")
+        btn:SetAttribute("toy", itemInfo.itemID)
+    else
+        btn:SetAttribute("type", "item")
+        btn:SetAttribute("item", itemInfo.name)
+        -- Cache item name async
+        C_Item.RequestLoadItemDataByID(itemInfo.itemID)
+        local ticker
+        ticker = C_Timer.NewTicker(1, function()
+            local name = C_Item.GetItemNameByID(itemInfo.itemID)
+            if name and not InCombatLockdown() then
+                btn:SetAttribute("item", name)
+                ticker:Cancel()
+            end
+        end, 10)
+    end
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.icon = icon
+
+    local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
+    cd:SetAllPoints()
+    cd:SetDrawEdge(true)
+    btn.cooldown = cd
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+        if itemInfo.isToy then
+            GameTooltip:SetToyByItemID(itemInfo.itemID)
+        else
+            GameTooltip:SetItemByID(itemInfo.itemID)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Click: Use", 0.5, 0.8, 1)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    btn.itemInfo = itemInfo
+    return btn
+end
+
+-- Create static travel buttons (Hearthstone + Arcantina)
+for i, item in ipairs(TRAVEL_ITEMS) do
+    travelButtons[i] = CreateTravelButton(i, item)
+end
+-- Wormhole button (created but shown conditionally)
+local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
+
+-- Helper: check if player has Engineering as second profession
+local function HasEngineering()
+    local prof1, prof2 = GetProfessions()
+    if prof1 then
+        local _, _, _, _, _, _, skillLineID = GetProfessionInfo(prof1)
+        if skillLineID == 202 then return true end
+    end
+    if prof2 then
+        local _, _, _, _, _, _, skillLineID = GetProfessionInfo(prof2)
+        if skillLineID == 202 then return true end
+    end
+    return false
+end
 
 ------------------------------------------------------
 -- Character rows
@@ -175,6 +559,133 @@ local function GetStatusText(charData, lureName)
     end
 end
 
+
+------------------------------------------------------
+-- Gear popup (shown when clicking character name)
+------------------------------------------------------
+
+local GEAR_ICON_SIZE = 24
+local GEAR_PAD = 6
+
+local gearPopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+gearPopup:SetFrameStrata("DIALOG")
+gearPopup:SetClampedToScreen(true)
+gearPopup:SetBackdrop(BACKDROP)
+gearPopup:SetBackdropColor(0, 0, 0, 0.97)
+gearPopup:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+gearPopup:EnableMouse(true)
+gearPopup:Hide()
+
+local gearPopupTitle = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gearPopupTitle:SetPoint("TOPLEFT", gearPopup, "TOPLEFT", GEAR_PAD + 2, -GEAR_PAD)
+gearPopupTitle:SetTextColor(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b)
+
+local gearPopupRows = {}
+for slot = 1, 3 do
+    local row = CreateFrame("Frame", nil, gearPopup)
+    row:SetHeight(GEAR_ICON_SIZE)
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(GEAR_ICON_SIZE, GEAR_ICON_SIZE)
+    icon:SetPoint("LEFT")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon = icon
+
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetFont(label:GetFont(), 9)
+    label:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    row.label = label
+
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", function(self)
+        if self.itemLink then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(self.itemLink)
+            GameTooltip:Show()
+        end
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    gearPopupRows[slot] = row
+end
+
+-- Auto-hide when clicking elsewhere
+gearPopup:SetScript("OnUpdate", function(self)
+    if self:IsShown() and not self:IsMouseOver() and not frame:IsMouseOver() and IsMouseButtonDown("LeftButton") then
+        self:Hide()
+    end
+end)
+
+local function ShowGearPopup(anchor, charKey)
+    ns.EnsureDB()
+    local charData = MajesticBeastTrackerDB.chars[charKey]
+    if not charData or not charData.gear or #charData.gear == 0 then
+        -- No gear data — show empty message
+        gearPopupTitle:SetText(charKey)
+        for _, row in ipairs(gearPopupRows) do
+            row:Hide()
+            row.label:Hide()
+        end
+        local noGear = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        noGear:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 0, -4)
+        noGear:SetText("|cff666666No gear data (login required)|r")
+        noGear:SetFont(noGear:GetFont(), 9)
+        gearPopup.noGear = noGear
+        gearPopup:SetSize(180, GEAR_PAD * 2 + 14 + 16)
+        gearPopup:ClearAllPoints()
+        gearPopup:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -2, 0)
+        gearPopup:Show()
+        return
+    end
+
+    -- Clean up previous no-gear text
+    if gearPopup.noGear then gearPopup.noGear:Hide() end
+
+    gearPopupTitle:SetText(ns.GetClassColor(charData.class) .. charKey .. "|r")
+
+    local maxLabelWidth = 0
+    for slot, row in ipairs(gearPopupRows) do
+        local gear = charData.gear[slot]
+        if gear then
+            local tex = gear.icon or C_Item.GetItemIconByID(gear.itemID)
+            if tex then row.icon:SetTexture(tex) end
+            row.itemLink = gear.link
+            local displayName = gear.name or ""
+            if gear.slotType == "tool" then
+                displayName = "|cffFFD100" .. displayName .. "|r"
+            end
+            row.label:SetText(displayName)
+            row.label:SetWidth(140)
+            row:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT",
+                0, -(4 + (slot - 1) * (GEAR_ICON_SIZE + 3)))
+            row:Show()
+            row.label:Show()
+            maxLabelWidth = math.max(maxLabelWidth, row.label:GetStringWidth())
+        else
+            row:Hide()
+            row.label:Hide()
+        end
+    end
+
+    local numGear = #charData.gear
+    local popupW = GEAR_PAD * 2 + GEAR_ICON_SIZE + 8 + math.max(maxLabelWidth, 80)
+    local popupH = GEAR_PAD * 2 + 14 + numGear * (GEAR_ICON_SIZE + 3)
+    -- Set row width to cover full popup for hover tooltip
+    for _, row in ipairs(gearPopupRows) do
+        row:SetWidth(popupW - GEAR_PAD * 2)
+    end
+    gearPopup:SetSize(popupW, popupH)
+    gearPopup:ClearAllPoints()
+    gearPopup:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -2, 0)
+    gearPopup:Show()
+end
+
+------------------------------------------------------
+-- Character rows
+------------------------------------------------------
+
 local function CreateCharRow(index)
     local row = {}
     local yOffset = dataTop - (index - 1) * ROW_HEIGHT
@@ -189,12 +700,25 @@ local function CreateCharRow(index)
         row.bg = rowBg
     end
 
-    row.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.name:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOffset - 1)
-    row.name:SetFont(row.name:GetFont(), 10)
-    row.name:SetWidth(NAME_COL_WIDTH - 4)
-    row.name:SetJustifyH("LEFT")
-    row.name:SetWordWrap(false)
+    -- Name button (clickable to show gear popup)
+    local nameBtn = CreateFrame("Button", nil, frame)
+    nameBtn:SetSize(NAME_COL_WIDTH - 4, ROW_HEIGHT)
+    nameBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOffset)
+
+    local nameLabel = nameBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameLabel:SetAllPoints()
+    nameLabel:SetFont(nameLabel:GetFont(), 10)
+    nameLabel:SetJustifyH("LEFT")
+    nameLabel:SetJustifyV("MIDDLE")
+    nameLabel:SetWordWrap(false)
+
+    local nameHl = nameBtn:CreateTexture(nil, "HIGHLIGHT")
+    nameHl:SetAllPoints()
+    nameHl:SetColorTexture(0.25, 0.78, 0.92, 0.08)
+
+    nameBtn.label = nameLabel
+    row.name = nameBtn
+    row.nameLabel = nameLabel
 
     row.cells = {}
     for i = 1, #LURES do
@@ -321,14 +845,49 @@ local function UpdateLockVisual()
 end
 
 function ns.UpdateUI()
+    local uiOk, uiErr = pcall(function()
     ns.EnsureDB()
     local currentChar = ns.GetCharKey()
     if not currentChar then return end
 
-    -- Header icons
+    -- Header icons: texture, count, glow
+    local charData = MajesticBeastTrackerDB.chars[currentChar]
     for i, lure in ipairs(LURES) do
         local tex = C_Item.GetItemIconByID(lure.itemID)
         if tex then headerIcons[i].icon:SetTexture(tex) end
+
+        -- Craftable count (reagents from bags + bank + warbank)
+        local craftable = GetCraftableCount(lure.recipeID)
+        -- Lures in bags (name to count all qualities)
+        local lureName = C_Item.GetItemNameByID(lure.itemID)
+        if not lureName then C_Item.RequestLoadItemDataByID(lure.itemID) end
+        local inBags = lureName and C_Item.GetItemCount(lureName) or C_Item.GetItemCount(lure.itemID)
+
+        if inBags > 0 or craftable > 0 then
+            local text = ""
+            if inBags > 0 and craftable > 0 then
+                text = "|cffffffff" .. inBags .. "|r+|cff00ff00" .. craftable .. "|r"
+            elseif inBags > 0 then
+                text = "|cffffffff" .. inBags .. "|r"
+            else
+                text = "|cff00ff00" .. craftable .. "|r"
+            end
+            headerIcons[i].countText:SetText(text)
+            headerIcons[i].countText:Show()
+        else
+            headerIcons[i].countText:SetText("")
+            headerIcons[i].countText:Hide()
+        end
+
+        -- Glow: yellow if lure in bags + usable by current char
+        local lureReady = charData and ns.CanSeeLure(charData, i)
+            and (not charData.lures[lure.name] or ns.IsLureReady(charData.lures[lure.name]))
+        if inBags > 0 and lureReady then
+            headerIcons[i].glow.Show()
+        else
+            headerIcons[i].glow.Hide()
+        end
+
     end
 
     -- Gather eligible characters
@@ -356,7 +915,15 @@ function ns.UpdateUI()
         local name = key
         if key == currentChar then name = name .. " *" end
 
-        row.name:SetText(classColor .. name .. "|r")
+        row.nameLabel:SetText(classColor .. name .. "|r")
+        row.name:SetScript("OnClick", function(self)
+            if gearPopup:IsShown() and gearPopup.currentKey == key then
+                gearPopup:Hide()
+            else
+                gearPopup.currentKey = key
+                ShowGearPopup(self, key)
+            end
+        end)
         row.name:Show()
         if row.bg then row.bg:Show() end
 
@@ -405,20 +972,121 @@ function ns.UpdateUI()
         end
     end
 
-    -- Resize
+    -- Update consumable status
+    for i, cons in ipairs(CONSUMABLES) do
+        local count = C_Item.GetItemCount(cons.itemName or cons.itemID)
+        local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
+        -- Fallback: try spell ID if name didn't match
+        if not buffInfo and cons.spellID and AuraUtil and AuraUtil.FindAuraByName then
+            buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
+        end
+        local remaining = buffInfo and buffInfo.expirationTime and (buffInfo.expirationTime - GetTime()) or 0
+        if buffInfo and remaining > 0 then
+            local m = math.ceil(remaining / 60)
+            consumableLabels[i]:SetText(m .. "m")
+            consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
+            consumableButtons[i].glow:Hide()
+        elseif count > 0 then
+            consumableLabels[i]:SetText(count .. "x")
+            consumableLabels[i]:SetTextColor(1, 1, 1)
+            consumableButtons[i].glow:Show()
+        else
+            consumableLabels[i]:SetText("0")
+            consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
+            consumableButtons[i].glow:Hide()
+        end
+
+        -- Update icon texture
+        local tex = C_Item.GetItemIconByID(cons.itemID)
+        if tex then consumableIcons[i].icon:SetTexture(tex) end
+
+        -- Position button in consumable box
+        if not InCombatLockdown() then
+            local btn = consumableButtons[i]
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", consumableBox, "TOPLEFT",
+                CONS_PAD + (i - 1) * (CONS_ICON_SIZE + CONS_SPACING + 28), -(CONS_BOX_HEIGHT - CONS_ICON_SIZE) / 2)
+            consumableLabels[i]:ClearAllPoints()
+            consumableLabels[i]:SetPoint("LEFT", btn, "RIGHT", 2, 0)
+            if frame:IsShown() then
+                btn:Show()
+                consumableBox:Show()
+            else
+                btn:Hide()
+                consumableBox:Hide()
+            end
+        end
+    end
+
+    -- Update travel buttons
+    local activeTravelBtns = {}
+    for _, btn in ipairs(travelButtons) do
+        activeTravelBtns[#activeTravelBtns + 1] = btn
+    end
+    -- Wormhole: show only if player has Engineering + item in bags
+    local showWormhole = HasEngineering() and C_Item.GetItemCount(WORMHOLE_ITEM.itemID) > 0
+    if showWormhole then
+        activeTravelBtns[#activeTravelBtns + 1] = wormholeBtn
+    end
+
+    -- Resize (include travel row if any travel buttons)
     local n = math.max(#keys, 1)
-    local h = TITLE_HEIGHT + 2 + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + PAD + 4
+    local hasTravelRow = #activeTravelBtns > 0
+    local travelExtra = hasTravelRow and TRAVEL_ROW_HEIGHT or 0
+    local h = TITLE_HEIGHT + 2 + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + travelExtra + PAD + 4
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + #LURES * COL_WIDTH
     frame:SetSize(w, h)
 
+    -- Position travel buttons at bottom
+    if not InCombatLockdown() then
+        local travelY = -(TITLE_HEIGHT + 2 + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
+        if hasTravelRow then
+            travelSep:ClearAllPoints()
+            travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, travelY)
+            travelSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+            travelSep:Show()
+        else
+            travelSep:Hide()
+        end
+
+        -- Hide all first
+        for _, btn in ipairs(travelButtons) do btn:Hide() end
+        wormholeBtn:Hide()
+
+        -- Show + position active ones
+        for idx, btn in ipairs(activeTravelBtns) do
+            local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
+            if tex then btn.icon:SetTexture(tex) end
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                PAD + 4 + (idx - 1) * (TRAVEL_ICON_SIZE + TRAVEL_SPACING),
+                travelY - 3)
+            -- Update cooldown sweep
+            local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
+            if start and duration and duration > 0 then
+                btn.cooldown:SetCooldown(start, duration)
+            else
+                btn.cooldown:Clear()
+            end
+            if frame:IsShown() then
+                btn:Show()
+            end
+        end
+    end
+
     if #keys == 0 then
         if not charRows[1] then charRows[1] = CreateCharRow(1) end
-        charRows[1].name:SetText(C_ACCENT:WrapTextInColorCode("No skinners found"))
+        charRows[1].nameLabel:SetText(C_ACCENT:WrapTextInColorCode("No skinners found"))
         charRows[1].name:SetWidth(w - PAD * 2)
+        charRows[1].name:SetScript("OnClick", nil)
         charRows[1].name:Show()
         for _, cell in ipairs(charRows[1].cells) do
             cell:Hide()
         end
+    end
+    end) -- end pcall
+    if not uiOk then
+        print("|cffff3333[MBT ERROR]|r UpdateUI: " .. tostring(uiErr))
     end
 end
 
@@ -452,8 +1120,16 @@ frame:SetScript("OnMouseDown", function(self, button)
 end)
 
 ------------------------------------------------------
--- Periodic refresh
+-- Periodic refresh + aura/bag tracking
 ------------------------------------------------------
+
+local auraFrame = CreateFrame("Frame")
+auraFrame:RegisterEvent("UNIT_AURA")
+auraFrame:RegisterEvent("BAG_UPDATE")
+auraFrame:SetScript("OnEvent", function(_, event, unit)
+    if event == "UNIT_AURA" and unit ~= "player" then return end
+    ns.UpdateUI()
+end)
 
 local elapsed = 0
 frame:SetScript("OnUpdate", function(_, dt)
@@ -501,6 +1177,13 @@ function ns.HideFrame()
     frame:Hide()
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = false
+    -- Hide consumable buttons and box
+    if not InCombatLockdown() then
+        for _, btn in ipairs(consumableButtons) do btn:Hide() end
+        consumableBox:Hide()
+        for _, btn in ipairs(travelButtons) do btn:Hide() end
+        wormholeBtn:Hide()
+    end
 end
 
 function ns.ToggleLock()
