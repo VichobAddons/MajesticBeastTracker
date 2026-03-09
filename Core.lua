@@ -222,15 +222,15 @@ end
 local function DetectSkinningAndTalent()
     EnsureChar(charKey)
     local charData = MajesticBeastTrackerDB.chars[charKey]
-    charData.hasSkinning = HasSkinning()
-    if charData.hasSkinning then
+    local skinning = HasSkinning()
+    if skinning then
+        charData.hasSkinning = true
         local points = DetectTalentedTrackerPoints()
         if points > 0 then
             charData.talentPoints = points
         end
-    else
-        charData.talentPoints = 0
     end
+    -- Don't clear hasSkinning/talentPoints on failure — API may not be ready yet
 end
 
 function ns.CanSeeLure(charData, lureIndex)
