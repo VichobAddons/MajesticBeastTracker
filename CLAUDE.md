@@ -23,7 +23,7 @@ Tracks daily Majestic Lure beast skinning cooldowns across all characters.
 - All inter-file communication via addon namespace `ns.*`, no global writes before RegisterEvent
 
 ### Cooldown System
-- Cooldowns reset at daily server reset, NOT 24h from kill
+- Cooldowns reset at daily server reset
 - Uses `C_DateAndTime.GetSecondsUntilDailyReset()` for timing
 - Kill timestamps stored as `GetServerTime()` values
 
