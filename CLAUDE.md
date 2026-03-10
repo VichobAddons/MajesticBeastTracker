@@ -65,6 +65,3 @@ addon.lint with {"addon": "MajesticBeastTracker"}
 # Search for API usage:
 api.search with {"query": "*ProfSpecs*"}
 ```
-
-## User
-- Finnish speaker, communicates in Finnish
