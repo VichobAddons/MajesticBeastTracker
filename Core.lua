@@ -102,6 +102,20 @@ local function HasSkinning()
     return false
 end
 
+-- Returns the base skinning skill level (e.g. 80/100)
+local function GetSkinningSkillLevel()
+    local prof1, prof2 = GetProfessions()
+    if prof1 then
+        local _, _, skillLevel, _, _, _, skillLineID = GetProfessionInfo(prof1)
+        if skillLineID == 393 then return skillLevel or 0 end
+    end
+    if prof2 then
+        local _, _, skillLevel, _, _, _, skillLineID = GetProfessionInfo(prof2)
+        if skillLineID == 393 then return skillLevel or 0 end
+    end
+    return 0
+end
+
 ------------------------------------------------------
 -- Talented Tracker auto-detection
 ------------------------------------------------------
@@ -146,6 +160,109 @@ local function DetectTalentedTrackerPoints()
 
     return 0
 end
+
+------------------------------------------------------
+-- Profession stats calculation (Skill, Perception, Finesse, Deftness)
+-- Sources: talent perks, per-point bonuses, gear tooltips
+------------------------------------------------------
+
+-- Parse stat bonuses from a perk/path description string
+-- Handles: "+5 Perception", "Increases Perception by 60", "Gain 60 Perception", "60 Perception"
+local function ParseStatsFromText(text, stats)
+    if not text then return end
+    local validStats = { Skill = true, Perception = true, Finesse = true, Deftness = true }
+    -- Pattern 1: "+N Stat" (talents, gear)
+    for amount, stat in text:gmatch("%+(%d+)%s+(%a+)") do
+        if validStats[stat] then
+            stats[stat] = (stats[stat] or 0) + tonumber(amount)
+        end
+    end
+    -- Pattern 2: "Stat increased by N" (buff tooltips)
+    for stat, amount in text:gmatch("(%a+)%s+increased%s+by%s+(%d+)") do
+        if validStats[stat] then
+            stats[stat] = (stats[stat] or 0) + tonumber(amount)
+        end
+    end
+    -- "Midnight Skinning Skill" from gear tooltips
+    local skillAmount = text:match("%+(%d+) Midnight Skinning Skill")
+    if skillAmount then
+        stats.Skill = (stats.Skill or 0) + tonumber(skillAmount)
+    end
+end
+
+-- Get invested points for a single node (not recursive)
+local function GetNodePoints(configID, nodeID)
+    local info = C_Traits.GetNodeInfo(configID, nodeID)
+    if info and info.activeRank and info.activeRank > 0 then
+        return info.activeRank
+    end
+    return 0
+end
+
+-- Parse per-point bonus from path description
+-- e.g. "gaining +1 Perception while skinning ... per point"
+local function ParsePerPointBonus(desc)
+    if not desc then return nil, nil end
+    local amount, stat = desc:match("%+(%d+)%s+(%a+)%s+.-per point")
+    if amount and (stat == "Skill" or stat == "Perception" or stat == "Finesse" or stat == "Deftness") then
+        return stat, tonumber(amount)
+    end
+    return nil, nil
+end
+
+-- DEBUG: Test profession stats APIs
+local function TestProfessionStatsAPIs()
+    if not HasSkinning() or not C_ProfSpecs then
+        print("|cff3FC7EB[MBT TEST]|r No skinning or no C_ProfSpecs")
+        return
+    end
+
+    local ok, configID = pcall(C_ProfSpecs.GetConfigIDForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
+    print("|cff3FC7EB[MBT TEST]|r configID: ok=" .. tostring(ok) .. " val=" .. tostring(configID))
+    if not ok or not configID or configID == 0 then return end
+
+    local ok2, tabIDs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
+    print("|cff3FC7EB[MBT TEST]|r tabIDs: ok=" .. tostring(ok2) .. " count=" .. tostring(tabIDs and #tabIDs))
+    if not ok2 or not tabIDs then return end
+
+    for _, tabID in ipairs(tabIDs) do
+        local ok3, tabInfo = pcall(C_ProfSpecs.GetTabInfo, tabID)
+        print("|cff3FC7EB[MBT TEST]|r Tab " .. tabID .. ": " .. tostring(tabInfo and tabInfo.name))
+
+        -- Try to get root path and its perks
+        if ok3 and tabInfo and tabInfo.rootNodeID then
+            local ok4, perks = pcall(C_ProfSpecs.GetPerksForPath, tabInfo.rootNodeID)
+            print("|cff3FC7EB[MBT TEST]|r   GetPerksForPath: ok=" .. tostring(ok4) .. " count=" .. tostring(perks and #perks))
+            if ok4 and perks then
+                for pi, perk in ipairs(perks) do
+                    local ok5, desc = pcall(C_ProfSpecs.GetDescriptionForPerk, perk.perkID)
+                    local okS, state = pcall(C_ProfSpecs.GetStateForPerk, perk.perkID)
+                    local okR, rank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
+                    print("|cff3FC7EB[MBT TEST]|r   Perk " .. pi .. " state=" .. tostring(state) .. " unlockRank=" .. tostring(rank) .. " (id=" .. tostring(perk.perkID) .. "): " .. tostring(desc))
+                end
+            end
+
+            -- Also try children paths
+            local ok6, children = pcall(C_ProfSpecs.GetChildrenForPath, tabInfo.rootNodeID)
+            if ok6 and children then
+                for _, childID in ipairs(children) do
+                    local ok7, childPerks = pcall(C_ProfSpecs.GetPerksForPath, childID)
+                    local ok8, childDesc = pcall(C_ProfSpecs.GetDescriptionForPath, childID)
+                    print("|cff3FC7EB[MBT TEST]|r   Child " .. childID .. ": desc=" .. tostring(childDesc))
+                    if ok7 and childPerks then
+                        for pi, perk in ipairs(childPerks) do
+                            local ok9, pdesc = pcall(C_ProfSpecs.GetDescriptionForPerk, perk.perkID)
+                            local okS, state = pcall(C_ProfSpecs.GetStateForPerk, perk.perkID)
+                            local okR, rank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
+                            print("|cff3FC7EB[MBT TEST]|r     Perk " .. pi .. " state=" .. tostring(state) .. " unlockRank=" .. tostring(rank) .. ": " .. tostring(pdesc))
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+ns.TestProfessionStatsAPIs = TestProfessionStatsAPIs
 
 -- Namespace exports for UI.lua
 ns.IsLureReady = IsLureReady
@@ -265,6 +382,162 @@ local function DetectSkinningGear()
     end
     return gear
 end
+
+-- DEBUG: Test gear stat reading from tooltips
+local function TestGearStats()
+    local gear = DetectSkinningGear()
+    if not gear or #gear == 0 then
+        print("|cff3FC7EB[MBT TEST]|r No gear detected")
+        return
+    end
+    local tip = CreateFrame("GameTooltip", "MBT_ScanTooltip", nil, "GameTooltipTemplate")
+    tip:SetOwner(UIParent, "ANCHOR_NONE")
+
+    for _, item in ipairs(gear) do
+        print("|cff3FC7EB[MBT TEST]|r Gear: " .. tostring(item.name) .. " (slot " .. item.slotID .. ")")
+        tip:ClearLines()
+        tip:SetInventoryItem("player", item.slotID)
+        for i = 1, tip:NumLines() do
+            local line = _G["MBT_ScanTooltipTextLeft" .. i]
+            if line then
+                local text = line:GetText()
+                if text then
+                    print("|cff3FC7EB[MBT TEST]|r   Line " .. i .. ": " .. text)
+                end
+            end
+        end
+    end
+    tip:Hide()
+end
+ns.TestGearStats = TestGearStats
+
+-- Calculate total profession stats from talents + gear
+local function CalculateProfessionStats()
+    local stats = { Skill = 0, Perception = 0, Finesse = 0, Deftness = 0 }
+    if not HasSkinning() then return stats end
+
+    -- Base profession skill level
+    stats.Skill = GetSkinningSkillLevel()
+
+    if not C_ProfSpecs then return stats end
+
+    local ok, configID = pcall(C_ProfSpecs.GetConfigIDForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
+    if not ok or not configID or configID == 0 then return stats end
+
+    local ok2, tabIDs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
+    if not ok2 or not tabIDs then return stats end
+
+    for _, tabID in ipairs(tabIDs) do
+        local ok3, tabInfo = pcall(C_ProfSpecs.GetTabInfo, tabID)
+        if ok3 and tabInfo and tabInfo.rootNodeID then
+            -- activeRank includes +1 for "learned" state, so invested points = rank - 1
+            local rootRank = GetNodePoints(configID, tabInfo.rootNodeID)
+            local rootInvested = math.max(rootRank - 1, 0)
+
+            -- Root path per-point bonus (e.g. "+1 Skill per point in this Specialization")
+            if rootInvested > 0 then
+                local okRD, rootDesc = pcall(C_ProfSpecs.GetDescriptionForPath, tabInfo.rootNodeID)
+                if okRD and rootDesc then
+                    local stat, amount = ParsePerPointBonus(rootDesc)
+                    if stat and amount then
+                        stats[stat] = stats[stat] + (rootInvested * amount)
+                    end
+                end
+            end
+
+            -- Root path perks (unlockRank works with raw rank)
+            local ok4, perks = pcall(C_ProfSpecs.GetPerksForPath, tabInfo.rootNodeID)
+            if ok4 and perks then
+                for _, perk in ipairs(perks) do
+                    local okR, unlockRank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
+                    if okR and unlockRank and rootRank >= unlockRank then
+                        local okD, desc = pcall(C_ProfSpecs.GetDescriptionForPerk, perk.perkID)
+                        if okD then ParseStatsFromText(desc, stats) end
+                    end
+                end
+            end
+
+            -- Child paths (sub-specializations)
+            local ok6, children = pcall(C_ProfSpecs.GetChildrenForPath, tabInfo.rootNodeID)
+            if ok6 and children then
+                for _, childID in ipairs(children) do
+                    local childRank = GetNodePoints(configID, childID)
+                    local childInvested = math.max(childRank - 1, 0)
+
+                    -- Per-point bonus from path description
+                    local ok8, childDesc = pcall(C_ProfSpecs.GetDescriptionForPath, childID)
+                    if ok8 and childDesc and childInvested > 0 then
+                        local stat, amount = ParsePerPointBonus(childDesc)
+                        if stat and amount then
+                            stats[stat] = stats[stat] + (childInvested * amount)
+                        end
+                    end
+
+                    -- Child perks (unlockRank works with raw rank)
+                    local ok7, childPerks = pcall(C_ProfSpecs.GetPerksForPath, childID)
+                    if ok7 and childPerks then
+                        for _, perk in ipairs(childPerks) do
+                            local okR, unlockRank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
+                            if okR and unlockRank and childRank >= unlockRank then
+                                local okD, desc = pcall(C_ProfSpecs.GetDescriptionForPerk, perk.perkID)
+                                if okD then ParseStatsFromText(desc, stats) end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Gear stats from tooltip scanning
+    local gear = DetectSkinningGear()
+    if gear and #gear > 0 then
+        local tip = CreateFrame("GameTooltip", "MBT_StatScanTip", nil, "GameTooltipTemplate")
+        tip:SetOwner(UIParent, "ANCHOR_NONE")
+        for _, item in ipairs(gear) do
+            tip:ClearLines()
+            tip:SetInventoryItem("player", item.slotID)
+            for i = 1, tip:NumLines() do
+                local line = _G["MBT_StatScanTipTextLeft" .. i]
+                if line then
+                    local text = line:GetText()
+                    if text then
+                        ParseStatsFromText(text, stats)
+                    end
+                end
+            end
+        end
+        tip:Hide()
+    end
+
+    -- Buff stats from active auras (tooltip scanning)
+    local STAT_BUFFS = {
+        { buffName = "Relaxed" },                        -- Sanguithorn Tea
+        { buffName = "Haranir Phial of Perception" },    -- Phial
+    }
+    for _, buff in ipairs(STAT_BUFFS) do
+        local auraData = C_UnitAuras.GetAuraDataBySpellName("player", buff.buffName, "HELPFUL")
+        if auraData and auraData.auraInstanceID then
+            local tip = CreateFrame("GameTooltip", "MBT_BuffScanTip", nil, "GameTooltipTemplate")
+            tip:SetOwner(UIParent, "ANCHOR_NONE")
+            tip:ClearLines()
+            tip:SetUnitBuffByAuraInstanceID("player", auraData.auraInstanceID)
+            for i = 1, tip:NumLines() do
+                local line = _G["MBT_BuffScanTipTextLeft" .. i]
+                if line then
+                    local text = line:GetText()
+                    if text then
+                        ParseStatsFromText(text, stats)
+                    end
+                end
+            end
+            tip:Hide()
+        end
+    end
+
+    return stats
+end
+ns.CalculateProfessionStats = CalculateProfessionStats
 
 local function DetectSkinningAndTalent()
     EnsureChar(charKey)
@@ -389,6 +662,42 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         else
             print("|cff3FC7EB[MBT]|r Usage: /mbt talent 0-40")
         end
+    elseif msg:find("^debug ") then
+        local sub = msg:gsub("^debug ", ""):trim()
+        if sub == "stats" then
+            ns.TestProfessionStatsAPIs()
+        elseif sub == "gear" then
+            ns.TestGearStats()
+        elseif sub == "calc" then
+            local s = ns.CalculateProfessionStats()
+            print("|cff3FC7EB[MBT]|r Stats: Skill=" .. s.Skill .. " Per=" .. s.Perception .. " Fin=" .. s.Finesse .. " Dft=" .. s.Deftness)
+            if C_ProfSpecs then
+                local ok, cid = pcall(C_ProfSpecs.GetConfigIDForSkillLine, 2917)
+                if ok and cid and cid ~= 0 then
+                    local ok2, tabs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, 2917)
+                    if ok2 and tabs then
+                        for _, tabID in ipairs(tabs) do
+                            local ok3, ti = pcall(C_ProfSpecs.GetTabInfo, tabID)
+                            if ok3 and ti then
+                                local rp = GetNodePoints(cid, ti.rootNodeID)
+                                print("|cff3FC7EB[MBT]|r  " .. ti.name .. " rank=" .. rp)
+                                local ok6, ch = pcall(C_ProfSpecs.GetChildrenForPath, ti.rootNodeID)
+                                if ok6 and ch then
+                                    for _, childID in ipairs(ch) do
+                                        local sp = GetNodePoints(cid, childID)
+                                        local ok8, cd = pcall(C_ProfSpecs.GetDescriptionForPath, childID)
+                                        local cname = cd and cd:match("^(.-)[,.]") or tostring(childID)
+                                        print("|cff3FC7EB[MBT]|r    " .. cname .. " rank=" .. sp)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            print("|cff3FC7EB[MBT]|r Debug commands: stats, gear, calc")
+        end
     elseif msg:find("^remove ") then
         local target = msg:gsub("^remove ", ""):trim()
         EnsureDB()
@@ -416,6 +725,7 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         print("  |cffffff00/mbt settings|r - Open settings")
         print("  |cffffff00/mbt talent N|r - Override points (0-40)")
         print("  |cffffff00/mbt remove Name-Realm|r - Remove character")
+        print("  |cffffff00/mbt debug stats|gear|calc|r - Debug tools")
         print("  |cffffff00/mbt help|r - This help")
     else
         if ns.ShowFrame then ns.ShowFrame() end

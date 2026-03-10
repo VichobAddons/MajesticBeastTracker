@@ -29,6 +29,7 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Minimap button** - Left-click toggles window, right-click opens settings
 - **Hide in combat** - Optionally hide the tracker during combat
 - **Settings panel** - Full Interface > AddOns settings page with chat notifications, combat hide, scale, and more
+- **Profession stats** - See your total Skill, Perception, Finesse, and Deftness from talents, gear, and buffs
 - **Profession talent detection** - Automatically reads your Talented Tracker points to show only available lures
 
 ## Lure Locations
@@ -53,6 +54,7 @@ If you have multiple skinners, it's impossible to remember which character has u
 | `/mbt remove Name-Realm` | Remove a character            |
 | `/mbt nuke`              | Clear current character data  |
 | `/mbt nuke all`          | Clear ALL data                |
+| `/mbt debug calc`        | Show stats breakdown          |
 
 Also available as `/beast` and `/lure`.
 

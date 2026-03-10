@@ -503,6 +503,26 @@ end
 -- Wormhole button (created but shown conditionally)
 local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
 
+------------------------------------------------------
+-- Stats display (Skill, Perception, Finesse, Deftness)
+------------------------------------------------------
+
+local STAT_LABELS = {
+    { key = "Skill",      label = "Skl", color = {1, 0.82, 0} },
+    { key = "Perception", label = "Per", color = {0.2, 0.9, 0.4} },
+    { key = "Finesse",    label = "Fin", color = {0.4, 0.7, 1} },
+    { key = "Deftness",   label = "Dft", color = {1, 0.5, 0.2} },
+}
+
+local statsTexts = {}
+for i, stat in ipairs(STAT_LABELS) do
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetFont(label:GetFont(), 9)
+    label:SetTextColor(stat.color[1], stat.color[2], stat.color[3])
+    label:Hide()
+    statsTexts[i] = label
+end
+
 -- Helper: check if player has Engineering as second profession
 local function HasEngineering()
     local prof1, prof2 = GetProfessions()
@@ -1060,6 +1080,30 @@ function ns.UpdateUI()
                 btn:Show()
             end
         end
+
+        -- Position stats on the right side of bottom row
+        local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
+        local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
+        if hasAnyStats then
+            local statsX = w - PAD - 4
+            local statsY = travelY - 3 - TRAVEL_ICON_SIZE / 2
+            for i = #STAT_LABELS, 1, -1 do
+                local val = profStats[STAT_LABELS[i].key] or 0
+                if val > 0 then
+                    statsTexts[i]:SetText(STAT_LABELS[i].label .. ":" .. val)
+                    statsTexts[i]:ClearAllPoints()
+                    statsTexts[i]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, statsY)
+                    statsX = statsX - statsTexts[i]:GetStringWidth() - 6
+                    statsTexts[i]:Show()
+                else
+                    statsTexts[i]:Hide()
+                end
+            end
+        else
+            for i = 1, #STAT_LABELS do
+                statsTexts[i]:Hide()
+            end
+        end
     end
 
     if #keys == 0 then
@@ -1114,6 +1158,8 @@ end)
 local auraFrame = CreateFrame("Frame")
 auraFrame:RegisterEvent("UNIT_AURA")
 auraFrame:RegisterEvent("BAG_UPDATE")
+auraFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
 auraFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "UNIT_AURA" and unit ~= "player" then return end
     ns.UpdateUI()
@@ -1341,7 +1387,8 @@ local function InitSettings()
             .. "/mbt talent |cff3FC7EBN|r|cffFFFFFF\n\n"
             .. "/mbt remove |cff3FC7EBName-Realm|r|cffFFFFFF\n\n"
             .. "/mbt nuke\n\n"
-            .. "/mbt nuke all",
+            .. "/mbt nuke all\n\n"
+            .. "/mbt debug |cff3FC7EBcalc|stats|gear|r",
         rightText =
             "Show tracker\n\n"
             .. "Hide tracker\n\n"
@@ -1350,7 +1397,8 @@ local function InitSettings()
             .. "Override talent points (0-40)\n\n"
             .. "Remove a character\n\n"
             .. "Clear current character\n\n"
-            .. "Clear ALL data",
+            .. "Clear ALL data\n\n"
+            .. "Debug tools (stats breakdown)",
     }
     local cmdText = layout:AddInitializer(Settings.CreateElementInitializer("LureTracker_SettingsText", cmdData))
     function cmdText:GetExtent()

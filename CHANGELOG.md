@@ -1,5 +1,20 @@
 # Majestic Beast Tracker
 
+## [v1.2.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.2.0) (2026-03-10)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.1.1...v1.2.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Profession stats display showing Skill, Perception, Finesse, and Deftness
+
+### Profession Stats
+- Shows your total Skill, Perception, Finesse, and Deftness at the bottom of the tracker
+- Combines stats from talent tree perks, per-point bonuses, equipped gear, and active buffs
+- Updates automatically when you drink consumables, change gear, or apply talent points
+- Color-coded labels: Skill (gold), Perception (green), Finesse (blue), Deftness (orange)
+
+### Debug Commands
+- New `/mbt debug calc` command to see detailed stats breakdown
+- New `/mbt debug stats` and `/mbt debug gear` for advanced troubleshooting
+
 ## [v1.1.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.1.1) (2026-03-10)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.1.0...v1.1.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 
