@@ -67,7 +67,7 @@ Also available as `/beast` and `/lure`.
 
 ## Installation
 
-1. Download from [CurseForge](https://www.curseforge.com/wow/addons/majesticbeasttracker) or clone this repo
+1. Download from [CurseForge](https://www.curseforge.com/wow/addons/majestic-beast-tracker) or clone this repo
 2. Place `MajesticBeastTracker` folder in `Interface/AddOns/`
 3. Requires Skinning with Talented Tracker specialization points
 
