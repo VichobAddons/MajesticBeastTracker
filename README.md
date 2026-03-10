@@ -1,6 +1,6 @@
 # Majestic Beast Tracker
 
-<img width="680" height="289" alt="jSR9dlfQ2g" src="https://github.com/user-attachments/assets/187b85b6-fb3f-4900-aa26-88a7cfa3a755" />
+<img width="667" height="270" alt="86nZLtRIPn" src="https://github.com/user-attachments/assets/b472bc14-71dc-4fb0-9c63-113ca88ca0bc" />
 
 WoW Midnight (12.0) addon that tracks daily Majestic Lure beast cooldowns across all your skinning characters.
 
