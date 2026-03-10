@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "mechanic": {
-      "command": "mech",
-      "args": ["mcp"]
-    }
-  }
-}
