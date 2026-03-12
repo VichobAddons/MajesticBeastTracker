@@ -18,18 +18,23 @@ If you have multiple skinners, it's impossible to remember which character has u
 ## Features
 
 - **Multi-character tracking** - See all your skinners' cooldowns in one grid
-- **Auto-detection** - Detects kills via loot events, no manual input needed
+- **Quest-based kill detection** - Uses hidden quest flags for 100% reliable kill tracking, syncs across sessions
 - **Click to mark/clear** - Manually mark kills as a fallback
+- **Reagent icons** - See reagent needs per lure with have/need counts, includes Warbank items
+- **Weekly knowledge tracking** - Track Midnight Skinning weekly KP quests (Trainer, Drops, Treatise, DMF) per character
 - **Lure shortcuts** - Click to use lure, Shift-click to open recipe/craft, Right-click to set waypoint
 - **Craftable count** - Shows how many lures you can craft, including materials in Warbound bank
 - **Consumable tracking** - Track Sanguithorn Tea and Haranir Phial of Perception with buff timers and bag count
 - **Travel buttons** - Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
-- **Gear popup** - Click a character's name to see their equipped skinning tools and accessories
+- **Gear popup** - Click a character's name to see their equipped skinning tools, accessories, profession stats, and weekly quest status
+- **Zone labels** - Color-coded zone names below each lure column
+- **Lure column borders** - Colored border boxes for visual separation between lure columns
 - **Map waypoints** - Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
 - **Minimap button** - Left-click toggles window, right-click opens settings
+- **Non-skinner auto-hide** - Tracker stays hidden on characters without Skinning
 - **Hide in combat** - Optionally hide the tracker during combat
 - **Settings panel** - Full Interface > AddOns settings page with chat notifications, combat hide, scale, and more
-- **Profession stats** - See your total Skill, Perception, Finesse, and Deftness from talents, gear, and buffs
+- **Profession stats** - Per-character Skill, Perception, Finesse, and Deftness in gear popup (base + talents + gear)
 - **Profession talent detection** - Automatically reads your Talented Tracker points to show only available lures
 
 ## Lure Locations
@@ -73,7 +78,7 @@ Also available as `/beast` and `/lure`.
 
 ## Technical Notes
 
-- Kill detection uses `LOOT_OPENED` event (CLEU was removed for addons in Midnight 12.0)
+- Kill detection uses hidden quest flags via `C_QuestLog.IsQuestFlaggedCompleted()` (CLEU was removed for addons in Midnight 12.0)
 - Uses `BackdropTemplate` and `UIPanelCloseButton` (safe in 12.0)
 - SavedVariables: `MajesticBeastTrackerDB` (account-wide)
 - Dependencies: LibStub, CallbackHandler, LibDataBroker, LibDBIcon

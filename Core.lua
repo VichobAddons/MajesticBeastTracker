@@ -1,36 +1,111 @@
 ------------------------------------------------------
 -- MajesticBeastTracker - Multi-Character Lure Cooldown Tracker
 -- Tracks Majestic Lure beast kill cooldowns (daily reset)
--- Kill detection via LOOT_OPENED (CLEU removed in Midnight 12.0)
+-- Kill detection via hidden quest flags (CLEU removed in Midnight 12.0)
 ------------------------------------------------------
 
 local addonName, ns = ...
 
 -- Lure data: ordered by Talented Tracker unlock threshold
 local LURES = {
-    { npcID = 245688, itemID = 238652, recipeID = 1225943, name = "Eversong",    color = "|cff00ff96", colorRGB = {0, 1, 0.59},       requiredPoints = 1,  waypoint = { map = 2395, x = 0.4195, y = 0.8005 } },  -- Gloomclaw
-    { npcID = 245699, itemID = 238653, recipeID = 1225944, name = "Zul'Aman",    color = "|cff00ccff", colorRGB = {0, 0.8, 1},        requiredPoints = 10, waypoint = { map = 2437, x = 0.4769, y = 0.5325 } },  -- Silverscale
-    { npcID = 245690, itemID = 238654, recipeID = 1225945, name = "Harandar",    color = "|cffff9900", colorRGB = {1, 0.6, 0},        requiredPoints = 20, waypoint = { map = 2413, x = 0.6628, y = 0.4791 } },  -- Lumenfin
-    { npcID = 247096, itemID = 238655, recipeID = 1225946, name = "Voidstorm",   color = "|cffa335ee", colorRGB = {0.64, 0.21, 0.93}, requiredPoints = 30, waypoint = { map = 2405, x = 0.5460, y = 0.6580 } },  -- Umbrafang
-    { npcID = 247101, itemID = 238656, recipeID = 1225948, name = "Grand Beast", color = "|cffff3333", colorRGB = {1, 0.2, 0.2},      requiredPoints = 40, waypoint = { map = 2405, x = 0.4325, y = 0.8275 } },  -- Netherscythe
+    { npcID = 245688, itemID = 238652, recipeID = 1225943, questID = 88545, name = "Eversong",    color = "|cff00ff96", colorRGB = {0, 1, 0.59},       requiredPoints = 1,  waypoint = { map = 2395, x = 0.4195, y = 0.8005 },
+      reagents = { { itemID = 238371, count = 8 }, { itemID = 238366, count = 8 } } },  -- Arcane Wyrmfish, Lynxfish
+    { npcID = 245699, itemID = 238653, recipeID = 1225944, questID = 88526, name = "Zul'Aman",    color = "|cff00ccff", colorRGB = {0, 0.8, 1},        requiredPoints = 10, waypoint = { map = 2437, x = 0.4769, y = 0.5325 },
+      reagents = { { itemID = 238382, count = 8 } } },  -- Gore Guppy
+    { npcID = 245690, itemID = 238654, recipeID = 1225945, questID = 88531, name = "Harandar",    color = "|cffff9900", colorRGB = {1, 0.6, 0},        requiredPoints = 20, waypoint = { map = 2413, x = 0.6628, y = 0.4791 },
+      reagents = { { itemID = 238375, count = 8 }, { itemID = 238374, count = 8 } } },  -- Fungalskin Pike, Tender Lumifin
+    { npcID = 247096, itemID = 238655, recipeID = 1225946, questID = 88532, name = "Voidstorm",   color = "|cffa335ee", colorRGB = {0.64, 0.21, 0.93}, requiredPoints = 30, waypoint = { map = 2405, x = 0.5460, y = 0.6580 },
+      reagents = { { itemID = 238373, count = 4 } } },  -- Ominous Octopus
+    { npcID = 247101, itemID = 238656, recipeID = 1225948, questID = 88524, name = "Grand Beast", color = "|cffff3333", colorRGB = {1, 0.2, 0.2},      requiredPoints = 40, waypoint = { map = 2405, x = 0.4325, y = 0.8275 },
+      reagents = { { itemID = 238380, count = 4 } } },  -- Null Voidfish
 }
 ns.LURES = LURES
 
--- Fast lookup: npcID -> lure index
-local npcToIndex = {}
+-- Fast lookup: questID -> lure index (kill detection via hidden quest flags)
+local questToIndex = {}
 for i, lure in ipairs(LURES) do
-    npcToIndex[lure.npcID] = i
+    if lure.questID then
+        questToIndex[lure.questID] = i
+    end
 end
 
 local charKey
 local MIDNIGHT_SKINNING_SKILL_LINE = 2917
+
+-- Midnight Skinning weekly Knowledge Point sources
+-- Multiple quest IDs = Blizzard rotates different quest each week, ANY = done
+-- mode: "rotation" = any quest = done (trainer rotates weekly)
+--        "each" = each quest is independent, track count (drops)
+--        "single" = one quest (default)
+local SKINNING_WEEKLIES = {
+    { key = "trainer",  label = "Trainer Quest",     questIDs = { 93710, 93711, 93712, 93713, 93714 }, kp = 3, mode = "rotation" },
+    { key = "drop",     label = "Skinning Drop",     questIDs = { 88534, 88549, 88536, 88537, 88530 }, kp = 1, mode = "each" },
+    { key = "bonusDrop",label = "Bonus Drop",        questIDs = { 88529 },                             kp = 3 },
+    { key = "treatise", label = "Treatise",           questIDs = { 95136 },                             kp = 1 },
+    { key = "dmf",      label = "Darkmoon Faire",    questIDs = { 29519 },                             kp = 3, dmf = true },
+}
+ns.SKINNING_WEEKLIES = SKINNING_WEEKLIES
+
+-- DMF is up from first Sunday of the month for 7 days
+local function IsDarkmoonFaireUp()
+    local dayOfWeek = tonumber(date("%w"))
+    local dayOfMonth = tonumber(date("%e"))
+    local firstSundayOfMonth = ((dayOfMonth - (dayOfWeek + 1)) % 7) + 1
+    local daysSinceFirstSunday = dayOfMonth - firstSundayOfMonth
+    return daysSinceFirstSunday >= 0 and daysSinceFirstSunday <= 6
+end
+ns.IsDarkmoonFaireUp = IsDarkmoonFaireUp
+
+-- Lookup set of all weekly quest IDs for fast QUEST_TURNED_IN check
+local weeklyQuestIDs = {}
+for _, w in ipairs(SKINNING_WEEKLIES) do
+    for _, qid in ipairs(w.questIDs) do
+        weeklyQuestIDs[qid] = true
+    end
+end
+
+-- Refresh weekly quest status for current character
+local function RefreshWeeklies()
+    local key = ns.GetCharKey and ns.GetCharKey()
+    if not key then return end
+    local charData = MajesticBeastTrackerDB and MajesticBeastTrackerDB.chars and MajesticBeastTrackerDB.chars[key]
+    if not charData or not charData.hasSkinning then return end
+
+    local weeklies = {}
+    for _, w in ipairs(SKINNING_WEEKLIES) do
+        if w.mode == "each" then
+            local completed = 0
+            for _, qid in ipairs(w.questIDs) do
+                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                    completed = completed + 1
+                end
+            end
+            weeklies[w.key] = completed
+        elseif w.mode == "rotation" then
+            local done = false
+            for _, qid in ipairs(w.questIDs) do
+                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                    done = true
+                    break
+                end
+            end
+            weeklies[w.key] = done
+        else
+            weeklies[w.key] = C_QuestLog.IsQuestFlaggedCompleted(w.questIDs[1])
+        end
+    end
+    charData.weeklies = weeklies
+    charData.weeklyResetTime = GetServerTime() + C_DateAndTime.GetSecondsUntilWeeklyReset()
+end
 
 -- Debug buffer for Mechanic console integration
 ns.debugBuffer = {}
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
-f:RegisterEvent("LOOT_OPENED")
+f:RegisterEvent("QUEST_TURNED_IN")
+f:RegisterEvent("BAG_UPDATE_DELAYED")
+f:RegisterEvent("LOOT_CLOSED")
 
 ------------------------------------------------------
 -- Helpers
@@ -340,6 +415,29 @@ local function RecordLureKill(index)
     print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r beast killed! Cooldown tracked.")
 end
 
+-- Sync kill status from quest flags (authoritative source)
+local function SyncKillsFromQuests()
+    if not charKey then return end
+    EnsureChar(charKey)
+    local charData = MajesticBeastTrackerDB.chars[charKey]
+    local changed = false
+    for i, lure in ipairs(LURES) do
+        if lure.questID then
+            local completed = C_QuestLog.IsQuestFlaggedCompleted(lure.questID)
+            if completed then
+                local existing = charData.lures[lure.name]
+                -- Record kill if: no timestamp yet, OR old timestamp is from before daily reset (lure was "ready")
+                if not existing or existing < GetLastDailyReset() then
+                    charData.lures[lure.name] = GetServerTime()
+                    changed = true
+                end
+            end
+        end
+    end
+    return changed
+end
+ns.SyncKillsFromQuests = SyncKillsFromQuests
+
 -- Detect skinning profession gear using C_TradeSkillUI.GetProfessionSlots
 -- Returns the actual inventory slot IDs for the skinning profession
 local function DetectSkinningGear()
@@ -510,6 +608,12 @@ local function CalculateProfessionStats()
         tip:Hide()
     end
 
+    -- Snapshot stats before buffs (for saving to DB)
+    stats.SkillBase = stats.Skill
+    stats.PerceptionBase = stats.Perception
+    stats.FinesseBase = stats.Finesse
+    stats.DeftnessBase = stats.Deftness
+
     -- Buff stats from active auras (tooltip scanning)
     local STAT_BUFFS = {
         { buffName = "Relaxed" },                        -- Sanguithorn Tea
@@ -554,6 +658,45 @@ local function DetectSkinningAndTalent()
         if gear then
             charData.gear = gear
         end
+        -- Save profession stats (without buffs)
+        local stats = CalculateProfessionStats()
+        if stats then
+            charData.stats = {
+                skill = stats.SkillBase or 0,
+                perception = stats.PerceptionBase or 0,
+                finesse = stats.FinesseBase or 0,
+                deftness = stats.DeftnessBase or 0,
+            }
+        end
+        -- Check weekly KP quests
+        local weeklies = {}
+        for _, w in ipairs(SKINNING_WEEKLIES) do
+            if w.mode == "each" then
+                -- Each quest is independent, count completed
+                local completed = 0
+                for _, qid in ipairs(w.questIDs) do
+                    if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                        completed = completed + 1
+                    end
+                end
+                weeklies[w.key] = completed  -- number: 0-5
+            elseif w.mode == "rotation" then
+                -- Rotates weekly, any = done
+                local done = false
+                for _, qid in ipairs(w.questIDs) do
+                    if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                        done = true
+                        break
+                    end
+                end
+                weeklies[w.key] = done
+            else
+                -- Single quest
+                weeklies[w.key] = C_QuestLog.IsQuestFlaggedCompleted(w.questIDs[1])
+            end
+        end
+        charData.weeklies = weeklies
+        charData.weeklyResetTime = GetServerTime() + C_DateAndTime.GetSecondsUntilWeeklyReset()
     elseif skinning == false then
         -- API confirmed no skinning, safe to clear
         charData.hasSkinning = false
@@ -570,29 +713,54 @@ function ns.CanSeeLure(charData, lureIndex)
 end
 
 ------------------------------------------------------
--- Skinning detection via LOOT_OPENED (Midnight 12.0)
--- When you skin a beast, loot window opens with target = the beast
-------------------------------------------------------
-
-local function GetNpcIDFromGUID(guid)
-    if not guid then return nil end
-    local npcID = select(6, strsplit("-", guid))
-    return tonumber(npcID)
-end
-
-------------------------------------------------------
 -- Event handler
+-- Kill detection: quest flags (QUEST_TURNED_IN + SyncKillsFromQuests)
+-- Weekly tracking: BAG_UPDATE_DELAYED + QUEST_TURNED_IN
 ------------------------------------------------------
 
-f:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_LOGIN" then
+f:SetScript("OnEvent", function(_, event, ...)
+    if event == "QUEST_TURNED_IN" then
+        local questID = ...
+        -- Beast kill quest
+        if questToIndex[questID] then
+            RecordLureKill(questToIndex[questID])
+            if ns.UpdateUI then ns.UpdateUI() end
+        end
+        -- Weekly knowledge quest
+        if weeklyQuestIDs[questID] then
+            C_Timer.After(1, function()
+                RefreshWeeklies()
+                if ns.UpdateUI then ns.UpdateUI() end
+            end)
+        end
+        return
+    elseif event == "BAG_UPDATE_DELAYED" then
+        -- Quest flags already set by the time bag updates resolve
+        SyncKillsFromQuests()
+        RefreshWeeklies()
+        if ns.UpdateUI then ns.UpdateUI() end
+        return
+    elseif event == "LOOT_CLOSED" then
+        -- Check quest flags after loot window closes (catches skinning kills)
+        -- Immediate check + delayed check for flag propagation
+        SyncKillsFromQuests()
+        if ns.UpdateUI then ns.UpdateUI() end
+        C_Timer.After(2, function()
+            if SyncKillsFromQuests() then
+                if ns.UpdateUI then ns.UpdateUI() end
+            end
+        end)
+        return
+    elseif event == "PLAYER_LOGIN" then
         charKey = GetCharKey()
         EnsureChar(charKey)
         local _, class = UnitClass("player")
         MajesticBeastTrackerDB.chars[charKey].class = class
         DetectSkinningAndTalent()
+        SyncKillsFromQuests()
         C_Timer.After(5, function()
             DetectSkinningAndTalent()
+            SyncKillsFromQuests()
             if ns.UpdateUI then ns.UpdateUI() end
         end)
         C_Timer.NewTicker(60, function()
@@ -613,13 +781,6 @@ f:SetScript("OnEvent", function(_, event)
 
         print("|cff3FC7EB[MBT]|r Loaded! |cffffff00/mbt help|r for commands")
 
-    elseif event == "LOOT_OPENED" then
-        local targetGUID = UnitGUID("target")
-        local npcID = GetNpcIDFromGUID(targetGUID)
-        if npcID and npcToIndex[npcID] then
-            RecordLureKill(npcToIndex[npcID])
-            if ns.UpdateUI then ns.UpdateUI() end
-        end
     end
 end)
 

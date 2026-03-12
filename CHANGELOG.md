@@ -1,5 +1,68 @@
 # Majestic Beast Tracker
 
+## [v1.3.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.3.0) (2026-03-12)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.2.0...v1.3.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Major feature update: reagent tracking, weekly knowledge quests, quest-based kill detection, and UI overhaul
+
+### Kill Detection Overhaul
+- Kill detection completely rewritten using hidden quest flags per beast
+- Each beast has a daily quest ID that Blizzard flags on kill - 100% reliable
+- Real-time tracking via QUEST_TURNED_IN event
+- Quest flags sync on login, catching kills from other sessions or addons
+- Removed old LOOT_OPENED + target GUID system which could miss kills when target changed
+- Ready status shown with proper green checkmark icon instead of UTF-8 character
+
+### Reagent Icons
+- Reagent icons displayed above each lure column header
+- Shows have/need count (e.g., 4/48) when materials are missing
+- "Ready" centered across the column when all reagents are sufficient
+- "Done" when all characters have already killed that beast
+- Only counts characters that still need the lure (excludes already-killed)
+- Includes Warbank/Account Bank in item counts
+- Shift-click any reagent icon to link item to chat
+- Tooltip shows per-lure cost, total need, and missing count
+- Fish toggle button next to close button to quickly show/hide reagent icons
+- New "Show Reagent Icons" setting
+- New "Reagent Count: All Characters" setting to toggle between total need vs single lure need
+
+### Weekly Knowledge Quest Tracking
+- Tracks Midnight Skinning weekly knowledge quests per character:
+  - Trainer Quest (3 KP, weekly rotation)
+  - Skinning Drop / Fine Void-Tempered Hide (5 KP, each tracked individually)
+  - Bonus Drop / Mana-Infused Bone (3 KP)
+  - Treatise (1 KP, only triggers when consumed, not when in bags)
+  - Darkmoon Faire (3 KP, only shown during DMF week)
+- Gear popup shows full weekly status for each character
+- Main tracker shows only incomplete quests below stats (disappears when all done)
+- Real-time updates via BAG_UPDATE_DELAYED and QUEST_TURNED_IN
+- Resets automatically on weekly server reset
+- New "Show Weekly Knowledge" setting (controls main window only)
+
+### Zone Labels
+- Zone names shown below lure icons (Eversong, Zul'Aman, Harandar, Voidstorm, Grand Beast)
+- Color-coded to match each lure's theme color
+
+### Lure Column Borders
+- Each lure column has a colored border box matching the lure's theme color
+- Visual separation between lure columns for better readability
+
+### Profession Stats in Gear Popup
+- Gear popup shows per-character stats: Skill, Perception, Finesse, Deftness
+- Stats saved to DB per character (base + talents + gear, excluding buffs)
+- Updates on login, talent changes, skill changes, and gear swaps
+- Item names colored by rarity (green/blue/purple)
+
+### Non-Skinner Auto-Hide
+- Tracker no longer opens automatically on characters without Skinning
+- Minimap icon always available, frame can still be opened manually
+- New "Hide on Non-Skinners" setting
+
+### Layout Improvements
+- Column width increased for better reagent count readability
+- Two-reagent lures: count texts spread outward for clear separation
+- 8px gap between reagent icons on multi-reagent lures
+
 ## [v1.2.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.2.0) (2026-03-10)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.1.1...v1.2.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

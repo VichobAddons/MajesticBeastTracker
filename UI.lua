@@ -8,11 +8,16 @@ local LURES = ns.LURES
 
 -- Layout
 local ICON_SIZE = 26
-local COL_WIDTH = 40
-local NAME_COL_WIDTH = 120
+local COL_WIDTH = 62
+local NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
 local TITLE_HEIGHT = 22
-local ICON_ROW_HEIGHT = ICON_SIZE + 6
+local ZONE_LABEL_HEIGHT = 10
+local ICON_ROW_HEIGHT = ICON_SIZE + 6 + ZONE_LABEL_HEIGHT
+local REAGENT_ICON_SIZE = 20
+local REAGENT_COUNT_HEIGHT = 10
+local REAGENT_GAP = 8
+local REAGENT_ROW_HEIGHT = REAGENT_ICON_SIZE + REAGENT_COUNT_HEIGHT + 4
 local PAD = 8
 
 -- Consumables to track (test with Holiday Cheesewheel)
@@ -158,6 +163,29 @@ lockIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
 lockIcon:SetVertexColor(0.6, 0.6, 0.6)
 lockIcon:Hide()
 
+-- Toggle fish button (show/hide reagent icons)
+local fishBtn = CreateFrame("Button", nil, frame)
+fishBtn:SetSize(14, 14)
+fishBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+local fishIcon = fishBtn:CreateTexture(nil, "ARTWORK")
+fishIcon:SetAllPoints()
+fishIcon:SetTexture("Interface\\Icons\\INV_Misc_Fish_02")
+fishIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+fishBtn.icon = fishIcon
+fishBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    local shown = MajesticBeastTrackerDB.settings.showReagents ~= false
+    GameTooltip:AddLine(shown and "Hide Reagents" or "Show Reagents", 1, 1, 1)
+    GameTooltip:Show()
+end)
+fishBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+fishBtn:SetScript("OnClick", function()
+    local settings = MajesticBeastTrackerDB.settings
+    if settings.showReagents == nil then settings.showReagents = true end
+    settings.showReagents = not settings.showReagents
+    ns.UpdateUI()
+end)
+
 ------------------------------------------------------
 -- Content area
 ------------------------------------------------------
@@ -171,7 +199,7 @@ for i, lure in ipairs(LURES) do
     iconFrame:SetSize(ICON_SIZE, ICON_SIZE)
     iconFrame:SetPoint("TOPLEFT", frame, "TOPLEFT",
         PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
-        contentTop - 2)
+        contentTop - 2 - REAGENT_ROW_HEIGHT)
     iconFrame:SetAttribute("type", "item")
     iconFrame:SetAttribute("item", lure.name)
     iconFrame:RegisterForClicks("AnyUp", "AnyDown")
@@ -288,6 +316,99 @@ for i, lure in ipairs(LURES) do
     headerIcons[i] = iconFrame
 end
 
+-- Zone labels below lure icons (parented to headerIcons so they render above lure boxes)
+local zoneLabels = {}
+for i, lure in ipairs(LURES) do
+    local zLabel = headerIcons[i]:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    zLabel:SetFont(zLabel:GetFont(), 7)
+    local r, g, b = unpack(lure.colorRGB)
+    zLabel:SetTextColor(r, g, b, 0.8)
+    zLabel:SetText(lure.name)
+    zLabel:SetJustifyH("CENTER")
+    zLabel:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
+    zoneLabels[i] = zLabel
+end
+
+------------------------------------------------------
+-- Reagent icons (small icons above each lure header)
+------------------------------------------------------
+
+local reagentIcons = {}  -- reagentIcons[lureIndex] = { icon1, icon2, ... }
+for i, lure in ipairs(LURES) do
+    reagentIcons[i] = {}
+    if lure.reagents then
+        local numReagents = #lure.reagents
+        for j, reagent in ipairs(lure.reagents) do
+            local rBtn = CreateFrame("Button", "MBT_ReagentIcon" .. i .. "_" .. j, frame)
+            rBtn:SetSize(REAGENT_ICON_SIZE, REAGENT_ICON_SIZE)
+            -- Center reagent(s) above the lure icon
+            -- For 1 reagent: centered above lure icon
+            -- For 2 reagents: side by side, centered above lure icon
+            local lureCenter = PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + COL_WIDTH / 2
+            local totalWidth = numReagents * REAGENT_ICON_SIZE + (numReagents - 1) * REAGENT_GAP
+            local reagentX = lureCenter - totalWidth / 2 + (j - 1) * (REAGENT_ICON_SIZE + REAGENT_GAP)
+            rBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", reagentX, contentTop - 2 - 1)
+
+            local rIcon = rBtn:CreateTexture(nil, "ARTWORK")
+            rIcon:SetAllPoints()
+            rIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            rBtn.icon = rIcon
+
+            -- Count text centered below icon
+            local rCount = rBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            rCount:SetFont(rCount:GetFont(), 8)
+            rCount:SetPoint("TOP", rBtn, "BOTTOM", 0, -1)
+            rCount:SetJustifyH("CENTER")
+            rBtn.countText = rCount
+
+            -- Pre-load item data
+            C_Item.RequestLoadItemDataByID(reagent.itemID)
+
+            -- OnLeave (static, OnEnter set dynamically in UpdateUI)
+            rBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            -- Shift-click: link item to chat (useful for AH search)
+            rBtn:SetScript("OnClick", function(self, button)
+                if IsShiftKeyDown() then
+                    local _, link = C_Item.GetItemInfo(reagent.itemID)
+                    if link then
+                        ChatEdit_InsertLink(link)
+                    end
+                end
+            end)
+            rBtn:RegisterForClicks("LeftButtonUp")
+
+            reagentIcons[i][j] = rBtn
+        end
+    end
+end
+
+-- Lure column border boxes (wraps reagent icons + lure icon)
+local LURE_BOX_BACKDROP = {
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+local lureBoxes = {}
+for i = 1, #LURES do
+    local box = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    box:SetBackdrop(LURE_BOX_BACKDROP)
+    box:SetBackdropColor(0, 0, 0, 0.7)
+    local r, g, b = unpack(LURES[i].colorRGB)
+    box:SetBackdropBorderColor(r, g, b, 0.6)
+    box:SetFrameLevel(frame:GetFrameLevel() + 1)
+    -- Make sure icons render on top of the box
+    headerIcons[i]:SetFrameLevel(box:GetFrameLevel() + 2)
+    if reagentIcons[i] then
+        for _, rBtn in ipairs(reagentIcons[i]) do
+            rBtn:SetFrameLevel(box:GetFrameLevel() + 2)
+        end
+    end
+    box:Hide()  -- shown dynamically in UpdateUI
+    lureBoxes[i] = box
+end
+
 -- Consumable box (floating panel anchored to frame, same row as lure icons)
 local CONS_ICON_SIZE = 20
 local CONS_SPACING = 4
@@ -297,7 +418,7 @@ local CONS_BOX_HEIGHT = ICON_SIZE + 12
 
 local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
-consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 + 4)
+consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - REAGENT_ROW_HEIGHT + 4)
 consumableBox:SetBackdrop(BACKDROP)
 consumableBox:SetBackdropColor(0, 0, 0, 0.9)
 consumableBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
@@ -431,7 +552,7 @@ end
 -- Separator under icons
 local iconSep = frame:CreateTexture(nil, "ARTWORK")
 iconSep:SetHeight(1)
-iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - ICON_ROW_HEIGHT - 2)
+iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - REAGENT_ROW_HEIGHT - ICON_ROW_HEIGHT - 2)
 iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
 iconSep:SetColorTexture(unpack(C_SEPARATOR))
 
@@ -523,6 +644,16 @@ for i, stat in ipairs(STAT_LABELS) do
     statsTexts[i] = label
 end
 
+-- Weekly knowledge lines for main window (right-aligned, below stats)
+local weeklyMainLines = {}
+for i = 1, #ns.SKINNING_WEEKLIES do
+    local line = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    line:SetFont(line:GetFont(), 9)
+    line:SetJustifyH("RIGHT")
+    line:Hide()
+    weeklyMainLines[i] = line
+end
+
 -- Helper: check if player has Engineering as second profession
 local function HasEngineering()
     local prof1, prof2 = GetProfessions()
@@ -542,7 +673,7 @@ end
 ------------------------------------------------------
 
 local charRows = {}
-local dataTop = contentTop - ICON_ROW_HEIGHT - 5
+local dataTop = contentTop - REAGENT_ROW_HEIGHT - ICON_ROW_HEIGHT - 5
 
 local function GetStatusText(charData, lureName)
     if not charData then return "?", 0.4, 0.4, 0.4 end
@@ -550,7 +681,7 @@ local function GetStatusText(charData, lureName)
     if not timestamp then
         return "-", 0.4, 0.4, 0.4
     elseif ns.IsLureReady(timestamp) then
-        return "\226\156\147", 0.2, 0.9, 0.4
+        return "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t", 0.2, 0.9, 0.4
     else
         local timeLeft = ns.GetLureTimeRemaining(timestamp)
         local h = math.floor(timeLeft / 3600)
@@ -615,6 +746,97 @@ for slot = 1, 3 do
     gearPopupRows[slot] = row
 end
 
+-- Stat lines in gear popup
+local POPUP_STAT_LABELS = {
+    { key = "skill",      label = "Skill",      color = "ffFFD100" },
+    { key = "perception", label = "Perception",  color = "ff1EFF00" },
+    { key = "finesse",    label = "Finesse",     color = "ff0070DD" },
+    { key = "deftness",   label = "Deftness",    color = "ffA335EE" },
+}
+
+local gearPopupStatHeader = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gearPopupStatHeader:SetFont(gearPopupStatHeader:GetFont(), 9)
+gearPopupStatHeader:SetTextColor(0.6, 0.6, 0.6)
+gearPopupStatHeader:SetText("Base Stats against Majestic Beasts")
+
+local gearPopupStatLines = {}
+for i, info in ipairs(POPUP_STAT_LABELS) do
+    local line = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    line:SetFont(line:GetFont(), 9)
+    line:SetJustifyH("LEFT")
+    gearPopupStatLines[i] = line
+end
+
+-- Weekly KP header + lines
+local gearPopupWeeklyHeader = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gearPopupWeeklyHeader:SetFont(gearPopupWeeklyHeader:GetFont(), 9)
+gearPopupWeeklyHeader:SetTextColor(0.6, 0.6, 0.6)
+gearPopupWeeklyHeader:SetText("Weekly Knowledge")
+
+local WEEKLIES = ns.SKINNING_WEEKLIES
+local gearPopupWeeklyLines = {}
+for i = 1, #WEEKLIES do
+    local line = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    line:SetFont(line:GetFont(), 9)
+    line:SetJustifyH("LEFT")
+    gearPopupWeeklyLines[i] = line
+end
+
+-- Helper: layout weekly lines in gear popup, returns total height used
+local function LayoutWeeklyLines(charData, anchorFontString, startY, trackMaxWidth)
+    local weeklyHeight = 0
+    local hasWeeklies = charData and charData.weeklies
+    local weeklyExpired = charData and charData.weeklyResetTime and GetServerTime() > charData.weeklyResetTime
+    local dmfUp = ns.IsDarkmoonFaireUp and ns.IsDarkmoonFaireUp()
+
+    if hasWeeklies and not weeklyExpired then
+        gearPopupWeeklyHeader:ClearAllPoints()
+        gearPopupWeeklyHeader:SetPoint("TOPLEFT", anchorFontString, "BOTTOMLEFT", 2, startY)
+        gearPopupWeeklyHeader:Show()
+        local row = 0
+        for i, w in ipairs(WEEKLIES) do
+            local line = gearPopupWeeklyLines[i]
+            if w.dmf and not dmfUp then
+                line:Hide()
+            else
+                local val = charData.weeklies[w.key]
+                local status
+                if w.mode == "each" then
+                    local total = #w.questIDs
+                    local count = val or 0
+                    local totalKP = total * w.kp
+                    if count >= total then
+                        status = "|cff00ff00" .. count .. "/" .. total .. "|r"
+                    elseif count > 0 then
+                        status = "|cffffff00" .. count .. "/" .. total .. "|r"
+                    else
+                        status = "|cffff4444" .. count .. "/" .. total .. "|r"
+                    end
+                    line:SetText(w.label .. " |cff888888(" .. totalKP .. " KP)|r " .. status)
+                else
+                    local done = val
+                    local icon = done and "|cff00ff00done|r" or "|cffff4444todo|r"
+                    line:SetText(w.label .. " |cff888888(" .. w.kp .. " KP)|r " .. icon)
+                end
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", anchorFontString, "BOTTOMLEFT", 2, startY - 10 - row * 12)
+                line:Show()
+                if trackMaxWidth then
+                    trackMaxWidth[1] = math.max(trackMaxWidth[1], line:GetStringWidth())
+                end
+                row = row + 1
+            end
+        end
+        weeklyHeight = 6 + 10 + row * 12 + 2
+    else
+        gearPopupWeeklyHeader:Hide()
+        for i = 1, #WEEKLIES do
+            gearPopupWeeklyLines[i]:Hide()
+        end
+    end
+    return weeklyHeight
+end
+
 -- Auto-hide when clicking elsewhere
 gearPopup:SetScript("OnUpdate", function(self)
     if self:IsShown() and not self:IsMouseOver() and not frame:IsMouseOver() and IsMouseButtonDown("LeftButton") then
@@ -626,7 +848,7 @@ local function ShowGearPopup(anchor, charKey)
     ns.EnsureDB()
     local charData = MajesticBeastTrackerDB.chars[charKey]
     if not charData or not charData.gear or #charData.gear == 0 then
-        -- No gear data — show empty message
+        -- No gear data — show empty message + stats if available
         gearPopupTitle:SetText(charKey)
         for _, row in ipairs(gearPopupRows) do
             row:Hide()
@@ -637,7 +859,36 @@ local function ShowGearPopup(anchor, charKey)
         noGear:SetText("|cff666666No gear data (login required)|r")
         noGear:SetFont(noGear:GetFont(), 9)
         gearPopup.noGear = noGear
-        gearPopup:SetSize(180, GEAR_PAD * 2 + 14 + 16)
+
+        -- Still show stats if we have them
+        local statsHeight = 0
+        local hasStats = charData and charData.stats and (charData.stats.skill or 0) > 0
+        if hasStats then
+            local headerY = -(4 + 14 + 6)
+            gearPopupStatHeader:ClearAllPoints()
+            gearPopupStatHeader:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY)
+            gearPopupStatHeader:Show()
+            for i, info in ipairs(POPUP_STAT_LABELS) do
+                local line = gearPopupStatLines[i]
+                local val = charData.stats[info.key] or 0
+                line:SetText("|c" .. info.color .. info.label .. ":|r " .. val)
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY - 10 - (i - 1) * 12)
+                line:Show()
+            end
+            statsHeight = 6 + 10 + #POPUP_STAT_LABELS * 12 + 2
+        else
+            gearPopupStatHeader:Hide()
+            for i = 1, #POPUP_STAT_LABELS do
+                gearPopupStatLines[i]:Hide()
+            end
+        end
+
+        -- Weeklies in no-gear view
+        local weeklyY = -(4 + 14 + statsHeight + 6)
+        local weeklyHeight = LayoutWeeklyLines(charData, gearPopupTitle, weeklyY, nil)
+
+        gearPopup:SetSize(180, GEAR_PAD * 2 + 14 + 16 + statsHeight + weeklyHeight)
         gearPopup:ClearAllPoints()
         gearPopup:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -2, 0)
         gearPopup:Show()
@@ -657,11 +908,15 @@ local function ShowGearPopup(anchor, charKey)
             if tex then row.icon:SetTexture(tex) end
             row.itemLink = gear.link
             local displayName = gear.name or ""
-            if gear.slotType == "tool" then
-                displayName = "|cffFFD100" .. displayName .. "|r"
+            -- Color by item rarity from link
+            if gear.link then
+                local _, _, quality = GetItemInfo(gear.link)
+                if quality and ITEM_QUALITY_COLORS[quality] then
+                    displayName = ITEM_QUALITY_COLORS[quality].hex .. displayName .. "|r"
+                end
             end
             row.label:SetText(displayName)
-            row.label:SetWidth(140)
+            row.label:SetWidth(180)
             row:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT",
                 0, -(4 + (slot - 1) * (GEAR_ICON_SIZE + 3)))
             row:Show()
@@ -674,8 +929,41 @@ local function ShowGearPopup(anchor, charKey)
     end
 
     local numGear = #charData.gear
-    local popupW = GEAR_PAD * 2 + GEAR_ICON_SIZE + 8 + math.max(maxLabelWidth, 80)
-    local popupH = GEAR_PAD * 2 + 14 + numGear * (GEAR_ICON_SIZE + 3)
+    local gearHeight = numGear * (GEAR_ICON_SIZE + 3)
+
+    -- Show stats below gear
+    local statsHeight = 0
+    local hasStats = charData.stats and (charData.stats.skill or 0) > 0
+    if hasStats then
+        local headerY = -(4 + gearHeight + 6)
+        gearPopupStatHeader:ClearAllPoints()
+        gearPopupStatHeader:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY)
+        gearPopupStatHeader:Show()
+        for i, info in ipairs(POPUP_STAT_LABELS) do
+            local line = gearPopupStatLines[i]
+            local val = charData.stats[info.key] or 0
+            line:SetText("|c" .. info.color .. info.label .. ":|r " .. val)
+            line:ClearAllPoints()
+            line:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY - 10 - (i - 1) * 12)
+            line:Show()
+            maxLabelWidth = math.max(maxLabelWidth, line:GetStringWidth())
+        end
+        statsHeight = 6 + 10 + #POPUP_STAT_LABELS * 12 + 2
+    else
+        gearPopupStatHeader:Hide()
+        for i = 1, #POPUP_STAT_LABELS do
+            gearPopupStatLines[i]:Hide()
+        end
+    end
+
+    -- Show weeklies below stats
+    local weeklyY = -(4 + gearHeight + statsHeight + 6)
+    local widthTracker = { maxLabelWidth }
+    local weeklyHeight = LayoutWeeklyLines(charData, gearPopupTitle, weeklyY, widthTracker)
+    maxLabelWidth = widthTracker[1]
+
+    local popupW = GEAR_PAD * 2 + GEAR_ICON_SIZE + 8 + math.max(maxLabelWidth, 160)
+    local popupH = GEAR_PAD * 2 + 14 + gearHeight + statsHeight + weeklyHeight
     -- Set row width to cover full popup for hover tooltip
     for _, row in ipairs(gearPopupRows) do
         row:SetWidth(popupW - GEAR_PAD * 2)
@@ -894,6 +1182,173 @@ function ns.UpdateUI()
 
     end
 
+    -- Reagent icons: texture, count, visibility + dynamic layout
+    local showReagents = MajesticBeastTrackerDB.settings.showReagents ~= false
+    local reagentExtra = showReagents and REAGENT_ROW_HEIGHT or 0
+
+    -- Reposition lure icons and separator based on reagent visibility
+    if not InCombatLockdown() then
+        for i = 1, #LURES do
+            headerIcons[i]:ClearAllPoints()
+            headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
+                contentTop - 2 - reagentExtra)
+        end
+        iconSep:ClearAllPoints()
+        iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
+        iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+        consumableBox:ClearAllPoints()
+        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
+    end
+
+    -- Count characters that still need a lure today (eligible - already killed)
+    local charsNeedLure = {}
+    for li = 1, #LURES do
+        charsNeedLure[li] = 0
+        for _, cData in pairs(MajesticBeastTrackerDB.chars) do
+            if ns.CanSeeLure(cData, li) then
+                local ts = cData.lures[LURES[li].name]
+                if not ts or ns.IsLureReady(ts) then
+                    -- No kill or cooldown expired → needs a lure
+                    charsNeedLure[li] = charsNeedLure[li] + 1
+                end
+            end
+        end
+    end
+
+    -- Update fish toggle button
+    fishIcon:SetDesaturated(not showReagents)
+    fishIcon:SetAlpha(showReagents and 1.0 or 0.4)
+    fishBtn:Show()
+
+    for i, lure in ipairs(LURES) do
+        if reagentIcons[i] and showReagents and lure.reagents then
+            local numLeft = charsNeedLure[i]
+            local anyMissing = false
+
+            -- First pass: set textures, desaturation, tooltips, calculate status
+            for j, rBtn in ipairs(reagentIcons[i]) do
+                if lure.reagents[j] then
+                    local reagent = lure.reagents[j]
+                    local tex = C_Item.GetItemIconByID(reagent.itemID)
+                    if tex then rBtn.icon:SetTexture(tex) end
+
+                    local itemName = C_Item.GetItemNameByID(reagent.itemID)
+                    local have = 0
+                    if itemName then
+                        have = C_Item.GetItemCount(itemName, true, false, true, true)
+                    else
+                        have = C_Item.GetItemCount(reagent.itemID, true, false, true, true)
+                    end
+                    local perLure = reagent.count
+                    local reagentAllChars = MajesticBeastTrackerDB.settings.reagentAllChars ~= false
+                    local totalNeed = perLure * (reagentAllChars and numLeft or 1)
+                    local missing = math.max(totalNeed - have, 0)
+
+                    rBtn.icon:SetDesaturated(missing > 0 and numLeft > 0)
+                    if missing > 0 then anyMissing = true end
+
+                    -- Store for count text decision
+                    rBtn._have = have
+                    rBtn._missing = missing
+                    rBtn._totalNeed = totalNeed
+
+                    -- Tooltip always per-reagent
+                    rBtn:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+                        GameTooltip:SetItemByID(reagent.itemID)
+                        GameTooltip:AddLine(" ")
+                        GameTooltip:AddLine(string.format("Per lure: %d  |  Remaining: %d",
+                            perLure, numLeft), 0.8, 0.8, 0.8)
+                        if numLeft > 0 then
+                            GameTooltip:AddLine(string.format("Need: %d  |  Have: %d",
+                                totalNeed, have), 1, 1, 1)
+                            if missing > 0 then
+                                GameTooltip:AddLine("Missing: " .. missing, 0.9, 0.3, 0.3)
+                            else
+                                GameTooltip:AddLine("Ready to go!", 0.2, 0.9, 0.4)
+                            end
+                        else
+                            GameTooltip:AddLine("All characters done!", 0.2, 0.9, 0.4)
+                        end
+                        GameTooltip:AddLine(" ")
+                        GameTooltip:AddLine("Shift-click: Link to chat", 0.5, 0.8, 1)
+                        GameTooltip:Show()
+                    end)
+
+                    rBtn:Show()
+                else
+                    rBtn:Hide()
+                end
+            end
+
+            -- Second pass: count text — single status or per-icon counts
+            local singleLabel = numLeft == 0 and "|cff00ff00Done|r" or (not anyMissing and "|cff00ff00Ready|r" or nil)
+            for j, rBtn in ipairs(reagentIcons[i]) do
+                if rBtn.countText and lure.reagents[j] then
+                    if singleLabel then
+                        if j == 1 then
+                            rBtn.countText:SetText(singleLabel)
+                            -- Center across the full column width
+                            rBtn.countText:ClearAllPoints()
+                            local numR = #lure.reagents
+                            local totalW = numR * REAGENT_ICON_SIZE + (numR - 1) * REAGENT_GAP
+                            local offsetX = totalW / 2 - REAGENT_ICON_SIZE / 2
+                            rBtn.countText:SetPoint("TOP", rBtn, "BOTTOM", offsetX, -1)
+                            rBtn.countText:Show()
+                        else
+                            rBtn.countText:SetText("")
+                        end
+                    else
+                        -- Some missing: show have/total
+                        rBtn.countText:ClearAllPoints()
+                        local numR = #lure.reagents
+                        if numR > 1 and j == 1 then
+                            rBtn.countText:SetPoint("TOPLEFT", rBtn, "BOTTOMLEFT", -2, -1)
+                            rBtn.countText:SetJustifyH("LEFT")
+                        elseif numR > 1 and j == numR then
+                            rBtn.countText:SetPoint("TOPRIGHT", rBtn, "BOTTOMRIGHT", 2, -1)
+                            rBtn.countText:SetJustifyH("RIGHT")
+                        else
+                            rBtn.countText:SetPoint("TOP", rBtn, "BOTTOM", 0, -1)
+                            rBtn.countText:SetJustifyH("CENTER")
+                        end
+                        local have = rBtn._have or 0
+                        local total = rBtn._totalNeed or 0
+                        if rBtn._missing > 0 then
+                            rBtn.countText:SetText("|cffff3333" .. have .. "/" .. total .. "|r")
+                        else
+                            rBtn.countText:SetText("|cff00ff00" .. have .. "|r")
+                        end
+                        rBtn.countText:Show()
+                    end
+                end
+            end
+        elseif reagentIcons[i] then
+            for _, rBtn in ipairs(reagentIcons[i]) do
+                rBtn:Hide()
+            end
+        end
+    end
+
+    -- Update lure column boxes
+    for i, lure in ipairs(LURES) do
+        local box = lureBoxes[i]
+        if showReagents and lure.reagents and #lure.reagents > 0 then
+            -- Position border box around reagent icons + lure icon
+            local boxPad = 3
+            local colX = PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH
+            local boxTop = contentTop - 2 + boxPad
+            local boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
+            box:ClearAllPoints()
+            box:SetPoint("TOPLEFT", frame, "TOPLEFT", colX - boxPad, boxTop)
+            box:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", colX + COL_WIDTH + boxPad, boxBottom)
+            box:Show()
+        else
+            box:Hide()
+        end
+    end
+
     -- Gather eligible characters
     local keys = {}
     for key, charData in pairs(MajesticBeastTrackerDB.chars) do
@@ -909,11 +1364,29 @@ function ns.UpdateUI()
 
     HideAllRows()
 
+    local dynDataTop = contentTop - reagentExtra - ICON_ROW_HEIGHT - 5
+
     for idx, key in ipairs(keys) do
         if not charRows[idx] then
             charRows[idx] = CreateCharRow(idx)
         end
         local row = charRows[idx]
+        -- Reposition row elements based on dynamic reagent visibility
+        local yOff = dynDataTop - (idx - 1) * ROW_HEIGHT
+        row.name:ClearAllPoints()
+        row.name:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
+        if row.bg then
+            row.bg:ClearAllPoints()
+            row.bg:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, yOff)
+            row.bg:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
+        end
+        for ci = 1, #LURES do
+            if row.cells and row.cells[ci] then
+                row.cells[ci]:ClearAllPoints()
+                row.cells[ci]:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                    PAD + 4 + NAME_COL_WIDTH + (ci - 1) * COL_WIDTH, yOff)
+            end
+        end
         local charData = MajesticBeastTrackerDB.chars[key]
         local classColor = ns.GetClassColor(charData.class)
         local name = key
@@ -1041,13 +1514,13 @@ function ns.UpdateUI()
     local n = math.max(#keys, 1)
     local hasTravelRow = #activeTravelBtns > 0
     local travelExtra = hasTravelRow and TRAVEL_ROW_HEIGHT or 0
-    local h = TITLE_HEIGHT + 2 + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + travelExtra + PAD + 4
+    local h = TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + travelExtra + PAD + 4
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + #LURES * COL_WIDTH
     frame:SetSize(w, h)
 
     -- Position travel buttons at bottom
     if not InCombatLockdown() then
-        local travelY = -(TITLE_HEIGHT + 2 + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
+        local travelY = -(TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
         if hasTravelRow then
             travelSep:ClearAllPoints()
             travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, travelY)
@@ -1084,9 +1557,9 @@ function ns.UpdateUI()
         -- Position stats on the right side of bottom row
         local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
         local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
+        local statsY = travelY - 3 - TRAVEL_ICON_SIZE / 2
         if hasAnyStats then
             local statsX = w - PAD - 4
-            local statsY = travelY - 3 - TRAVEL_ICON_SIZE / 2
             for i = #STAT_LABELS, 1, -1 do
                 local val = profStats[STAT_LABELS[i].key] or 0
                 if val > 0 then
@@ -1102,6 +1575,60 @@ function ns.UpdateUI()
         else
             for i = 1, #STAT_LABELS do
                 statsTexts[i]:Hide()
+            end
+        end
+
+        -- Weekly knowledge lines (main window, right-aligned, below stats)
+        local showKnowledge = MajesticBeastTrackerDB.settings.showKnowledge ~= false
+        local curCharData = MajesticBeastTrackerDB.chars[currentChar]
+        local hasWeeklyData = showKnowledge and curCharData and curCharData.weeklies
+        local weeklyExpired = curCharData and curCharData.weeklyResetTime and GetServerTime() > curCharData.weeklyResetTime
+        local dmfUp = ns.IsDarkmoonFaireUp and ns.IsDarkmoonFaireUp()
+
+        if hasWeeklyData and not weeklyExpired then
+            local visible = {}
+            for i, wk in ipairs(WEEKLIES) do
+                if wk.dmf and not dmfUp then
+                    weeklyMainLines[i]:Hide()
+                else
+                    local val = curCharData.weeklies[wk.key]
+                    local isDone = false
+                    if wk.mode == "each" then
+                        isDone = (val or 0) >= #wk.questIDs
+                    else
+                        isDone = val and true or false
+                    end
+                    if isDone then
+                        weeklyMainLines[i]:Hide()
+                    else
+                        local status
+                        if wk.mode == "each" then
+                            local count = val or 0
+                            status = wk.label .. " |cff888888(" .. (#wk.questIDs * wk.kp) .. " KP)|r |cffffff00" .. count .. "/" .. #wk.questIDs .. "|r"
+                        else
+                            status = wk.label .. " |cff888888(" .. wk.kp .. " KP)|r |cffff4444todo|r"
+                        end
+                        visible[#visible + 1] = { idx = i, text = status }
+                    end
+                end
+            end
+            -- Position below stats, right-aligned
+            local lineSpacing = 11
+            local weeklyStartY = statsY - 10
+            for r, entry in ipairs(visible) do
+                local line = weeklyMainLines[entry.idx]
+                line:SetText(entry.text)
+                line:ClearAllPoints()
+                line:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, weeklyStartY - (r - 1) * lineSpacing)
+                line:Show()
+            end
+            -- Grow frame to fit weekly lines
+            if #visible > 0 then
+                frame:SetHeight(h + #visible * lineSpacing + 6)
+            end
+        else
+            for i = 1, #WEEKLIES do
+                weeklyMainLines[i]:Hide()
             end
         end
     end
@@ -1214,7 +1741,26 @@ init:SetScript("OnEvent", function()
     if MajesticBeastTrackerDB.settings.showFrame == false then
         frame:Hide()
     else
-        frame:Show()
+        -- Delay show to check if current char has skinning
+        C_Timer.After(1, function()
+            ns.EnsureDB()
+            local hideNonSkinner = MajesticBeastTrackerDB.settings.hideNonSkinner
+            if hideNonSkinner == nil then hideNonSkinner = true end -- default on
+            local key = ns.GetCharKey and ns.GetCharKey()
+            local charData = key and MajesticBeastTrackerDB.chars[key]
+            local isSkinner = charData and charData.hasSkinning
+            if isSkinner then
+                frame:Show()
+            elseif hideNonSkinner then
+                -- Non-skinner + hide enabled → always hide on login
+                frame:Hide()
+            else
+                frame:Show()
+            end
+            UpdateLockVisual()
+            ns.UpdateUI()
+        end)
+        return
     end
     UpdateLockVisual()
     C_Timer.After(1, ns.UpdateUI)
@@ -1260,7 +1806,7 @@ local function InitMinimapIcon()
     local LDB = LibStub("LibDataBroker-1.1")
     local icon = LibStub("LibDBIcon-1.0")
 
-    local lureIcon = "Interface\\AddOns\\MajesticBeastTracker\\icon"
+    local lureIcon = "Interface\\AddOns\\" .. addonName .. "\\icon"
 
     local dataObj = LDB:NewDataObject("MajesticBeastTracker", {
         type = "data source",
@@ -1361,6 +1907,11 @@ local function InitSettings()
     local text = layout:AddInitializer(Settings.CreateElementInitializer("LureTracker_SettingsText", data))
     function text:GetExtent() return 14 end
 
+    -- Support button
+    layout:AddInitializer(CreateSettingsButtonInitializer("Support", "Buy Me a Coffee", function()
+        StaticPopup_Show("MBT_URL", nil, nil, "https://buymeacoffee.com/vichob")
+    end, "Developing this addon takes a significant amount of time and effort.\nPlease consider financially supporting the developer.", true))
+
     -- GitHub button
     layout:AddInitializer(CreateSettingsButtonInitializer("Feedback & Help", "GitHub", function()
         StaticPopup_Show("MBT_URL", nil, nil, "https://github.com/VichobAddons/MajesticBeastTracker")
@@ -1426,6 +1977,35 @@ local function InitSettings()
     local s2 = Settings.RegisterAddOnSetting(category, "MBT_chatNotify", "chatNotify",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Chat Notifications", true)
     Settings.CreateCheckbox(category, s2, "Show [MBT] messages in chat (waypoints, mark/clear, buff warnings).")
+
+    -- Hide on Non-Skinners
+    local s2a = Settings.RegisterAddOnSetting(category, "MBT_hideNonSkinner", "hideNonSkinner",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide on Non-Skinners", true)
+    Settings.CreateCheckbox(category, s2a, "Don't show the tracker automatically on characters without Skinning.")
+
+    -- Show Reagent Icons
+    local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
+    Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
+    s2c:SetValueChangedCallback(function()
+        ns.UpdateUI()
+    end)
+
+    -- Reagent Count: All Characters
+    local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Reagent Count: All Characters", true)
+    Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
+    s2e:SetValueChangedCallback(function()
+        ns.UpdateUI()
+    end)
+
+    -- Show Knowledge (main window only)
+    local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
+    Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
+    s2d:SetValueChangedCallback(function()
+        ns.UpdateUI()
+    end)
 
     -- Hide in Combat
     local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
