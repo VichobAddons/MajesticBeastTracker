@@ -1,5 +1,117 @@
 # Majestic Beast Tracker
 
+## [v1.4.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.4.0) (2026-03-14)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.3.0...v1.4.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Major feature update with 1500+ lines of new code: loot tracking, TSM price integration, warband bank deposit, loot editor, craftable count, consumable overhaul, UI redesign, and numerous bugfixes
+
+### Loot Tracking (NEW)
+- Automatic loot tracking from Majestic Beast kills using pre-combat bag snapshots
+- Tracks all skinning reagents per character with daily reset and all-time totals
+- Pre-combat bag snapshot (`PLAYER_REGEN_DISABLED`) captures bag state before loot arrives
+- Kill detection via `SyncKillsFromQuests` triggers loot diff with 5-second finalization window
+- Per-character goblin icons — click to open loot editor, hover for loot summary tooltip
+- Global loot summary goblin icon shows combined loot across all characters
+- Loot data persists in SavedVariables with automatic daily reset
+
+### TSM Price Integration (NEW)
+- Loot values calculated using TSM `DBMinBuyout` prices snapshotted at loot time
+- Prices stored per-item in SavedVariables — shows what you earned when you looted, not current market price
+- Falls back to current TSM price for items without saved prices
+- Toggle TSM integration via coin icon button or settings
+- "Total needed" gold display shows reagent cost for remaining lure crafts
+- `FormatGold` / `FormatGoldPositive` helpers for consistent gold formatting
+
+### Loot Editor (NEW)
+- Click goblin icon to open per-character loot editor panel
+- Shows all tracked reagents with quality tier atlas icons (`Professions-ChatIcon-Quality-12-TierX`)
+- Click count to type exact values via inline EditBox — Enter to confirm, Escape to cancel
+- Plus/minus buttons for quick adjustments
+- Item tooltips on hover (`GameTooltip:SetItemByID`)
+- "Loot sync in progress..." overlay blocks editing during active sync
+- Closes only via X button or when tracker closes (no accidental close on misclick)
+- Item names preloaded asynchronously via `C_Item.RequestLoadItemDataByID` to prevent blank entries on first open
+
+### Warband Bank Deposit (NEW)
+- New "Warband Bank" settings section with four toggles:
+  - "Enable Warband Bank Deposit" — shows deposit button on tracker when bank is open
+  - "Automatically Deposit on Bank Open" — deposits tracked reagents when you open the bank
+  - "Deposit Beast Rewards" — include skinning loot (hides, leather, plating, scales)
+  - "Deposit Lure Reagents" — include fish used to craft lures
+- Primary method: clicks Blizzard's built-in "Deposit All Warband Items" button (no taint)
+- Fallback: pcall-wrapped cursor-based item transfer for individual deposits
+- Finds partial stacks first, then empty slots via `C_Bank.FetchPurchasedBankTabIDs`
+- Deposit button appears on tracker only when Warband Bank is open (`BANKFRAME_OPENED`/`BANKFRAME_CLOSED`)
+
+### Craftable Count (NEW)
+- `GetCraftableCount(recipeID)` calculates how many lures you can craft from current reagents
+- Counts reagents from bags + bank + warband bank via `C_Item.GetItemCount`
+- Displayed in lure header tooltips and reagent icon tooltips
+
+### Consumables (NEW + Enhanced)
+- Added Root Crab (Midnight Perception buff) as third consumable alongside Tea and Phial
+- Root Crab supports stackable buff — shows remaining time + bag count simultaneously (e.g. "30s 83x")
+- Stackable buffs bypass the 20% duration block so you can keep stacking
+- Real-time 1-second ticker updates consumable buff timers live (no more stale times)
+- Time display shows seconds when under 60s (was always rounding up to 1m)
+- Root Crab's Midnight Perception buff included in profession stat calculation
+
+### Header Icon Buttons (NEW)
+- Fish toggle button — show/hide reagent icons above lure headers
+- Coin toggle button — enable/disable TSM price display
+- Global goblin summary button — hover for all-character loot totals
+- Warband deposit button — click to deposit tracked items (visible when bank open)
+- All header buttons with icon textures, tooltips, and hover highlights
+
+### UI Overhaul
+- New branding: "Majestic Beast Tracker" multiline title with version number in the lure icon area
+- Bottom bar redesign: consumable box, travel icons, and profession stats on a single compact row
+- Golden hover border highlights on lure icons, travel buttons, and consumable icons (HIGHLIGHT layer)
+- Zone labels below lure icons enlarged for readability (7pt → 9pt)
+- Travel icon cooldown numbers scaled down (0.7x) for readability on smaller icons
+- Divider line separates character rows from bottom bar
+- Goblin icons stay visible when loot tracking is disabled (greyed out, no interaction)
+- Frame width remains constant when toggling loot tracking on/off
+
+### Midnight Skinning Detection
+- Now requires actual Midnight Skinning specialization, not just base Skinning
+- Uses `C_SpellBook.IsSpellKnown(471014)` for reliable detection
+- Characters with only base Skinning are no longer shown in the tracker
+- Real-time detection via `SKILL_LINES_CHANGED` — learns/unlearns update instantly without reload
+
+### Quest Flag False Positive Fix
+- Players without Talented Tracker had all 5 beast quest flags returning true (Blizzard API quirk)
+- Added sanity check on login: if all 5 flags are true but no kills recorded, flags are ignored
+- Real-time events (`LOOT_CLOSED`, `BAG_UPDATE_DELAYED`) bypass sanity check so actual kills are always recorded
+
+### Skill Stat Calculation Fix
+- Fixed Skill showing 11 instead of 1 for new Midnight Skinning learners
+- `GetSkinningSkillLevel()` now verifies professionName contains "Midnight" before returning skill level
+- Fixed perk counting: perks with unlockRank=0 no longer counted when player has 0 talent points
+
+### Locked Lure Display
+- Lure icons greyed out (desaturated + dimmed) for lures the character can't craft
+- "Locked" label shown when no characters are eligible for a lure column
+- Kill status still visible on locked lures (dimmed colors) so tracking works regardless of talent points
+
+### Consumable Level Requirements
+- Consumables now show level requirement when player is too low level
+- Sanguithorn Tea requires level 80, Haranir Phial of Perception requires level 81, Root Crab requires level 80
+- Icons greyed out with "Lv80"/"Lv81" label for ineligible characters
+
+### Character Management
+- Right-click a character name to open context menu with "Remove character" option
+- Confirmation dialog before removal to prevent accidents
+
+### Gear Popup Improvements
+- Current character shows "No gear equipped" instead of generic message
+- Other characters show "No gear data (login required)" for clarity
+
+### New Slash Commands
+- `/mbt debug stats` — show profession stat breakdown
+- `/mbt debug gear` — show skinning gear detection
+- `/mbt debug calc` — show stat calculation details
+
 ## [v1.3.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.3.0) (2026-03-12)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.2.0...v1.3.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

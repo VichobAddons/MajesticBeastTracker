@@ -18,25 +18,52 @@ If you have multiple skinners, it's impossible to remember which character has u
 
 ## Features
 
-- **Multi-character tracking** - See all your skinners' cooldowns in one grid
-- **Quest-based kill detection** - Uses hidden quest flags for 100% reliable kill tracking, syncs across sessions
-- **Click to mark/clear** - Manually mark kills as a fallback
-- **Reagent icons** - See reagent needs per lure with have/need counts, includes Warbank items
-- **Weekly knowledge tracking** - Track Midnight Skinning weekly KP quests (Trainer, Drops, Treatise, DMF) per character
-- **Lure shortcuts** - Click to use lure, Shift-click to open recipe/craft, Right-click to set waypoint
-- **Craftable count** - Shows how many lures you can craft, including materials in Warbound bank
-- **Consumable tracking** - Track Sanguithorn Tea and Haranir Phial of Perception with buff timers and bag count
-- **Travel buttons** - Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
-- **Gear popup** - Click a character's name to see their equipped skinning tools, accessories, profession stats, and weekly quest status
-- **Zone labels** - Color-coded zone names below each lure column
-- **Lure column borders** - Colored border boxes for visual separation between lure columns
-- **Map waypoints** - Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
-- **Minimap button** - Left-click toggles window, right-click opens settings
-- **Non-skinner auto-hide** - Tracker stays hidden on characters without Skinning
-- **Hide in combat** - Optionally hide the tracker during combat
-- **Settings panel** - Full Interface > AddOns settings page with chat notifications, combat hide, scale, and more
-- **Profession stats** - Per-character Skill, Perception, Finesse, and Deftness in gear popup (base + talents + gear)
-- **Profession talent detection** - Automatically reads your Talented Tracker points to show only available lures
+### Cooldown Tracking
+- **Multi-character tracking** — See all your skinners' cooldowns in one grid
+- **Quest-based kill detection** — Uses hidden quest flags for 100% reliable kill tracking, syncs across sessions
+- **Click to mark/clear** — Manually mark kills as a fallback
+- **Locked lure display** — Lures greyed out for characters without enough talent points
+
+### Loot Tracking & Economy
+- **Automatic loot tracking** — Tracks skinning reagents from beast kills per character (daily + all-time)
+- **Loot editor** — Click goblin icon to view/edit loot counts with quality tier icons, manual input via EditBox
+- **TSM price integration** — Loot values snapshotted at loot time using TradeSkillMaster prices
+- **Total reagent cost** — Shows how much gold you need to craft remaining lures
+
+### Warband Bank Deposit
+- **Auto-deposit on bank open** — Automatically deposits tracked reagents when you open the Warband Bank
+- **Manual deposit button** — Click to deposit all tracked skinning loot and/or lure reagents (fish)
+- **Configurable** — Separate toggles for beast rewards and lure reagents
+
+### Reagents & Crafting
+- **Reagent icons** — See reagent needs per lure with have/need counts, includes Warbank items
+- **Craftable count** — Shows how many lures you can craft from all sources (bags + bank + warband bank)
+- **Weekly knowledge tracking** — Track Midnight Skinning weekly KP quests (Trainer, Drops, Treatise, DMF) per character
+
+### Consumables
+- **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, and Root Crab with live buff timers
+- **Stackable buff support** — Root Crab shows remaining time + bag count, can keep clicking to stack
+- **Real-time timers** — Buff countdowns update every second
+
+### Travel & Shortcuts
+- **Travel buttons** — Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
+- **Lure shortcuts** — Click to use lure, Shift-click to open recipe/craft, Right-click to set waypoint
+- **Map waypoints** — Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
+
+### Profession Info
+- **Gear popup** — Click a character's name to see their equipped skinning tools, accessories, profession stats, and weekly quest status
+- **Profession stats** — Per-character Skill, Perception, Finesse, and Deftness (base + talents + gear + buffs)
+- **Profession talent detection** — Automatically reads your Talented Tracker points to show only available lures
+
+### UI & Settings
+- **Compact bottom bar** — Consumables, travel icons, and profession stats in a single row
+- **Golden hover highlights** — Border highlights on lure icons, travel buttons, and consumable icons
+- **Zone labels** — Color-coded zone names below each lure column
+- **Minimap button** — Left-click toggles window, right-click opens settings
+- **Non-skinner auto-hide** — Tracker stays hidden on characters without Midnight Skinning
+- **Hide in combat** — Optionally hide the tracker during combat
+- **Settings panel** — Full Interface > AddOns settings page with Loot Goblin, Warband Bank, and Data Management sections
+- **Character management** — Right-click a character name to remove them
 
 ## Lure Locations
 
@@ -50,17 +77,19 @@ If you have multiple skinners, it's impossible to remember which character has u
 
 ## Slash Commands
 
-| Command                  | Action                        |
-| ------------------------ | ----------------------------- |
-| `/mbt`                   | Show tracker                  |
-| `/mbt hide`              | Hide tracker                  |
-| `/mbt lock`              | Toggle frame lock             |
-| `/mbt settings`          | Open settings                 |
-| `/mbt talent N`          | Override talent points (0-40) |
-| `/mbt remove Name-Realm` | Remove a character            |
-| `/mbt nuke`              | Clear current character data  |
-| `/mbt nuke all`          | Clear ALL data                |
-| `/mbt debug calc`        | Show stats breakdown          |
+| Command                  | Action                           |
+| ------------------------ | -------------------------------- |
+| `/mbt`                   | Show tracker                     |
+| `/mbt hide`              | Hide tracker                     |
+| `/mbt lock`              | Toggle frame lock                |
+| `/mbt settings`          | Open settings                    |
+| `/mbt talent N`          | Override talent points (0-40)    |
+| `/mbt remove Name-Realm` | Remove a character               |
+| `/mbt nuke`              | Clear current character data     |
+| `/mbt nuke all`          | Clear ALL data                   |
+| `/mbt debug stats`       | Show profession stat breakdown   |
+| `/mbt debug gear`        | Show skinning gear detection     |
+| `/mbt debug calc`        | Show stat calculation details    |
 
 Also available as `/beast` and `/lure`.
 

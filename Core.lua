@@ -29,6 +29,36 @@ for i, lure in ipairs(LURES) do
     end
 end
 
+-- Skinning loot items per beast (excluding Torn Material, Fine VT Hide, Manafused Sample)
+local BEAST_LOOT = {
+    ["Eversong"]    = { 238511, 238512, 238518, 238519, 238523, 238525, 238528, 238529 },
+    ["Zul'Aman"]    = { 238513, 238514, 238520, 238521, 238528 },
+    ["Harandar"]    = { 238513, 238514, 238520, 238521, 238530, 238522 },
+    ["Voidstorm"]   = { 238511, 238512, 238518, 238519, 238528, 238529, 238525, 238523 },
+    ["Grand Beast"] = { 238513, 238514, 238520, 238521, 238528, 238529, 238530, 238522 },
+}
+ns.BEAST_LOOT = BEAST_LOOT
+
+-- All tracked loot item IDs (fast set lookup)
+local TRACKED_LOOT = {}
+for _, items in pairs(BEAST_LOOT) do
+    for _, id in ipairs(items) do
+        TRACKED_LOOT[id] = true
+    end
+end
+ns.TRACKED_LOOT = TRACKED_LOOT
+
+-- Lure reagent items (fish used to craft lures)
+local LURE_REAGENTS = {}
+for _, lure in ipairs(LURES) do
+    if lure.reagents then
+        for _, r in ipairs(lure.reagents) do
+            LURE_REAGENTS[r.itemID] = true
+        end
+    end
+end
+ns.LURE_REAGENTS = LURE_REAGENTS
+
 local charKey
 local MIDNIGHT_SKINNING_SKILL_LINE = 2917
 
@@ -101,11 +131,31 @@ end
 -- Debug buffer for Mechanic console integration
 ns.debugBuffer = {}
 
+-- Demo mode: mask character names for screenshots (does NOT touch DB)
+ns.demoMode = false
+local demoNames = { "Skinnyboi", "Hideripper", "Stabsworth", "Beastshot", "Zenleaf", "Bonechill", "Axegrind", "Lightblade", "Felgaze", "Moonhide", "Furstreak", "Peeltank" }
+local demoNameMap = {}
+local DEMO_REALM = "NotReallyARealm"
+ns.GetDemoName = function(realName)
+    if not ns.demoMode then return realName end
+    if not demoNameMap[realName] then
+        local idx = 0
+        for _ in pairs(demoNameMap) do idx = idx + 1 end
+        local fakeName = demoNames[idx + 1] or ("Skinner" .. (idx + 1))
+        demoNameMap[realName] = fakeName .. "-" .. DEMO_REALM
+    end
+    return demoNameMap[realName]
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
 f:RegisterEvent("LOOT_CLOSED")
+f:RegisterEvent("SKILL_LINES_CHANGED")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
+f:RegisterEvent("BANKFRAME_OPENED")
+f:RegisterEvent("BANKFRAME_CLOSED")
 
 ------------------------------------------------------
 -- Helpers
@@ -136,8 +186,11 @@ local function FormatTimeLeft(seconds)
     end
 end
 
+local DEMO_TIME_OFFSET = 8 * 3600  -- 8 hours back in demo mode
+
 local function GetLastDailyReset()
     local secondsUntil = C_DateAndTime.GetSecondsUntilDailyReset()
+    if ns.demoMode then secondsUntil = secondsUntil + DEMO_TIME_OFFSET end
     return GetServerTime() + secondsUntil - 86400
 end
 
@@ -149,7 +202,9 @@ end
 local function GetLureTimeRemaining(timestamp)
     if not timestamp then return 0 end
     if timestamp < GetLastDailyReset() then return 0 end
-    return C_DateAndTime.GetSecondsUntilDailyReset()
+    local secondsUntil = C_DateAndTime.GetSecondsUntilDailyReset()
+    if ns.demoMode then secondsUntil = secondsUntil + DEMO_TIME_OFFSET end
+    return secondsUntil
 end
 
 local function GetLureStatus(timestamp)
@@ -162,31 +217,186 @@ local function GetLureStatus(timestamp)
     end
 end
 
--- Returns: true (has skinning), false (no skinning), nil (API not ready)
+------------------------------------------------------
+-- Loot tracking: bag snapshot & recording
+------------------------------------------------------
+
+-- Pending loot state: set on QUEST_TURNED_IN, consumed on LOOT_CLOSED/BAG_UPDATE_DELAYED
+local pendingLootBeast = nil     -- lure name (e.g. "Eversong")
+local pendingLootSnapshot = nil  -- { [itemID] = count, ... }
+local pendingLootTime = 0        -- GetTime() when snapshot was taken
+local preCombatSnapshot = nil    -- taken on PLAYER_REGEN_DISABLED (before any loot)
+
+-- Snapshot current bag counts for all tracked loot items
+local function SnapshotTrackedItems()
+    local snap = {}
+    for id in pairs(TRACKED_LOOT) do
+        snap[id] = C_Item.GetItemCount(id, false, false, false, false) or 0
+    end
+    return snap
+end
+
+-- Diff two snapshots, return only positive deltas
+local function DiffSnapshots(before, after)
+    local diffs = {}
+    for id in pairs(TRACKED_LOOT) do
+        local delta = (after[id] or 0) - (before[id] or 0)
+        if delta > 0 then
+            diffs[id] = delta
+        end
+    end
+    return diffs
+end
+
+-- Record loot diffs for a beast into charData
+local function RecordLoot(beastName, diffs)
+    if not charKey or not diffs then return end
+    local hasAny = false
+    for _ in pairs(diffs) do hasAny = true; break end
+    if not hasAny then return end
+
+    local charData = MajesticBeastTrackerDB.chars[charKey]
+    if not charData then return end
+
+    -- Initialize loot structure if needed
+    if not charData.loot then
+        charData.loot = { thisReset = {}, allTime = {}, resetTime = GetServerTime() }
+    end
+
+    -- Reset thisReset if daily reset has passed
+    if charData.loot.resetTime and charData.loot.resetTime < GetLastDailyReset() then
+        charData.loot.thisReset = {}
+        charData.loot.resetTime = GetServerTime()
+    end
+
+    -- Add diffs to both thisReset and allTime, snapshot TSM prices
+    if not charData.loot.prices then charData.loot.prices = {} end
+    for id, count in pairs(diffs) do
+        charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
+        charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
+        -- Snapshot price at loot time (only if TSM available and no price yet this reset)
+        if ns.GetTSMPrice and not charData.loot.prices[id] then
+            charData.loot.prices[id] = ns.GetTSMPrice(id)
+        end
+    end
+
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        local totalItems = 0
+        for _, c in pairs(diffs) do totalItems = totalItems + c end
+        print("|cff3FC7EB[MBT]|r Loot tracked: " .. totalItems .. " items from " .. beastName)
+    end
+end
+ns.RecordLoot = RecordLoot
+
+-- Get loot data for a character (auto-resets thisReset if daily reset passed)
+function ns.GetCharLoot(charData)
+    if not charData or not charData.loot then return nil end
+    local loot = charData.loot
+    -- Auto-reset thisReset if daily reset has passed
+    if loot.resetTime and loot.resetTime < GetLastDailyReset() then
+        loot.thisReset = {}
+        loot.prices = {}
+        loot.resetTime = GetServerTime()
+    end
+    return loot
+end
+
+-- Get aggregated loot across all characters
+function ns.GetGlobalLoot()
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.chars then return nil, nil, nil end
+    local globalReset = {}
+    local globalAllTime = {}
+    local globalPrices = {}
+    for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+        local loot = ns.GetCharLoot(charData)
+        if loot then
+            for id, count in pairs(loot.thisReset or {}) do
+                globalReset[id] = (globalReset[id] or 0) + count
+            end
+            for id, count in pairs(loot.allTime or {}) do
+                globalAllTime[id] = (globalAllTime[id] or 0) + count
+            end
+            -- Merge prices (keep latest non-nil)
+            for id, price in pairs(loot.prices or {}) do
+                if price then globalPrices[id] = price end
+            end
+        end
+    end
+    return globalReset, globalAllTime, globalPrices
+end
+
+-- Accumulated loot diffs (collected across multiple LOOT_CLOSED events)
+local pendingLootAccum = {}
+
+-- Accumulate loot diffs without consuming the pending state
+local function AccumulatePendingLoot()
+    if not pendingLootBeast or not pendingLootSnapshot then return end
+    local afterSnap = SnapshotTrackedItems()
+    local diffs = DiffSnapshots(pendingLootSnapshot, afterSnap)
+    -- Merge new diffs into accumulator (use max, since snapshot is from start)
+    for id, count in pairs(diffs) do
+        pendingLootAccum[id] = count  -- always overwrite: total diff from original snapshot
+    end
+end
+
+-- Finalize pending loot: record accumulated diffs and clear state
+local function FinalizePendingLoot()
+    if not pendingLootBeast then return false end
+    AccumulatePendingLoot()
+    RecordLoot(pendingLootBeast, pendingLootAccum)
+    pendingLootBeast = nil
+    pendingLootSnapshot = nil
+    pendingLootTime = 0
+    pendingLootAccum = {}
+    ns.isSyncingLoot = false
+    return true
+end
+
+-- Midnight Skinning spell ID (from profession trainer)
+local MIDNIGHT_SKINNING_SPELL = 471014
+
+-- Returns: true (has Midnight Skinning), false (no skinning), nil (API not ready)
 local function HasSkinning()
     local prof1, prof2 = GetProfessions()
-    if not prof1 and not prof2 then return nil end -- API may not be ready
+    if not prof1 and not prof2 then
+        if charKey then return false end
+        return nil
+    end
+    -- Check for base Skinning first
+    local hasBase = false
     if prof1 then
         local _, _, _, _, _, _, skillLineID = GetProfessionInfo(prof1)
-        if skillLineID == 393 then return true end
+        if skillLineID == 393 then hasBase = true end
     end
-    if prof2 then
+    if not hasBase and prof2 then
         local _, _, _, _, _, _, skillLineID = GetProfessionInfo(prof2)
-        if skillLineID == 393 then return true end
+        if skillLineID == 393 then hasBase = true end
     end
-    return false
+    if not hasBase then return false end
+    -- Check for Midnight Skinning via spell known check
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local ok, known = pcall(C_SpellBook.IsSpellKnown, MIDNIGHT_SKINNING_SPELL)
+        if ok then return known end
+    end
+    -- API not available, keep existing data
+    return nil
 end
 
 -- Returns the base skinning skill level (e.g. 80/100)
 local function GetSkinningSkillLevel()
     local prof1, prof2 = GetProfessions()
+    -- Check for Midnight Skinning specifically (professionName must match expansion name)
     if prof1 then
-        local _, _, skillLevel, _, _, _, skillLineID = GetProfessionInfo(prof1)
-        if skillLineID == 393 then return skillLevel or 0 end
+        local _, _, skillLevel, _, _, _, skillLineID, _, _, _, professionName = GetProfessionInfo(prof1)
+        if skillLineID == 393 and professionName and professionName:find("Midnight") then
+            return skillLevel or 0
+        end
     end
     if prof2 then
-        local _, _, skillLevel, _, _, _, skillLineID = GetProfessionInfo(prof2)
-        if skillLineID == 393 then return skillLevel or 0 end
+        local _, _, skillLevel, _, _, _, skillLineID, _, _, _, professionName = GetProfessionInfo(prof2)
+        if skillLineID == 393 and professionName and professionName:find("Midnight") then
+            return skillLevel or 0
+        end
     end
     return 0
 end
@@ -360,6 +570,10 @@ local SETTINGS_DEFAULTS = {
     hideInCombat = false,
     windowScale = 1.0,
     minimap = { hide = false },
+    warbankDeposit = false,
+    warbankAutoDeposit = false,
+    warbankDepositRewards = true,
+    warbankDepositReagents = true,
 }
 
 local function EnsureDB()
@@ -416,20 +630,59 @@ local function RecordLureKill(index)
 end
 
 -- Sync kill status from quest flags (authoritative source)
-local function SyncKillsFromQuests()
+local function SyncKillsFromQuests(skipSanityCheck)
     if not charKey then return end
     EnsureChar(charKey)
     local charData = MajesticBeastTrackerDB.chars[charKey]
     local changed = false
+    -- First pass: collect quest flag results
+    local flagged = {}
+    local flagCount = 0
     for i, lure in ipairs(LURES) do
         if lure.questID then
             local completed = C_QuestLog.IsQuestFlaggedCompleted(lure.questID)
             if completed then
-                local existing = charData.lures[lure.name]
-                -- Record kill if: no timestamp yet, OR old timestamp is from before daily reset (lure was "ready")
-                if not existing or existing < GetLastDailyReset() then
-                    charData.lures[lure.name] = GetServerTime()
-                    changed = true
+                flagged[i] = true
+                flagCount = flagCount + 1
+            end
+        end
+    end
+    -- Sanity check (login only): if ALL quests flagged but character has no existing kills,
+    -- this is likely a false positive (player hasn't specced Talented Tracker)
+    if not skipSanityCheck and flagCount == #LURES then
+        local hasAnyKill = false
+        for _, lure in ipairs(LURES) do
+            if charData.lures[lure.name] then
+                hasAnyKill = true
+                break
+            end
+        end
+        if not hasAnyKill then return false end
+    end
+    -- Second pass: record kills for flagged quests
+    for i, lure in ipairs(LURES) do
+        if flagged[i] then
+            local existing = charData.lures[lure.name]
+            -- Record kill if: no timestamp yet, OR old timestamp is from before daily reset (lure was "ready")
+            if not existing or existing < GetLastDailyReset() then
+                charData.lures[lure.name] = GetServerTime()
+                changed = true
+                -- Start loot tracking if we have a pre-combat snapshot
+                if not pendingLootBeast and preCombatSnapshot then
+                    pendingLootBeast = lure.name
+                    pendingLootSnapshot = preCombatSnapshot
+                    preCombatSnapshot = nil
+                    pendingLootTime = GetTime()
+                    pendingLootAccum = {}
+                    ns.isSyncingLoot = true
+                    -- Auto-finalize after 15s
+                    C_Timer.After(5, function()
+                        if pendingLootBeast then
+                            FinalizePendingLoot()
+                            ns.isSyncingLoot = false
+                            if ns.UpdateUI then ns.UpdateUI() end
+                        end
+                    end)
                 end
             end
         end
@@ -543,9 +796,9 @@ local function CalculateProfessionStats()
                 end
             end
 
-            -- Root path perks (unlockRank works with raw rank)
+            -- Root path perks (unlockRank works with raw rank, but require at least rank 1)
             local ok4, perks = pcall(C_ProfSpecs.GetPerksForPath, tabInfo.rootNodeID)
-            if ok4 and perks then
+            if ok4 and perks and rootRank > 0 then
                 for _, perk in ipairs(perks) do
                     local okR, unlockRank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
                     if okR and unlockRank and rootRank >= unlockRank then
@@ -571,9 +824,9 @@ local function CalculateProfessionStats()
                         end
                     end
 
-                    -- Child perks (unlockRank works with raw rank)
+                    -- Child perks (unlockRank works with raw rank, but require at least rank 1)
                     local ok7, childPerks = pcall(C_ProfSpecs.GetPerksForPath, childID)
-                    if ok7 and childPerks then
+                    if ok7 and childPerks and childRank > 0 then
                         for _, perk in ipairs(childPerks) do
                             local okR, unlockRank = pcall(C_ProfSpecs.GetUnlockRankForPerk, perk.perkID)
                             if okR and unlockRank and childRank >= unlockRank then
@@ -618,6 +871,7 @@ local function CalculateProfessionStats()
     local STAT_BUFFS = {
         { buffName = "Relaxed" },                        -- Sanguithorn Tea
         { buffName = "Haranir Phial of Perception" },    -- Phial
+        { buffName = "Midnight Perception" },             -- Root Crab
     }
     for _, buff in ipairs(STAT_BUFFS) do
         local auraData = C_UnitAuras.GetAuraDataBySpellName("player", buff.buffName, "HELPFUL")
@@ -713,17 +967,232 @@ function ns.CanSeeLure(charData, lureIndex)
 end
 
 ------------------------------------------------------
+-- Warband Bank Deposit
+------------------------------------------------------
+
+ns.isBankOpen = false
+
+-- Find a partial stack or empty slot in warband bank for an item
+local function FindWarbankSlot(itemID)
+    if not C_Bank or not C_Bank.FetchPurchasedBankTabIDs then return nil, nil end
+    local tabIDs = C_Bank.FetchPurchasedBankTabIDs(Enum.BankType.Account)
+    if not tabIDs then return nil, nil end
+    -- First: find partial stack of same item
+    for _, bagID in ipairs(tabIDs) do
+        local numSlots = C_Container.GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local info = C_Container.GetContainerItemInfo(bagID, slot)
+            if info and info.itemID == itemID then
+                local maxStack = info.stackSize or (select(8, C_Item.GetItemInfo(itemID)) or 200)
+                if (info.stackCount or 0) < maxStack then
+                    return bagID, slot
+                end
+            end
+        end
+    end
+    -- Second: find empty slot
+    for _, bagID in ipairs(tabIDs) do
+        local numSlots = C_Container.GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local info = C_Container.GetContainerItemInfo(bagID, slot)
+            if not info then
+                return bagID, slot
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- Collect depositable items in player bags based on settings
+local function CollectBagItems()
+    EnsureDB()
+    local depositRewards = MajesticBeastTrackerDB.settings.warbankDepositRewards
+    local depositReagents = MajesticBeastTrackerDB.settings.warbankDepositReagents
+
+    local function shouldDeposit(itemID)
+        if depositRewards and TRACKED_LOOT[itemID] then return true end
+        if depositReagents and LURE_REAGENTS[itemID] then return true end
+        return false
+    end
+
+    local found = {}
+    for bag = 0, NUM_BAG_SLOTS do
+        local numSlots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and shouldDeposit(info.itemID) then
+                found[#found + 1] = { bag = bag, slot = slot, itemID = info.itemID, count = info.stackCount }
+            end
+        end
+    end
+    -- Also check reagent bag
+    local reagentBag = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
+    local ok, numSlots = pcall(C_Container.GetContainerNumSlots, reagentBag)
+    if ok and numSlots and numSlots > 0 then
+        for slot = 1, numSlots do
+            local info = C_Container.GetContainerItemInfo(reagentBag, slot)
+            if info and shouldDeposit(info.itemID) then
+                found[#found + 1] = { bag = reagentBag, slot = slot, itemID = info.itemID, count = info.stackCount }
+            end
+        end
+    end
+    return found
+end
+
+-- Try to click Blizzard's built-in "Deposit All Warband Items" button
+local function TryClickDepositAllButton()
+    local candidates = {
+        AccountBankPanel and AccountBankPanel.AutoDepositFrame and AccountBankPanel.AutoDepositFrame.DepositButton,
+        AccountBankPanel and AccountBankPanel.ItemDepositFrame and AccountBankPanel.ItemDepositFrame.DepositButton,
+        AccountBankPanel and AccountBankPanel.DepositButton,
+        BankPanel and BankPanel.AutoDepositFrame and BankPanel.AutoDepositFrame.DepositButton,
+        BankPanel and BankPanel.ItemDepositFrame and BankPanel.ItemDepositFrame.DepositButton,
+        BankPanel and BankPanel.DepositButton,
+        _G["AutoDepositFrameDepositButton"],
+        _G["AccountBankPanelAutoDepositFrameDepositButton"],
+    }
+    for _, btn in ipairs(candidates) do
+        if btn and btn.IsVisible and btn:IsVisible() and btn.Click then
+            local ok = pcall(btn.Click, btn)
+            if ok then return true end
+        end
+    end
+    return false
+end
+
+-- Fallback: cursor-based deposit for individual items (wrapped in pcall to contain taint)
+local function CursorDepositItems(items, callback)
+    local totalDeposited = 0
+    local function depositNext(idx)
+        if idx > #items then
+            if callback then callback(totalDeposited) end
+            return
+        end
+
+        local entry = items[idx]
+        local ok = pcall(function()
+            ClearCursor()
+            C_Container.PickupContainerItem(entry.bag, entry.slot)
+        end)
+        if not ok then
+            depositNext(idx + 1)
+            return
+        end
+        C_Timer.After(0.15, function()
+            local destBag, destSlot = FindWarbankSlot(entry.itemID)
+            if not destBag then
+                pcall(ClearCursor)
+                depositNext(idx + 1)
+                return
+            end
+            pcall(C_Container.PickupContainerItem, destBag, destSlot)
+            C_Timer.After(0.3, function()
+                local cursorType = GetCursorInfo()
+                if cursorType == "item" then
+                    pcall(C_Container.PickupContainerItem, destBag, destSlot)
+                    C_Timer.After(0.3, function()
+                        pcall(ClearCursor)
+                        totalDeposited = totalDeposited + 1
+                        depositNext(idx + 1)
+                    end)
+                else
+                    totalDeposited = totalDeposited + 1
+                    depositNext(idx + 1)
+                end
+            end)
+        end)
+    end
+    depositNext(1)
+end
+
+-- Deposit tracked items to warband bank
+function ns.DepositTrackedToWarbank(callback)
+    EnsureDB()
+    if not ns.isBankOpen then
+        if MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r Warband Bank is not open.")
+        end
+        if callback then callback(0) end
+        return
+    end
+
+    local items = CollectBagItems()
+    if #items == 0 then
+        if MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r No tracked reagents in bags to deposit.")
+        end
+        if callback then callback(0) end
+        return
+    end
+
+    if MajesticBeastTrackerDB.settings.chatNotify then
+        print("|cff3FC7EB[MBT]|r Depositing " .. #items .. " stack(s) to Warband Bank...")
+    end
+
+    -- Primary: try Blizzard's built-in deposit button (no taint)
+    if TryClickDepositAllButton() then
+        if MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r Used Blizzard Deposit All button.")
+        end
+        if callback then callback(#items) end
+        return
+    end
+
+    -- Fallback: cursor-based deposit (pcall-wrapped to contain taint)
+    CursorDepositItems(items, function(count)
+        if count > 0 and MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r Deposited " .. count .. " stack(s) to Warband Bank.")
+        end
+        if callback then callback(count) end
+    end)
+end
+
+------------------------------------------------------
 -- Event handler
 -- Kill detection: quest flags (QUEST_TURNED_IN + SyncKillsFromQuests)
 -- Weekly tracking: BAG_UPDATE_DELAYED + QUEST_TURNED_IN
 ------------------------------------------------------
 
 f:SetScript("OnEvent", function(_, event, ...)
-    if event == "QUEST_TURNED_IN" then
+    if event == "BANKFRAME_OPENED" then
+        ns.isBankOpen = true
+        if ns.UpdateUI then ns.UpdateUI() end
+        EnsureDB()
+        if MajesticBeastTrackerDB.settings.warbankDeposit and MajesticBeastTrackerDB.settings.warbankAutoDeposit then
+            C_Timer.After(0.5, function()
+                ns.DepositTrackedToWarbank()
+            end)
+        end
+        return
+    elseif event == "BANKFRAME_CLOSED" then
+        ns.isBankOpen = false
+        if ns.UpdateUI then ns.UpdateUI() end
+        return
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        -- Entering combat: snapshot bags BEFORE any loot arrives
+        preCombatSnapshot = SnapshotTrackedItems()
+        return
+    elseif event == "QUEST_TURNED_IN" then
         local questID = ...
         -- Beast kill quest
         if questToIndex[questID] then
-            RecordLureKill(questToIndex[questID])
+            local lureIdx = questToIndex[questID]
+            RecordLureKill(lureIdx)
+            -- Use pre-combat snapshot if available (taken before loot), else snapshot now
+            pendingLootBeast = LURES[lureIdx].name
+            pendingLootSnapshot = preCombatSnapshot or SnapshotTrackedItems()
+            preCombatSnapshot = nil
+            pendingLootTime = GetTime()
+            pendingLootAccum = {}
+            ns.isSyncingLoot = true
+            -- Auto-finalize after 15s (covers: kill → loot → skin → done)
+            C_Timer.After(5, function()
+                if pendingLootBeast then
+                    FinalizePendingLoot()
+                    ns.isSyncingLoot = false
+                    if ns.UpdateUI then ns.UpdateUI() end
+                end
+            end)
             if ns.UpdateUI then ns.UpdateUI() end
         end
         -- Weekly knowledge quest
@@ -736,20 +1205,37 @@ f:SetScript("OnEvent", function(_, event, ...)
         return
     elseif event == "BAG_UPDATE_DELAYED" then
         -- Quest flags already set by the time bag updates resolve
-        SyncKillsFromQuests()
+        SyncKillsFromQuests(true)
         RefreshWeeklies()
+        -- Finalize pending loot after timeout (kill → regular loot → skinning → done)
+        if pendingLootBeast and (GetTime() - pendingLootTime) > 15 then
+            FinalizePendingLoot()
+        end
         if ns.UpdateUI then ns.UpdateUI() end
         return
     elseif event == "LOOT_CLOSED" then
         -- Check quest flags after loot window closes (catches skinning kills)
         -- Immediate check + delayed check for flag propagation
-        SyncKillsFromQuests()
+        SyncKillsFromQuests(true)
+        -- Accumulate loot diffs (don't finalize yet — skinning may come after regular loot)
+        if pendingLootBeast then
+            C_Timer.After(0.5, function()
+                AccumulatePendingLoot()
+            end)
+        end
         if ns.UpdateUI then ns.UpdateUI() end
         C_Timer.After(2, function()
-            if SyncKillsFromQuests() then
+            if SyncKillsFromQuests(true) then
                 if ns.UpdateUI then ns.UpdateUI() end
             end
         end)
+        return
+    elseif event == "SKILL_LINES_CHANGED" then
+        -- Profession learned/unlearned mid-session
+        if charKey then
+            DetectSkinningAndTalent()
+            if ns.UpdateUI then ns.UpdateUI() end
+        end
         return
     elseif event == "PLAYER_LOGIN" then
         charKey = GetCharKey()
@@ -856,8 +1342,12 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
                     end
                 end
             end
+        elseif sub == "demo" then
+            ns.demoMode = not ns.demoMode
+            print("|cff3FC7EB[MBT]|r Demo mode: " .. (ns.demoMode and "|cff00ff00ON|r (names masked)" or "|cffff3333OFF|r"))
+            if ns.UpdateUI then ns.UpdateUI() end
         else
-            print("|cff3FC7EB[MBT]|r Debug commands: stats, gear, calc")
+            print("|cff3FC7EB[MBT]|r Debug commands: stats, gear, calc, demo")
         end
     elseif msg:find("^remove ") then
         local target = msg:gsub("^remove ", ""):trim()
@@ -886,7 +1376,7 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         print("  |cffffff00/mbt settings|r - Open settings")
         print("  |cffffff00/mbt talent N|r - Override points (0-40)")
         print("  |cffffff00/mbt remove Name-Realm|r - Remove character")
-        print("  |cffffff00/mbt debug stats|gear|calc|r - Debug tools")
+        print("  |cffffff00/mbt debug stats|gear|calc|demo|r - Debug tools")
         print("  |cffffff00/mbt help|r - This help")
     else
         if ns.ShowFrame then ns.ShowFrame() end
