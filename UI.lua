@@ -2286,7 +2286,9 @@ function ns.UpdateUI()
     local h = TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + consExtra + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + #LURES * COL_WIDTH + goblinColWidth
-    frame:SetSize(w, h)
+    if not InCombatLockdown() then
+        frame:SetSize(w, h)
+    end
 
     -- Position title branding (left of lure icons, vertically centered with icon area)
     title:ClearAllPoints()

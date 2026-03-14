@@ -1,5 +1,10 @@
 # Majestic Beast Tracker
 
+## [v1.4.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.4.1) (2026-03-14)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.4.0...v1.4.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Fixed ADDON_ACTION_BLOCKED error that could occur during combat, preventing loot tracking from updating
+
 ## [v1.4.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.4.0) (2026-03-14)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.3.0...v1.4.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 
