@@ -2,7 +2,7 @@
 ## Title: Majestic Beast Tracker
 ## Notes: Tracks daily Majestic Lure beast cooldowns across all characters
 ## Author: Vichob
-## Version: 1.4.1
+## Version: 1.5.0
 ## SavedVariables: MajesticBeastTrackerDB
 ## X-Curse-Project-ID: 1481252
 ## OptionalDeps: !Mechanic

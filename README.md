@@ -37,8 +37,14 @@ If you have multiple skinners, it's impossible to remember which character has u
 
 ### Reagents & Crafting
 - **Reagent icons** — See reagent needs per lure with have/need counts, includes Warbank items
+- **Show Missing Count** — Toggle to show missing reagents (e.g. "-56") instead of have/need (e.g. "16/72")
 - **Craftable count** — Shows how many lures you can craft from all sources (bags + bank + warband bank)
 - **Weekly knowledge tracking** — Track Midnight Skinning weekly KP quests (Trainer, Drops, Treatise, DMF) per character
+
+### Auction House Integration
+- **Autofill AH Quantity** — Automatically fills the buy quantity when browsing reagents or consumables in the Auction House
+- **Auctionator Shopping List** — One-click button creates an "MBT Reagents" shopping list in Auctionator with all missing reagents and consumables
+- **Consumable Stock Targets** — Per-item stock sliders in settings to define how many consumables to keep on hand
 
 ### Consumables
 - **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, and Root Crab with live buff timers
@@ -62,7 +68,7 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Minimap button** — Left-click toggles window, right-click opens settings
 - **Non-skinner auto-hide** — Tracker stays hidden on characters without Midnight Skinning
 - **Hide in combat** — Optionally hide the tracker during combat
-- **Settings panel** — Full Interface > AddOns settings page with Loot Goblin, Warband Bank, and Data Management sections
+- **Settings panel** — Full Interface > AddOns settings page with Reagents, Display, Loot Goblin, Warband Bank, and Data Management sections
 - **Character management** — Right-click a character name to remove them
 
 ## Lure Locations

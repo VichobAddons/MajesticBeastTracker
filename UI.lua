@@ -6,6 +6,9 @@
 local addonName, ns = ...
 local LURES = ns.LURES
 
+-- Constants
+local CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
+
 -- Layout
 local ICON_SIZE = 26
 local COL_WIDTH = 62
@@ -27,6 +30,7 @@ local CONSUMABLES = {
     { itemID = 238367, name = "Root Crab", buffName = "Midnight Perception", spellID = 1235216, itemName = "Root Crab", minLevel = 80, stackable = true },
 }
 local NUM_EXTRA_COLS = #CONSUMABLES
+ns.CONSUMABLE_ITEMS = CONSUMABLES
 
 -- Travel items (shown at bottom of frame)
 local TRAVEL_ITEMS = {
@@ -168,7 +172,7 @@ local verLabel = titleFrame:CreateFontString(nil, "OVERLAY")
 verLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 verLabel:SetTextColor(0.5, 0.5, 0.5, 0.6)
 verLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
-verLabel:SetText("v" .. (C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or C_AddOns.GetAddOnMetadata("MajesticBeastTrackerDev", "Version") or ""))
+verLabel:SetText("v" .. (C_AddOns.GetAddOnMetadata("MajesticBeastTrackerDev", "Version") or C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or ""))
 
 -- Lock indicator
 local lockIcon = frame:CreateTexture(nil, "OVERLAY")
@@ -226,7 +230,7 @@ globalGoblinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 -- Warband Bank deposit button (bank icon, only visible when bank is open)
 local warbankBtn = CreateFrame("Button", nil, frame)
 warbankBtn:SetSize(14, 14)
-warbankBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -4, 0)
+warbankBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -2, 0)
 local warbankIcon = warbankBtn:CreateTexture(nil, "ARTWORK")
 warbankIcon:SetAllPoints()
 warbankIcon:SetTexture("Interface\\Icons\\INV_Misc_Bag_34")
@@ -242,6 +246,26 @@ warbankBtn:SetScript("OnClick", function()
     ns.DepositTrackedToWarbank()
 end)
 warbankBtn:Hide()
+
+-- Auctionator shopping list button
+local auctionatorBtn = CreateFrame("Button", nil, frame)
+auctionatorBtn:SetSize(14, 14)
+auctionatorBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -2, 0)
+local auctionatorIcon = auctionatorBtn:CreateTexture(nil, "ARTWORK")
+auctionatorIcon:SetAllPoints()
+auctionatorIcon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
+auctionatorIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+auctionatorBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
+    GameTooltip:AddLine("Create Auctionator Shopping List", 0.25, 0.78, 0.92)
+    GameTooltip:AddLine("Creates/updates 'MBT Reagents' list with all missing reagents.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end)
+auctionatorBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+auctionatorBtn:SetScript("OnClick", function()
+    ns.CreateAuctionatorShoppingList()
+end)
+auctionatorBtn:Hide()
 
 -- Toggle TSM prices button (coin icon)
 local coinBtn = CreateFrame("Button", nil, frame)
@@ -1888,8 +1912,23 @@ function ns.UpdateUI()
     globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
     globalGoblinBtn:Show()
 
+    -- Dynamic button chain: globalGoblin ← auctionator ← warbank (right to left)
+    local lastBtn = globalGoblinBtn
+
+    -- Auctionator button: show only when Auctionator is loaded
+    if C_AddOns.IsAddOnLoaded("Auctionator") then
+        auctionatorBtn:ClearAllPoints()
+        auctionatorBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
+        auctionatorBtn:Show()
+        lastBtn = auctionatorBtn
+    else
+        auctionatorBtn:Hide()
+    end
+
     -- Warband bank deposit button: show only when bank open + setting enabled
     if ns.isBankOpen and MajesticBeastTrackerDB.settings.warbankDeposit then
+        warbankBtn:ClearAllPoints()
+        warbankBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
         warbankBtn:Show()
     else
         warbankBtn:Hide()
@@ -1985,8 +2024,21 @@ function ns.UpdateUI()
                         else
                             rBtn.countText:SetText("")
                         end
+                    elseif MajesticBeastTrackerDB.settings.showMissingCount then
+                        -- Show Missing Count mode: per-reagent values, centered positioning
+                        rBtn.countText:ClearAllPoints()
+                        rBtn.countText:SetPoint("TOP", rBtn, "BOTTOM", 0, -1)
+                        rBtn.countText:SetJustifyH("CENTER")
+                        rBtn.countText:SetWidth(COL_WIDTH)
+                        local missing = rBtn._missing or 0
+                        if missing > 0 then
+                            rBtn.countText:SetText("|cffff3333-" .. missing .. "|r")
+                        else
+                            rBtn.countText:SetText("|cff00ff00" .. CHECKMARK_ICON .. "|r")
+                        end
+                        rBtn.countText:Show()
                     else
-                        -- Some missing: show have/total
+                        -- Default: per-reagent have/need counts
                         rBtn.countText:ClearAllPoints()
                         local numR = #lure.reagents
                         if numR > 1 and j == 1 then
@@ -2004,7 +2056,8 @@ function ns.UpdateUI()
                         rBtn.countText:SetWidth(maxW)
                         local have = rBtn._have or 0
                         local total = rBtn._totalNeed or 0
-                        if rBtn._missing > 0 then
+                        local missing = rBtn._missing or 0
+                        if missing > 0 then
                             rBtn.countText:SetText("|cffff3333" .. have .. "/" .. total .. "|r")
                         else
                             rBtn.countText:SetText("|cff00ff00" .. have .. "|r")
@@ -2286,23 +2339,26 @@ function ns.UpdateUI()
     local h = TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + consExtra + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + #LURES * COL_WIDTH + goblinColWidth
-    if not InCombatLockdown() then
-        frame:SetSize(w, h)
-    end
-
-    -- Position title branding (left of lure icons, vertically centered with icon area)
-    title:ClearAllPoints()
-    title:SetPoint("TOP", frame, "TOPLEFT", PAD + 4 + NAME_COL_WIDTH / 2, contentTop - 2)
-
-    -- Divider below character rows
+    -- All frame layout operations guarded against combat lockdown
     local divY = -(TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
 
-    -- Position consumable box below divider
-    consumableBox:ClearAllPoints()
-    consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, divY - 4)
-
-    -- Position travel buttons on same row as consumable box (right of it)
     if not InCombatLockdown() then
+        frame:SetSize(w, h)
+
+        -- Position title branding (adapt to available space)
+        title:ClearAllPoints()
+        if showReagents then
+            title:SetFont(STANDARD_TEXT_FONT, 20, "OUTLINE")
+            title:SetText("|cff3FC7EBMajestic|r\n|cff3FC7EBBeast|r\n|cff3FC7EBTracker|r")
+        else
+            title:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
+            title:SetText("|cff3FC7EBMajestic Beast|r\n|cff3FC7EBTracker|r")
+        end
+        title:SetPoint("TOP", frame, "TOPLEFT", PAD + 4 + NAME_COL_WIDTH / 2, contentTop - 2)
+
+        -- Position consumable box below divider
+        consumableBox:ClearAllPoints()
+        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, divY - 4)
         -- Divider between char rows and bottom bar
         travelSep:ClearAllPoints()
         travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
@@ -2452,7 +2508,7 @@ function ns.UpdateUI()
     if #keys == 0 then
         if not charRows[1] then charRows[1] = CreateCharRow(1) end
         charRows[1].nameLabel:SetText(C_ACCENT:WrapTextInColorCode("No skinners found"))
-        charRows[1].name:SetWidth(w - PAD * 2)
+        if not InCombatLockdown() then charRows[1].name:SetWidth(w - PAD * 2) end
         charRows[1].name:SetScript("OnClick", nil)
         charRows[1].name:Show()
         for _, cell in ipairs(charRows[1].cells) do
@@ -2832,6 +2888,9 @@ local function InitSettings()
     Settings.CreateCheckbox(category, s2a, "Don't show the tracker automatically on characters without Skinning.")
 
     -- Show Reagent Icons
+    -- Reagents
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Reagents"))
+
     local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
     Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
@@ -2839,15 +2898,60 @@ local function InitSettings()
         ns.UpdateUI()
     end)
 
-    -- Reagent Count: All Characters
     local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Reagent Count: All Characters", true)
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Count for All Characters", true)
     Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
     s2e:SetValueChangedCallback(function()
         ns.UpdateUI()
     end)
 
-    -- Show Knowledge (main window only)
+    local sMissing = Settings.RegisterAddOnSetting(category, "MBT_showMissingCount", "showMissingCount",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Missing Count", false)
+    Settings.CreateCheckbox(category, sMissing, "ON: Show how many reagents you're missing (e.g. -56). OFF: Show have/need (e.g. 16/72).")
+    sMissing:SetValueChangedCallback(function()
+        ns.UpdateUI()
+    end)
+
+    local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Autofill AH Quantity", true)
+    Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")
+
+    -- Per-consumable stock targets (for shopping list)
+    if type(MajesticBeastTrackerDB.settings.consumableStock) ~= "table" then
+        MajesticBeastTrackerDB.settings.consumableStock = {}
+    end
+    for _, cons in ipairs(CONSUMABLES) do
+        local flatKey = "consStock_" .. cons.itemID
+        if MajesticBeastTrackerDB.settings[flatKey] == nil then
+            MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
+        end
+    end
+    -- Register after init loop to avoid mid-loop errors breaking later settings
+    for _, cons in ipairs(CONSUMABLES) do
+        local flatKey = "consStock_" .. cons.itemID
+        local ok, err = pcall(function()
+            local sStock = Settings.RegisterAddOnSetting(category,
+                "MBT_" .. flatKey, flatKey,
+                MajesticBeastTrackerDB.settings, Settings.VarType.Number,
+                "Stock: " .. cons.name, 0)
+            local stockOpts = Settings.CreateSliderOptions(0, 200, 5)
+            stockOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
+                return tostring(math.floor(val))
+            end)
+            Settings.CreateSlider(category, sStock, stockOpts,
+                "Number of " .. cons.name .. " to keep in stock. Used for Auctionator shopping list. 0 = exclude.")
+            sStock:SetValueChangedCallback(function(setting, val)
+                MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
+            end)
+        end)
+        if not ok then
+            print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
+        end
+    end
+
+    -- Display
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Display"))
+
     local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
     Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")

@@ -1,5 +1,39 @@
 # Majestic Beast Tracker
 
+## [v1.5.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.5.0) (2026-03-18)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.4.1...v1.5.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+### Auction House Integration (NEW)
+- **Autofill AH Quantity** — When browsing commodities in the Auction House, automatically fills the buy quantity with the number of missing reagents or consumables
+  - Hooks into Blizzard's `CommoditiesBuyFrame` via `hooksecurefunc` using the native event system to avoid taint
+  - Works with both lure reagents and consumables (based on stock targets)
+  - Respects "Show Reagent Icons" toggle — disabled when reagents are hidden
+  - New "Autofill AH Quantity" toggle in settings
+- **Auctionator Shopping List** — New button (scroll icon) next to the loot goblin creates/updates an "MBT Reagents" shopping list in Auctionator
+  - Includes all missing lure reagents with exact quantities needed
+  - Includes consumables below their stock target (per-item configurable)
+  - Uses `Auctionator.API.v1.CreateShoppingList` and `ConvertToSearchString` with quantity support
+  - Button only visible when Auctionator addon is loaded
+  - Automatically removes the list when all reagents are ready
+
+### Reagent Display
+- **Show Missing Count** — New toggle to show missing reagent counts (e.g. "-56") instead of have/need (e.g. "16/72")
+  - Checkmark icon shown when all reagents are available
+  - Per-reagent values centered under each icon
+
+### Settings Overhaul
+- New **Reagents** section grouping: Show Reagent Icons, Count for All Characters, Show Missing Count, Autofill AH Quantity, and per-consumable stock sliders
+- New **Display** section for Show Weekly Knowledge, Hide in Combat, Lock Frame, Window Scale
+- **Consumable Stock Targets** — Per-item sliders (0–200) for Sanguithorn Tea, Haranir Phial of Perception, and Root Crab
+  - Controls how many of each consumable to include in the Auctionator shopping list
+  - Also used by AH autofill when buying consumables
+
+### Bugfixes
+- Fixed all remaining ADDON_ACTION_BLOCKED taint errors — wrapped title, consumable box, travel buttons, stats, and all other layout operations in a single `InCombatLockdown()` guard
+- Fixed title text overlapping character rows when reagent icons are hidden — adaptive 2-line/3-line title based on reagent toggle state
+- Fixed version label showing CurseForge version instead of Dev version when running MajesticBeastTrackerDev
+- Fixed dynamic button positioning — Auctionator and Warband Bank buttons chain correctly based on visibility
+
 ## [v1.4.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.4.1) (2026-03-14)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.4.0...v1.4.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

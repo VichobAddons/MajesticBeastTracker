@@ -574,6 +574,9 @@ local SETTINGS_DEFAULTS = {
     warbankAutoDeposit = false,
     warbankDepositRewards = true,
     warbankDepositReagents = true,
+    showMissingCount = false,
+    ahAutofillQuantity = true,
+    consumableStock = {},  -- per-item stock targets: { [itemID] = count }
 }
 
 local function EnsureDB()
@@ -1148,6 +1151,168 @@ function ns.DepositTrackedToWarbank(callback)
 end
 
 ------------------------------------------------------
+-- Auction House Integration
+-- Auto-fill quantity for missing reagents + Auctionator shopping list
+------------------------------------------------------
+
+-- Calculate missing reagents across all lures
+-- Returns: { [itemID] = missingCount, ... }
+function ns.GetMissingReagents()
+    EnsureDB()
+    local missing = {}
+    for i, lure in ipairs(LURES) do
+        if lure.reagents then
+            -- Count characters that still need this lure today
+            local numLeft = 0
+            for _, cData in pairs(MajesticBeastTrackerDB.chars) do
+                if ns.CanSeeLure(cData, i) then
+                    local ts = cData.lures[lure.name]
+                    if not ts or ns.IsLureReady(ts) then
+                        numLeft = numLeft + 1
+                    end
+                end
+            end
+            if numLeft > 0 then
+                local reagentAllChars = MajesticBeastTrackerDB.settings.reagentAllChars ~= false
+                for _, reagent in ipairs(lure.reagents) do
+                    local totalNeed = reagent.count * (reagentAllChars and numLeft or 1)
+                    local itemName = C_Item.GetItemNameByID(reagent.itemID)
+                    local have = 0
+                    if itemName then
+                        have = C_Item.GetItemCount(itemName, true, false, true, true)
+                    else
+                        have = C_Item.GetItemCount(reagent.itemID, true, false, true, true)
+                    end
+                    local need = math.max(totalNeed - have, 0)
+                    if need > 0 then
+                        missing[reagent.itemID] = (missing[reagent.itemID] or 0) + need
+                    end
+                end
+            end
+        end
+    end
+    return missing
+end
+
+-- Build reverse lookup: reagent itemID -> total missing across all lures
+-- (used by AH hook to pre-fill quantity)
+local ahHookInstalled = false
+function ns.InstallAHHook()
+    if ahHookInstalled then return end
+    ahHookInstalled = true
+
+    -- Hook into Blizzard's CommoditiesBuyFrame to auto-fill quantity
+    local hookFrame = CreateFrame("Frame")
+    hookFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
+    hookFrame:SetScript("OnEvent", function()
+        local ahFrame = AuctionHouseFrame
+        if not ahFrame or not ahFrame.CommoditiesBuyFrame then return end
+        local buyDisplay = ahFrame.CommoditiesBuyFrame.BuyDisplay
+        if not buyDisplay or buyDisplay._mbtHooked then return end
+        buyDisplay._mbtHooked = true
+
+        hooksecurefunc(buyDisplay, "SetItemIDAndPrice", function(self, itemID)
+            if not itemID then return end
+            EnsureDB()
+            local settings = MajesticBeastTrackerDB.settings
+            if not settings.ahAutofillQuantity then return end
+            if settings.showReagents == false then return end
+            -- Check missing reagents
+            local missingReagents = ns.GetMissingReagents()
+            local needed = missingReagents[itemID]
+            -- Check missing consumables (per-item stock target)
+            if not needed and ns.CONSUMABLE_ITEMS then
+                local stockTargets = type(settings.consumableStock) == "table" and settings.consumableStock or {}
+                local target = stockTargets[itemID] or settings["consStock_" .. itemID] or 0
+                if target > 0 then
+                    local itemName = C_Item.GetItemNameByID(itemID)
+                    local have = 0
+                    if itemName then
+                        have = C_Item.GetItemCount(itemName, true, false, true, true)
+                    else
+                        have = C_Item.GetItemCount(itemID, true, false, true, true)
+                    end
+                    needed = math.max(target - have, 0)
+                end
+            end
+            if needed and needed > 0 then
+                -- Use Blizzard's own event system to set quantity safely
+                C_Timer.After(0.1, function()
+                    if self:GetItemID() == itemID then
+                        self:GetAuctionHouseFrame():TriggerEvent(
+                            AuctionHouseFrameMixin.Event.CommoditiesQuantitySelectionChanged, needed)
+                    end
+                end)
+            end
+        end)
+    end)
+end
+
+-- Create Auctionator shopping list with missing reagents + consumables
+function ns.CreateAuctionatorShoppingList()
+    local loaded = C_AddOns.IsAddOnLoaded("Auctionator")
+    if not loaded then return false end
+
+    EnsureDB()
+    local searchStrings = {}
+
+    -- Missing lure reagents
+    local missingReagents = ns.GetMissingReagents()
+    for itemID, count in pairs(missingReagents) do
+        local itemName = C_Item.GetItemNameByID(itemID)
+        if itemName and count > 0 then
+            table.insert(searchStrings, Auctionator.API.v1.ConvertToSearchString(
+                "MajesticBeastTracker",
+                { searchString = itemName, isExact = true, categoryKey = "", tier = "", quantity = count }
+            ))
+        end
+    end
+
+    -- Missing consumables (per-item stock target - bag count)
+    local stockTargets = type(MajesticBeastTrackerDB.settings.consumableStock) == "table" and MajesticBeastTrackerDB.settings.consumableStock or {}
+    if ns.CONSUMABLE_ITEMS then
+        for _, cons in ipairs(ns.CONSUMABLE_ITEMS) do
+            local target = stockTargets[cons.itemID] or MajesticBeastTrackerDB.settings["consStock_" .. cons.itemID] or 0
+            if target > 0 then
+                local itemName = C_Item.GetItemNameByID(cons.itemID)
+                local have = 0
+                if itemName then
+                    have = C_Item.GetItemCount(itemName, true, false, true, true)
+                else
+                    have = C_Item.GetItemCount(cons.itemID, true, false, true, true)
+                end
+                local need = math.max(target - have, 0)
+                if need > 0 and itemName then
+                    table.insert(searchStrings, Auctionator.API.v1.ConvertToSearchString(
+                        "MajesticBeastTracker",
+                        { searchString = itemName, isExact = true, categoryKey = "", tier = "", quantity = need }
+                    ))
+                end
+            end
+        end
+    end
+
+    if #searchStrings > 0 then
+        Auctionator.API.v1.CreateShoppingList("MajesticBeastTracker", "MBT Reagents", searchStrings)
+        if MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r Auctionator shopping list updated (" .. #searchStrings .. " items).")
+        end
+        return true
+    else
+        -- Nothing missing, clean up list if it exists
+        if Auctionator.Shopping and Auctionator.Shopping.ListManager then
+            if Auctionator.Shopping.ListManager:GetIndexForName("MBT Reagents") then
+                Auctionator.Shopping.ListManager:Delete("MBT Reagents")
+            end
+        end
+        if MajesticBeastTrackerDB.settings.chatNotify then
+            print("|cff3FC7EB[MBT]|r All reagents ready — no shopping list needed.")
+        end
+        return true
+    end
+end
+
+------------------------------------------------------
 -- Event handler
 -- Kill detection: quest flags (QUEST_TURNED_IN + SyncKillsFromQuests)
 -- Weekly tracking: BAG_UPDATE_DELAYED + QUEST_TURNED_IN
@@ -1264,6 +1429,9 @@ f:SetScript("OnEvent", function(_, event, ...)
                 clearDebugBuffer = function() wipe(ns.debugBuffer) end,
             })
         end
+
+        -- Install AH quantity hook
+        ns.InstallAHHook()
 
         print("|cff3FC7EB[MBT]|r Loaded! |cffffff00/mbt help|r for commands")
 
