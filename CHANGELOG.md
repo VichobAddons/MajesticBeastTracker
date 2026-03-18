@@ -1,5 +1,10 @@
 # Majestic Beast Tracker
 
+## [v1.5.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.5.1) (2026-03-18)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.5.0...v1.5.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Fixed version label showing "Dev" when MajesticBeastTrackerDev addon is installed but disabled
+
 ## [v1.5.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.5.0) (2026-03-18)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.4.1...v1.5.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

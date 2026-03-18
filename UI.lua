@@ -172,7 +172,14 @@ local verLabel = titleFrame:CreateFontString(nil, "OVERLAY")
 verLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 verLabel:SetTextColor(0.5, 0.5, 0.5, 0.6)
 verLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
-verLabel:SetText("v" .. (C_AddOns.GetAddOnMetadata("MajesticBeastTrackerDev", "Version") or C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or ""))
+local function GetMBTVersion()
+    local devLoaded = C_AddOns.IsAddOnLoaded("MajesticBeastTrackerDev")
+    if devLoaded then
+        return (C_AddOns.GetAddOnMetadata("MajesticBeastTrackerDev", "Version") or "?") .. " Dev"
+    end
+    return C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or "?"
+end
+verLabel:SetText("v" .. GetMBTVersion())
 
 -- Lock indicator
 local lockIcon = frame:CreateTexture(nil, "OVERLAY")
