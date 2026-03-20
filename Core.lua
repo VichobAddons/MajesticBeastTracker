@@ -269,11 +269,15 @@ local function RecordLoot(beastName, diffs)
         charData.loot.resetTime = GetServerTime()
     end
 
-    -- Add diffs to both thisReset and allTime, snapshot TSM prices
+    -- Add diffs to both thisReset, allTime, and perBeast; snapshot TSM prices
     if not charData.loot.prices then charData.loot.prices = {} end
+    if not charData.loot.perBeast then charData.loot.perBeast = {} end
+    if not charData.loot.perBeast[beastName] then charData.loot.perBeast[beastName] = {} end
+    local beastLoot = charData.loot.perBeast[beastName]
     for id, count in pairs(diffs) do
         charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
         charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
+        beastLoot[id] = (beastLoot[id] or 0) + count
         -- Snapshot price at loot time (only if TSM available and no price yet this reset)
         if ns.GetTSMPrice and not charData.loot.prices[id] then
             charData.loot.prices[id] = ns.GetTSMPrice(id)
@@ -303,10 +307,11 @@ end
 
 -- Get aggregated loot across all characters
 function ns.GetGlobalLoot()
-    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.chars then return nil, nil, nil end
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.chars then return nil, nil, nil, nil end
     local globalReset = {}
     local globalAllTime = {}
     local globalPrices = {}
+    local globalPerBeast = {}
     for _, charData in pairs(MajesticBeastTrackerDB.chars) do
         local loot = ns.GetCharLoot(charData)
         if loot then
@@ -320,9 +325,16 @@ function ns.GetGlobalLoot()
             for id, price in pairs(loot.prices or {}) do
                 if price then globalPrices[id] = price end
             end
+            -- Merge per-beast data
+            for beastName, items in pairs(loot.perBeast or {}) do
+                if not globalPerBeast[beastName] then globalPerBeast[beastName] = {} end
+                for id, count in pairs(items) do
+                    globalPerBeast[beastName][id] = (globalPerBeast[beastName][id] or 0) + count
+                end
+            end
         end
     end
-    return globalReset, globalAllTime, globalPrices
+    return globalReset, globalAllTime, globalPrices, globalPerBeast
 end
 
 -- Accumulated loot diffs (collected across multiple LOOT_CLOSED events)

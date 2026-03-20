@@ -224,10 +224,10 @@ globalGoblinBtn.icon = globalGoblinIcon
 globalGoblinBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
     GameTooltip:AddLine("Loot Summary (All Characters)", 0.25, 0.78, 0.92)
-    local resetLoot, allTimeLoot, globalPrices = ns.GetGlobalLoot()
-    ns.AddLootTooltipLines(resetLoot, "This Reset", globalPrices)
-    ns.AddLootTooltipLines(allTimeLoot, "All Time", globalPrices)
-    if not resetLoot and not allTimeLoot then
+    local resetLoot, allTimeLoot, globalPrices, globalPerBeast = ns.GetGlobalLoot()
+    if resetLoot or allTimeLoot then
+        ns.AddLootTooltipColumns(resetLoot, allTimeLoot, globalPrices, globalPerBeast)
+    else
         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
     end
     GameTooltip:Show()
@@ -955,47 +955,183 @@ function ns.AddLootTooltipLines(lootTable, header, savedPrices)
 
     local totalValue = 0
     local hasTSM = TSM_API ~= nil
-    -- Group quality variants by item name
-    local grouped = {}  -- name -> { count = N, ids = {id1, id2} }
-    local order = {}
+    -- List each item individually (separate quality tiers)
+    local items = {}
     for id, count in pairs(lootTable) do
         if count > 0 then
             local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-            if not grouped[name] then
-                grouped[name] = { count = 0, ids = {} }
-                order[#order + 1] = name
-            end
-            grouped[name].count = grouped[name].count + count
-            grouped[name].ids[#grouped[name].ids + 1] = id
+            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
+            items[#items + 1] = { id = id, name = name, quality = quality, count = count }
         end
     end
-    table.sort(order)
+    table.sort(items, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        return a.quality < b.quality
+    end)
 
-    for _, name in ipairs(order) do
-        local entry = grouped[name]
-        local line = name .. "  x" .. entry.count
+    for _, entry in ipairs(items) do
+        local displayName = entry.name
+        if entry.quality > 0 then
+            displayName = displayName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. entry.quality .. ":12:12::1|a"
+        end
+        local line = displayName .. "  x" .. entry.count
         if hasTSM then
-            -- Use saved price from loot time, fall back to current price
-            local price
-            if savedPrices then
-                for _, id in ipairs(entry.ids) do
-                    if savedPrices[id] then price = savedPrices[id]; break end
-                end
-            end
-            if not price then price = ns.GetTSMPrice(entry.ids[1]) end
+            local price = savedPrices and savedPrices[entry.id]
+            if not price then price = ns.GetTSMPrice(entry.id) end
             if price then
                 local value = price * entry.count
                 totalValue = totalValue + value
                 line = line .. "  |cffffd700" .. ns.FormatGoldPositive(value) .. "|r"
             end
         end
-        GameTooltip:AddLine(line, 0.9, 0.9, 0.9)
+        local r, g, b = 0.9, 0.9, 0.9
+        local itemQuality = select(3, C_Item.GetItemInfo(entry.id))
+        if itemQuality then
+            local color = ITEM_QUALITY_COLORS[itemQuality]
+            if color then r, g, b = color.r, color.g, color.b end
+        end
+        GameTooltip:AddLine(line, r, g, b)
     end
 
     if hasTSM and totalValue > 0 then
         GameTooltip:AddLine("Value: " .. ns.FormatGoldPositive(totalValue), 1, 0.84, 0)
     end
     return totalValue
+end
+
+-- Helper: build sorted item list from loot table
+local function BuildItemList(lootTable, savedPrices)
+    if not lootTable then return {}, 0 end
+    local items = {}
+    local totalValue = 0
+    local hasTSM = TSM_API ~= nil
+    for id, count in pairs(lootTable) do
+        if count > 0 then
+            local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
+            local displayName = name
+            if quality > 0 then
+                displayName = displayName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
+            end
+            local priceText = ""
+            if hasTSM then
+                local price = savedPrices and savedPrices[id]
+                if not price then price = ns.GetTSMPrice(id) end
+                if price then
+                    totalValue = totalValue + price * count
+                    priceText = "  |cffffd700" .. ns.FormatGoldPositive(price * count) .. "|r"
+                end
+            end
+            local r, g, b = 0.9, 0.9, 0.9
+            local itemQuality = select(3, C_Item.GetItemInfo(id))
+            if itemQuality then
+                local color = ITEM_QUALITY_COLORS[itemQuality]
+                if color then r, g, b = color.r, color.g, color.b end
+            end
+            items[#items + 1] = { name = displayName, count = count, priceText = priceText, r = r, g = g, b = b, sortKey = name .. string.format("%02d", quality) }
+        end
+    end
+    table.sort(items, function(a, b) return a.sortKey < b.sortKey end)
+    return items, totalValue
+end
+
+-- Helper: add two-column loot display (This Reset | All Time) to tooltip
+function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeast)
+    local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
+    local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
+    local hasTSM = TSM_API ~= nil
+
+    -- Collect all unique item names from both lists
+    local allNames = {}
+    local nameSet = {}
+    for _, item in ipairs(resetItems) do
+        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
+    end
+    for _, item in ipairs(allTimeItems) do
+        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
+    end
+    table.sort(allNames)
+
+    -- Build lookup by sortKey
+    local resetByKey = {}
+    for _, item in ipairs(resetItems) do resetByKey[item.sortKey] = item end
+    local allTimeByKey = {}
+    for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
+
+    -- Headers with divider
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("This Reset", "All Time", 1, 0.84, 0, 1, 0.84, 0)
+    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
+
+    -- Rows: use allTime item list as base (always complete), show reset count on left
+    for _, key in ipairs(allNames) do
+        local ri = resetByKey[key]
+        local ai = allTimeByKey[key]
+        if ai then
+            local leftText
+            local lr, lg, lb
+            if ri then
+                leftText = ri.name .. " x" .. ri.count .. ri.priceText
+                lr, lg, lb = ri.r, ri.g, ri.b
+            else
+                leftText = ai.name .. " |cff666666—|r"
+                lr, lg, lb = 0.4, 0.4, 0.4
+            end
+            local rightText = ai.name .. " x" .. ai.count .. ai.priceText
+            local rr, rg, rb = ai.r, ai.g, ai.b
+            GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
+        elseif ri then
+            -- Item in reset but not alltime (shouldn't happen, but handle)
+            local leftText = ri.name .. " x" .. ri.count .. ri.priceText
+            GameTooltip:AddDoubleLine(leftText, " ", ri.r, ri.g, ri.b, 0.5, 0.5, 0.5)
+        end
+    end
+
+    -- Value totals
+    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
+    if hasTSM then
+        local leftVal = resetTotal > 0 and ("Value: " .. ns.FormatGoldPositive(resetTotal)) or " "
+        local rightVal = allTimeTotal > 0 and ("Value: " .. ns.FormatGoldPositive(allTimeTotal)) or " "
+        GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
+    end
+
+    -- Per-beast breakdown below
+    if perBeast then
+        ns.AddPerBeastTooltipLines(perBeast)
+    end
+end
+
+-- Helper: add per-beast breakdown lines to tooltip
+function ns.AddPerBeastTooltipLines(perBeast)
+    if not perBeast then return end
+    for _, lure in ipairs(LURES) do
+        local bl = perBeast[lure.name]
+        if bl and next(bl) then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(lure.color .. lure.name .. "|r", 1, 1, 1)
+            local sorted = {}
+            for id, count in pairs(bl) do
+                sorted[#sorted + 1] = { id = id, count = count }
+            end
+            table.sort(sorted, function(a, b)
+                return (C_Item.GetItemNameByID(a.id) or "") < (C_Item.GetItemNameByID(b.id) or "")
+            end)
+            for _, entry in ipairs(sorted) do
+                local name = C_Item.GetItemNameByID(entry.id) or ("Item " .. entry.id)
+                local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(entry.id)
+                if quality and quality > 0 then
+                    name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
+                end
+                local r, g, b = 0.9, 0.9, 0.9
+                local itemQuality = select(3, C_Item.GetItemInfo(entry.id))
+                if itemQuality then
+                    local color = ITEM_QUALITY_COLORS[itemQuality]
+                    if color then r, g, b = color.r, color.g, color.b end
+                end
+                GameTooltip:AddLine("  " .. name .. "  x" .. entry.count, r, g, b)
+            end
+        end
+    end
 end
 
 -- Helper: check if player has Engineering as second profession
@@ -2282,8 +2418,7 @@ function ns.UpdateUI()
                     GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.25, 0.78, 0.92)
                     local charLoot = ns.GetCharLoot(capturedData)
                     if charLoot then
-                        ns.AddLootTooltipLines(charLoot.thisReset, "This Reset", charLoot.prices)
-                        ns.AddLootTooltipLines(charLoot.allTime, "All Time", charLoot.prices)
+                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices, charLoot.perBeast)
                     end
                     if not hasLoot then
                         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
@@ -2665,14 +2800,18 @@ end)
 ------------------------------------------------------
 
 function ns.ShowFrame()
-    frame:Show()
+    if not InCombatLockdown() then
+        frame:Show()
+    end
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = true
     ns.UpdateUI()
 end
 
 function ns.HideFrame()
-    frame:Hide()
+    if not InCombatLockdown() then
+        frame:Hide()
+    end
     if lootEditor then lootEditor:Hide() end
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = false
