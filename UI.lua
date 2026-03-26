@@ -7,7 +7,7 @@ local addonName, ns = ...
 local LURES = ns.LURES
 
 -- Constants
-local CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
+ns.CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
 
 -- Layout
 local ICON_SIZE = 26
@@ -126,6 +126,30 @@ frame:SetScript("OnDragStop", function(self)
     MajesticBeastTrackerDB.settings.framePosition = { point, "UIParent", relPoint, x, y }
 end)
 
+-- Autohide: fade in/out on hover
+function ns.RefreshAutoHide()
+    if not frame:IsShown() then return end
+    ns.EnsureDB()
+    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+        UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
+    else
+        UIFrameFadeIn(frame, 0.1, frame:GetAlpha(), 1)
+    end
+end
+
+frame:SetScript("OnEnter", function()
+    ns.EnsureDB()
+    if MajesticBeastTrackerDB.settings.autoHide then
+        UIFrameFadeIn(frame, 0.1, frame:GetAlpha(), 1)
+    end
+end)
+frame:SetScript("OnLeave", function()
+    ns.EnsureDB()
+    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+        UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
+    end
+end)
+
 -- Logout button (left of close button)
 local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
 logoutBtn:SetHeight(16)
@@ -153,6 +177,32 @@ closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
 closeBtn:SetScript("OnClick", function()
     ns.HideFrame()
 end)
+
+-- Autohide toggle button (eye icon)
+local autoHideBtn = CreateFrame("Button", nil, frame)
+autoHideBtn:SetSize(14, 14)
+autoHideBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+local autoHideIcon = autoHideBtn:CreateTexture(nil, "ARTWORK")
+autoHideIcon:SetAllPoints()
+autoHideIcon:SetTexture("Interface\\Icons\\Spell_Nature_Invisibilty")
+autoHideIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+autoHideBtn:SetScript("OnClick", function()
+    ns.EnsureDB()
+    MajesticBeastTrackerDB.settings.autoHide = not MajesticBeastTrackerDB.settings.autoHide
+    ns.RefreshAutoHide()
+    local state = MajesticBeastTrackerDB.settings.autoHide
+    autoHideIcon:SetDesaturated(not state)
+    autoHideIcon:SetAlpha(state and 1.0 or 0.4)
+end)
+autoHideBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    ns.EnsureDB()
+    local state = MajesticBeastTrackerDB.settings.autoHide
+    GameTooltip:AddLine(state and "Auto Hide: ON" or "Auto Hide: OFF", 1, 1, 1)
+    GameTooltip:AddLine("Click to toggle. Fades tracker when mouse leaves.", 0.5, 0.8, 1, true)
+    GameTooltip:Show()
+end)
+autoHideBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- Title (branding, fills empty space left of lure icons)
 local titleFrame = CreateFrame("Frame", nil, frame)
@@ -192,7 +242,7 @@ lockIcon:Hide()
 -- Toggle fish button (show/hide reagent icons)
 local fishBtn = CreateFrame("Button", nil, frame)
 fishBtn:SetSize(14, 14)
-fishBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+fishBtn:SetPoint("RIGHT", autoHideBtn, "LEFT", -2, 0)
 local fishIcon = fishBtn:CreateTexture(nil, "ARTWORK")
 fishIcon:SetAllPoints()
 fishIcon:SetTexture("Interface\\Icons\\INV_Misc_Fish_02")
@@ -214,8 +264,9 @@ end)
 
 -- Global loot summary button (goblin icon)
 local globalGoblinBtn = CreateFrame("Button", nil, frame)
+globalGoblinBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
 globalGoblinBtn:SetSize(14, 14)
-globalGoblinBtn:SetPoint("RIGHT", fishBtn, "LEFT", -20, 0)
+-- Anchored dynamically in UpdateUI after coinBtn is created
 local globalGoblinIcon = globalGoblinBtn:CreateTexture(nil, "ARTWORK")
 globalGoblinIcon:SetAllPoints()
 globalGoblinIcon:SetTexture("Interface\\Icons\\Achievement_GoblinHead")
@@ -224,9 +275,9 @@ globalGoblinBtn.icon = globalGoblinIcon
 globalGoblinBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
     GameTooltip:AddLine("Loot Summary (All Characters)", 0.25, 0.78, 0.92)
-    local resetLoot, allTimeLoot, globalPrices, globalPerBeast = ns.GetGlobalLoot()
+    local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
     if resetLoot or allTimeLoot then
-        ns.AddLootTooltipColumns(resetLoot, allTimeLoot, globalPrices, globalPerBeast)
+        ns.AddLootTooltipColumns(resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset)
     else
         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
     end
@@ -257,6 +308,7 @@ warbankBtn:Hide()
 -- Auctionator shopping list button
 local auctionatorBtn = CreateFrame("Button", nil, frame)
 auctionatorBtn:SetSize(14, 14)
+auctionatorBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
 auctionatorBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -2, 0)
 local auctionatorIcon = auctionatorBtn:CreateTexture(nil, "ARTWORK")
 auctionatorIcon:SetAllPoints()
@@ -277,7 +329,8 @@ auctionatorBtn:Hide()
 -- Toggle TSM prices button (coin icon)
 local coinBtn = CreateFrame("Button", nil, frame)
 coinBtn:SetSize(14, 14)
-coinBtn:SetPoint("RIGHT", fishBtn, "LEFT", -2, 0)
+coinBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
+coinBtn:SetPoint("RIGHT", fishBtn, "LEFT", -4, 0)
 local coinIcon = coinBtn:CreateTexture(nil, "ARTWORK")
 coinIcon:SetAllPoints()
 coinIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
@@ -770,21 +823,21 @@ C_Timer.NewTicker(1, function()
 end)
 
 -- Separator under icons
-local iconSep = frame:CreateTexture(nil, "ARTWORK")
-iconSep:SetHeight(1)
-iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - REAGENT_ROW_HEIGHT - ICON_ROW_HEIGHT - 2)
-iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-iconSep:SetColorTexture(unpack(C_SEPARATOR))
+ns.iconSep = frame:CreateTexture(nil, "ARTWORK")
+ns.iconSep:SetHeight(1)
+ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - REAGENT_ROW_HEIGHT - ICON_ROW_HEIGHT - 2)
+ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+ns.iconSep:SetColorTexture(unpack(C_SEPARATOR))
 
 ------------------------------------------------------
 -- Travel buttons (bottom of frame, below character rows)
 ------------------------------------------------------
 
 local travelButtons = {}
-local travelSep = frame:CreateTexture(nil, "ARTWORK")
-travelSep:SetHeight(1)
-travelSep:SetColorTexture(unpack(C_SEPARATOR))
-travelSep:Hide()
+ns.travelSep = frame:CreateTexture(nil, "ARTWORK")
+ns.travelSep:SetHeight(1)
+ns.travelSep:SetColorTexture(unpack(C_SEPARATOR))
+ns.travelSep:Hide()
 
 local function CreateTravelButton(index, itemInfo)
     local btn = CreateFrame("Button", "MBT_TravelBtn" .. index, frame, "SecureActionButtonTemplate")
@@ -889,11 +942,11 @@ for i, stat in ipairs(STAT_LABELS) do
 end
 
 -- Total TSM cost label (below stats)
-local tsmTotalLabel = frame:CreateFontString(nil, "OVERLAY")
-tsmTotalLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-tsmTotalLabel:SetTextColor(1, 0.84, 0)
-tsmTotalLabel:SetJustifyH("RIGHT")
-tsmTotalLabel:Hide()
+ns.tsmTotalLabel = frame:CreateFontString(nil, "OVERLAY")
+ns.tsmTotalLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+ns.tsmTotalLabel:SetTextColor(1, 0.84, 0)
+ns.tsmTotalLabel:SetJustifyH("RIGHT")
+ns.tsmTotalLabel:Hide()
 
 -- Weekly knowledge lines for main window (right-aligned, below stats)
 local weeklyMainLines = {}
@@ -1036,7 +1089,7 @@ local function BuildItemList(lootTable, savedPrices)
 end
 
 -- Helper: add two-column loot display (This Reset | All Time) to tooltip
-function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeast)
+function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeast, perBeastReset)
     local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
     local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
     local hasTSM = TSM_API ~= nil
@@ -1095,40 +1148,69 @@ function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeas
         GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
     end
 
-    -- Per-beast breakdown below
-    if perBeast then
-        ns.AddPerBeastTooltipLines(perBeast)
+    -- Per-beast breakdown below (this reset + all time)
+    if perBeastReset or perBeast then
+        ns.AddPerBeastTooltipLines(perBeastReset, perBeast)
     end
 end
 
 -- Helper: add per-beast breakdown lines to tooltip
-function ns.AddPerBeastTooltipLines(perBeast)
-    if not perBeast then return end
+function ns.AddPerBeastTooltipLines(perBeastReset, perBeastAllTime)
+    if not perBeastReset and not perBeastAllTime then return end
+    local resetData = perBeastReset or {}
+    local allTimeData = perBeastAllTime or {}
+
+    -- Helper: format item name with quality icon
+    local function formatItem(id)
+        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+        local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
+        if quality and quality > 0 then
+            name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
+        end
+        return name
+    end
+
+    local function getItemColor(id)
+        local r, g, b = 0.9, 0.9, 0.9
+        local itemQuality = select(3, C_Item.GetItemInfo(id))
+        if itemQuality then
+            local color = ITEM_QUALITY_COLORS[itemQuality]
+            if color then r, g, b = color.r, color.g, color.b end
+        end
+        return r, g, b
+    end
+
     for _, lure in ipairs(LURES) do
-        local bl = perBeast[lure.name]
-        if bl and next(bl) then
+        local resetBl = resetData[lure.name]
+        local allTimeBl = allTimeData[lure.name]
+        local hasReset = resetBl and next(resetBl)
+        local hasAllTime = allTimeBl and next(allTimeBl)
+        if hasReset or hasAllTime then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(lure.color .. lure.name .. "|r", 1, 1, 1)
-            local sorted = {}
-            for id, count in pairs(bl) do
-                sorted[#sorted + 1] = { id = id, count = count }
-            end
-            table.sort(sorted, function(a, b)
-                return (C_Item.GetItemNameByID(a.id) or "") < (C_Item.GetItemNameByID(b.id) or "")
+            GameTooltip:AddDoubleLine(
+                lure.color .. lure.name .. " (Reset)|r",
+                lure.color .. lure.name .. " (All Time)|r",
+                1, 1, 1, 1, 1, 1)
+
+            -- Collect all item IDs from both
+            local allIDs = {}
+            local idSet = {}
+            for id in pairs(allTimeBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+            for id in pairs(resetBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+            table.sort(allIDs, function(a, b)
+                return (C_Item.GetItemNameByID(a) or "") < (C_Item.GetItemNameByID(b) or "")
             end)
-            for _, entry in ipairs(sorted) do
-                local name = C_Item.GetItemNameByID(entry.id) or ("Item " .. entry.id)
-                local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(entry.id)
-                if quality and quality > 0 then
-                    name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
-                end
-                local r, g, b = 0.9, 0.9, 0.9
-                local itemQuality = select(3, C_Item.GetItemInfo(entry.id))
-                if itemQuality then
-                    local color = ITEM_QUALITY_COLORS[itemQuality]
-                    if color then r, g, b = color.r, color.g, color.b end
-                end
-                GameTooltip:AddLine("  " .. name .. "  x" .. entry.count, r, g, b)
+
+            for _, id in ipairs(allIDs) do
+                local name = formatItem(id)
+                local r, g, b = getItemColor(id)
+                local rc = resetBl and resetBl[id]
+                local ac = allTimeBl and allTimeBl[id]
+                local leftText = rc and ("  " .. name .. " x" .. rc) or " "
+                local rightText = ac and (name .. " x" .. ac) or " "
+                local lr, lg, lb = rc and r or 0.4, rc and g or 0.4, rc and b or 0.4
+                local rr, rg, rb = ac and r or 0.4, ac and g or 0.4, ac and b or 0.4
+                GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
             end
         end
     end
@@ -1461,8 +1543,7 @@ end
 ------------------------------------------------------
 
 -- Forward declarations for loot editor (used in goblin button OnClick below)
-local ShowLootEditor
-local lootEditor
+-- ns.lootEditor and ns.ShowLootEditor stored in ns to reduce upvalues
 
 local function CreateCharRow(index)
     local row = {}
@@ -1537,10 +1618,10 @@ local function CreateCharRow(index)
     goblinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     goblinBtn:SetScript("OnClick", function(self)
         GameTooltip:Hide()
-        if lootEditor:IsShown() and lootEditor.charKey == row._charKey then
-            lootEditor:Hide()
+        if ns.lootEditor:IsShown() and ns.lootEditor.charKey == row._charKey then
+            ns.lootEditor:Hide()
         else
-            ShowLootEditor(self, row._charKey)
+            ns.ShowLootEditor(self, row._charKey)
         end
     end)
     goblinBtn:Hide()
@@ -1642,28 +1723,28 @@ end
 -- Loot Editor Panel
 ------------------------------------------------------
 
-lootEditor = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-lootEditor:SetFrameStrata("MEDIUM")
-lootEditor:SetClampedToScreen(true)
-lootEditor:SetBackdrop(BACKDROP)
-lootEditor:SetBackdropColor(0, 0, 0, 0.97)
-lootEditor:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-lootEditor:EnableMouse(true)
-lootEditor:Hide()
-lootEditor.rows = {}
-lootEditor.charKey = nil
+ns.lootEditor = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+ns.lootEditor:SetFrameStrata("MEDIUM")
+ns.lootEditor:SetClampedToScreen(true)
+ns.lootEditor:SetBackdrop(BACKDROP)
+ns.lootEditor:SetBackdropColor(0, 0, 0, 0.97)
+ns.lootEditor:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+ns.lootEditor:EnableMouse(true)
+ns.lootEditor:Hide()
+ns.lootEditor.rows = {}
+ns.lootEditor.charKey = nil
 
 -- Title
-local lootTitle = lootEditor:CreateFontString(nil, "OVERLAY")
+local lootTitle = ns.lootEditor:CreateFontString(nil, "OVERLAY")
 lootTitle:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-lootTitle:SetPoint("TOPLEFT", lootEditor, "TOPLEFT", 8, -8)
+lootTitle:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 8, -8)
 lootTitle:SetTextColor(0.25, 0.78, 0.92)
-lootEditor.title = lootTitle
+ns.lootEditor.title = lootTitle
 
 -- Syncing overlay
-local syncOverlay = CreateFrame("Frame", nil, lootEditor)
+local syncOverlay = CreateFrame("Frame", nil, ns.lootEditor)
 syncOverlay:SetAllPoints()
-syncOverlay:SetFrameLevel(lootEditor:GetFrameLevel() + 10)
+syncOverlay:SetFrameLevel(ns.lootEditor:GetFrameLevel() + 10)
 syncOverlay:EnableMouse(true) -- block clicks through
 syncOverlay:Hide()
 local syncBg = syncOverlay:CreateTexture(nil, "BACKGROUND")
@@ -1673,10 +1754,10 @@ local syncText = syncOverlay:CreateFontString(nil, "OVERLAY")
 syncText:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
 syncText:SetPoint("CENTER", 0, 0)
 syncText:SetText("|cff59c7eaLoot sync in progress...|r")
-lootEditor.syncOverlay = syncOverlay
+ns.lootEditor.syncOverlay = syncOverlay
 
 -- Close button
-local lootClose = CreateFrame("Button", nil, lootEditor)
+local lootClose = CreateFrame("Button", nil, ns.lootEditor)
 lootClose:SetSize(16, 16)
 lootClose:SetPoint("TOPRIGHT", -4, -4)
 local lootCloseTex = lootClose:CreateFontString(nil, "OVERLAY")
@@ -1686,7 +1767,7 @@ lootCloseTex:SetText("|cffff4444×|r")
 local lootCloseHl = lootClose:CreateTexture(nil, "HIGHLIGHT")
 lootCloseHl:SetAllPoints()
 lootCloseHl:SetColorTexture(1, 0.3, 0.3, 0.15)
-lootClose:SetScript("OnClick", function() lootEditor:Hide() end)
+lootClose:SetScript("OnClick", function() ns.lootEditor:Hide() end)
 
 local LOOT_ROW_HEIGHT = 22
 local LOOT_EDITOR_WIDTH = 320
@@ -1708,9 +1789,9 @@ end
 
 -- Inner function that actually populates the editor (called after items are cached)
 local function PopulateLootEditor(anchor, charKey)
-    lootEditor.charKey = charKey
-    if anchor ~= lootEditor then
-        lootEditor._anchor = anchor
+    ns.lootEditor.charKey = charKey
+    if anchor ~= ns.lootEditor then
+        ns.lootEditor._anchor = anchor
     end
     local charData = MajesticBeastTrackerDB.chars[charKey]
     if not charData then return end
@@ -1721,16 +1802,16 @@ local function PopulateLootEditor(anchor, charKey)
     end
     local loot = ns.GetCharLoot(charData)
 
-    lootEditor.title:SetText(ns.GetDemoName(charKey) .. " - Edit Loot")
+    ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " - Edit Loot")
 
     local sortedItems = BuildSortedLootList()
 
     local yOff = -24
     for idx, entry in ipairs(sortedItems) do
         local itemID = entry.id
-        local row = lootEditor.rows[idx]
+        local row = ns.lootEditor.rows[idx]
         if not row then
-            row = CreateFrame("Frame", nil, lootEditor)
+            row = CreateFrame("Frame", nil, ns.lootEditor)
             row:SetHeight(LOOT_ROW_HEIGHT)
             row:EnableMouse(true)
 
@@ -1803,11 +1884,11 @@ local function PopulateLootEditor(anchor, charKey)
             plusHl:SetColorTexture(0.3, 1, 0.3, 0.15)
             row.plusBtn = plusBtn
 
-            lootEditor.rows[idx] = row
+            ns.lootEditor.rows[idx] = row
         end
 
-        row:SetPoint("TOPLEFT", lootEditor, "TOPLEFT", 0, yOff)
-        row:SetPoint("TOPRIGHT", lootEditor, "TOPRIGHT", 0, yOff)
+        row:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 0, yOff)
+        row:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", 0, yOff)
 
         -- Set item data
         local tex = C_Item.GetItemIconByID(itemID)
@@ -1842,7 +1923,7 @@ local function PopulateLootEditor(anchor, charKey)
             local cl = ns.GetCharLoot(charData)
             local rc = cl.thisReset[capturedID] or 0
             local ac = cl.allTime[capturedID] or 0
-            lootEditor.rows[capturedIdx].countLabel:SetText("|cffffd700" .. rc .. "|r / " .. ac)
+            ns.lootEditor.rows[capturedIdx].countLabel:SetText("|cffffd700" .. rc .. "|r / " .. ac)
             if ns.UpdateUI then ns.UpdateUI() end
         end
 
@@ -1904,25 +1985,25 @@ local function PopulateLootEditor(anchor, charKey)
     end
 
     -- Hide unused rows
-    for i = #sortedItems + 1, #lootEditor.rows do
-        lootEditor.rows[i]:Hide()
+    for i = #sortedItems + 1, #ns.lootEditor.rows do
+        ns.lootEditor.rows[i]:Hide()
     end
 
-    lootEditor:SetSize(LOOT_EDITOR_WIDTH, math.abs(yOff) + 8)
-    lootEditor:ClearAllPoints()
-    lootEditor:SetPoint("TOPLEFT", lootEditor._anchor or anchor, "TOPRIGHT", 4, 0)
-    lootEditor:Show()
+    ns.lootEditor:SetSize(LOOT_EDITOR_WIDTH, math.abs(yOff) + 8)
+    ns.lootEditor:ClearAllPoints()
+    ns.lootEditor:SetPoint("TOPLEFT", ns.lootEditor._anchor or anchor, "TOPRIGHT", 4, 0)
+    ns.lootEditor:Show()
 
     -- Show syncing overlay when loot sync is active
     if ns.isSyncingLoot then
-        lootEditor.syncOverlay:Show()
+        ns.lootEditor.syncOverlay:Show()
     else
-        lootEditor.syncOverlay:Hide()
+        ns.lootEditor.syncOverlay:Hide()
     end
 end
 
 -- Preload item data then open editor
-ShowLootEditor = function(anchor, charKey)
+ns.ShowLootEditor = function(anchor, charKey)
     local pending = 0
     local allCached = true
     for id in pairs(ns.TRACKED_LOOT) do
@@ -1957,9 +2038,58 @@ function ns.UpdateUI()
     local currentChar = ns.GetCharKey()
     if not currentChar then return end
 
+    -- Ensure current character level is stored
+    if MajesticBeastTrackerDB.chars[currentChar] then
+        MajesticBeastTrackerDB.chars[currentChar].level = UnitLevel("player")
+    end
+
+    -- Reagent layout values (needed early for header positioning)
+    local showReagents = MajesticBeastTrackerDB.settings.showReagents ~= false
+    local showTSM = MajesticBeastTrackerDB.settings.tsmIntegration
+    local tsmExtra = (showReagents and TSM_API and showTSM) and TSM_PRICE_HEIGHT or 0
+    local reagentExtra = showReagents and (REAGENT_ROW_HEIGHT + tsmExtra) or 0
+
+    -- Route: check if a lure is skipped (global skip or Harandar level check)
+    local routeSkip = MajesticBeastTrackerDB.settings.routeSkip or {}
+    local harandarMinLvl = MajesticBeastTrackerDB.settings.routeHarandarMinLevel or 80
+    local hideSkipped = MajesticBeastTrackerDB.settings.routeHideSkipped or false
+    local lureSkipped = {}
+    local visibleLureCount = 0
+    for li, lure in ipairs(LURES) do
+        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+        lureSkipped[li] = routeSkip[lure.name] or MajesticBeastTrackerDB.settings[skipKey] or false
+        if not lureSkipped[li] or not hideSkipped then
+            visibleLureCount = visibleLureCount + 1
+        end
+    end
+    local numVisibleLures = hideSkipped and visibleLureCount or #LURES
+    -- Map lure index → visible column index (for layout)
+    local lureToCol = {}
+    local colIdx = 0
+    for li = 1, #LURES do
+        if hideSkipped and lureSkipped[li] then
+            lureToCol[li] = -1  -- hidden
+        else
+            lureToCol[li] = colIdx
+            colIdx = colIdx + 1
+        end
+    end
+
     -- Header icons: texture, count, glow
     local charData = MajesticBeastTrackerDB.chars[currentChar]
+    local visCol = 0  -- visible column counter for layout when hiding skipped
     for i, lure in ipairs(LURES) do
+        local isHidden = hideSkipped and lureSkipped[i]
+        if isHidden then
+            if not InCombatLockdown() then headerIcons[i]:Hide() end
+            zoneLabels[i]:Hide()
+            if reagentIcons[i] then
+                for _, rBtn in ipairs(reagentIcons[i]) do rBtn:Hide() end
+            end
+            if lureBoxes[i] then lureBoxes[i]:Hide() end
+            if tsmPriceLabels[i] then tsmPriceLabels[i]:Hide() end
+        else
+        visCol = visCol + 1
         local tex = C_Item.GetItemIconByID(lure.itemID)
         if tex then headerIcons[i].icon:SetTexture(tex) end
 
@@ -2000,38 +2130,58 @@ function ns.UpdateUI()
             headerIcons[i].glow.Hide()
         end
 
-    end
+        -- Repositioning handled in InCombatLockdown-guarded block below
+        if not InCombatLockdown() then
+            headerIcons[i]:Show()
+        end
+        zoneLabels[i]:Show()
 
-    -- Reagent icons: texture, count, visibility + dynamic layout
-    local showReagents = MajesticBeastTrackerDB.settings.showReagents ~= false
-    local tsmExtra = (showReagents and TSM_API and MajesticBeastTrackerDB.settings.tsmIntegration) and TSM_PRICE_HEIGHT or 0
-    local reagentExtra = showReagents and (REAGENT_ROW_HEIGHT + tsmExtra) or 0
+        end -- end isHidden else
+    end
 
     -- Reposition lure icons and separator based on reagent visibility
     if not InCombatLockdown() then
+        local reposCol = 0
         for i = 1, #LURES do
-            headerIcons[i]:ClearAllPoints()
-            headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
-                contentTop - 2 - reagentExtra)
+            if hideSkipped and lureSkipped[i] then
+                headerIcons[i]:Hide()
+            else
+                headerIcons[i]:ClearAllPoints()
+                headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                    PAD + 4 + NAME_COL_WIDTH + reposCol * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
+                    contentTop - 2 - reagentExtra)
+                zoneLabels[i]:ClearAllPoints()
+                zoneLabels[i]:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
+                reposCol = reposCol + 1
+            end
         end
-        iconSep:ClearAllPoints()
-        iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
-        iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+        ns.iconSep:ClearAllPoints()
+        ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
+        ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
         consumableBox:ClearAllPoints()
         consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
     end
 
-    -- Count characters that still need a lure today (eligible - already killed)
+
+    -- Count characters that still need a lure today (eligible - already killed - skipped - hidden)
+    local hiddenCharsForCount = MajesticBeastTrackerDB.settings.hiddenChars or {}
     local charsNeedLure = {}
     for li = 1, #LURES do
         charsNeedLure[li] = 0
-        for _, cData in pairs(MajesticBeastTrackerDB.chars) do
-            if ns.CanSeeLure(cData, li) then
-                local ts = cData.lures[LURES[li].name]
-                if not ts or ns.IsLureReady(ts) then
-                    -- No kill or cooldown expired → needs a lure
-                    charsNeedLure[li] = charsNeedLure[li] + 1
+        if not lureSkipped[li] then
+            for charKey, cData in pairs(MajesticBeastTrackerDB.chars) do
+                if not hiddenCharsForCount[charKey] and ns.CanSeeLure(cData, li) then
+                    -- Harandar level check
+                    local skipForLevel = false
+                    if LURES[li].name == "Harandar" and cData.level and cData.level < harandarMinLvl then
+                        skipForLevel = true
+                    end
+                    if not skipForLevel then
+                        local ts = cData.lures[LURES[li].name]
+                        if not ts or ns.IsLureReady(ts) then
+                            charsNeedLure[li] = charsNeedLure[li] + 1
+                        end
+                    end
                 end
             end
         end
@@ -2041,6 +2191,11 @@ function ns.UpdateUI()
     fishIcon:SetDesaturated(not showReagents)
     fishIcon:SetAlpha(showReagents and 1.0 or 0.4)
     fishBtn:Show()
+
+    -- Update autohide button visual
+    local ahEnabled = MajesticBeastTrackerDB.settings.autoHide
+    autoHideIcon:SetDesaturated(not ahEnabled)
+    autoHideIcon:SetAlpha(ahEnabled and 1.0 or 0.4)
 
     -- Update coin toggle button (desaturated when TSM not installed or disabled)
     local tsmEnabled = MajesticBeastTrackerDB.settings.tsmIntegration
@@ -2053,6 +2208,8 @@ function ns.UpdateUI()
     local lootTrackingOn = MajesticBeastTrackerDB.settings.lootTracking ~= false
     globalGoblinIcon:SetDesaturated(not lootTrackingOn)
     globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
+    globalGoblinBtn:ClearAllPoints()
+    globalGoblinBtn:SetPoint("RIGHT", coinBtn, "LEFT", -4, 0)
     globalGoblinBtn:Show()
 
     -- Dynamic button chain: globalGoblin ← auctionator ← warbank (right to left)
@@ -2078,7 +2235,24 @@ function ns.UpdateUI()
     end
 
     for i, lure in ipairs(LURES) do
-        if reagentIcons[i] and showReagents and lure.reagents then
+        -- Skip hidden lure columns entirely
+        if hideSkipped and lureSkipped[i] then
+            if reagentIcons[i] then
+                for _, rBtn in ipairs(reagentIcons[i]) do rBtn:Hide() end
+            end
+        elseif reagentIcons[i] and showReagents and lure.reagents then
+            -- Reposition reagent icons if hiding skipped columns
+            if hideSkipped and lureToCol[i] >= 0 then
+                local col = lureToCol[i]
+                local lureCenter = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH + COL_WIDTH / 2
+                local numR = #lure.reagents
+                local totalW = numR * REAGENT_ICON_SIZE + (numR - 1) * REAGENT_GAP
+                for j, rBtn in ipairs(reagentIcons[i]) do
+                    rBtn:ClearAllPoints()
+                    local rx = lureCenter - totalW / 2 + (j - 1) * (REAGENT_ICON_SIZE + REAGENT_GAP)
+                    rBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", rx, contentTop - 2 - 1)
+                end
+            end
             local numLeft = charsNeedLure[i]
             local anyMissing = false
 
@@ -2177,7 +2351,7 @@ function ns.UpdateUI()
                         if missing > 0 then
                             rBtn.countText:SetText("|cffff3333-" .. missing .. "|r")
                         else
-                            rBtn.countText:SetText("|cff00ff00" .. CHECKMARK_ICON .. "|r")
+                            rBtn.countText:SetText("|cff00ff00" .. ns.CHECKMARK_ICON .. "|r")
                         end
                         rBtn.countText:Show()
                     else
@@ -2219,10 +2393,10 @@ function ns.UpdateUI()
     -- Update TSM price labels
     -- Update TSM price labels (cost of missing reagents per lure)
     local hasTSM = TSM_API ~= nil
-    local showTSM = hasTSM and showReagents and MajesticBeastTrackerDB.settings.tsmIntegration
+    local showTSMPrices = hasTSM and showReagents and showTSM
     for i, lure in ipairs(LURES) do
         local label = tsmPriceLabels[i]
-        if showTSM and lure.reagents then
+        if showTSMPrices and lure.reagents then
             local totalCost = 0
             local hasPrice = true
             for j, rBtn in ipairs(reagentIcons[i]) do
@@ -2243,7 +2417,8 @@ function ns.UpdateUI()
                 label:SetText(ns.FormatGold(totalCost))
                 label:SetTextColor(1, 0.84, 0)
                 label:ClearAllPoints()
-                local colCenter = PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH + COL_WIDTH / 2
+                local col = hideSkipped and lureToCol[i] or (i - 1)
+                local colCenter = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH + COL_WIDTH / 2
                 label:SetPoint("TOP", frame, "TOPLEFT", colCenter, contentTop - 2 - REAGENT_ICON_SIZE - REAGENT_COUNT_HEIGHT - 3)
                 label:Show()
             else
@@ -2257,10 +2432,13 @@ function ns.UpdateUI()
     -- Update lure column boxes
     for i, lure in ipairs(LURES) do
         local box = lureBoxes[i]
-        if showReagents and lure.reagents and #lure.reagents > 0 then
+        if hideSkipped and lureSkipped[i] then
+            box:Hide()
+        elseif showReagents and lure.reagents and #lure.reagents > 0 then
             -- Position border box around reagent icons + lure icon
             local boxPad = 3
-            local colX = PAD + 4 + NAME_COL_WIDTH + (i - 1) * COL_WIDTH
+            local col = hideSkipped and lureToCol[i] or (i - 1)
+            local colX = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH
             local boxTop = contentTop - 2 + boxPad
             local boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
             box:ClearAllPoints()
@@ -2274,8 +2452,10 @@ function ns.UpdateUI()
 
     -- Gather eligible characters
     local keys = {}
+    local hiddenChars = MajesticBeastTrackerDB.settings.hiddenChars or {}
+    local showHidden = MajesticBeastTrackerDB.settings.showHiddenChars
     for key, charData in pairs(MajesticBeastTrackerDB.chars) do
-        if charData.hasSkinning then
+        if charData.hasSkinning and (not hiddenChars[key] or showHidden) then
             keys[#keys + 1] = key
         end
     end
@@ -2313,7 +2493,7 @@ function ns.UpdateUI()
         -- Reposition goblin icon
         if row.goblinBtn then
             row.goblinBtn:ClearAllPoints()
-            local goblinX = PAD + 4 + NAME_COL_WIDTH + #LURES * COL_WIDTH + 4
+            local goblinX = PAD + 4 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + 4
             row.goblinBtn:SetPoint("LEFT", frame, "TOPLEFT", goblinX, yOff - ROW_HEIGHT / 2)
         end
         local charData = MajesticBeastTrackerDB.chars[key]
@@ -2321,12 +2501,23 @@ function ns.UpdateUI()
         local classColor = ns.GetClassColor(charData.class)
         local name = ns.GetDemoName(key)
         if key == currentChar then name = name .. " *" end
+        local isCharHidden = hiddenChars[key]
+        if isCharHidden then name = name .. " |cff666666(hidden)|r" end
 
         row.nameLabel:SetText(classColor .. name .. "|r")
         row.name:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
+                local isHidden = MajesticBeastTrackerDB.settings.hiddenChars[key]
                 local items = {
                     { text = ns.GetDemoName(key), isTitle = true },
+                    { text = isHidden and "|cff00ff00Show character|r" or "|cff999999Hide character|r", func = function()
+                        if isHidden then
+                            MajesticBeastTrackerDB.settings.hiddenChars[key] = nil
+                        else
+                            MajesticBeastTrackerDB.settings.hiddenChars[key] = true
+                        end
+                        ns.UpdateUI()
+                    end },
                     { text = "|cffff4444Remove character|r", func = function()
                         StaticPopup_Show("MBT_REMOVE_CHAR", ns.GetDemoName(key), nil, key)
                     end },
@@ -2344,10 +2535,38 @@ function ns.UpdateUI()
         row.name:Show()
         if row.bg then row.bg:Show() end
 
+        local cellVisCol = 0
         for i, lure in ipairs(LURES) do
             local cell = row.cells[i]
             cell.charKey = key
             local canSee = ns.CanSeeLure(charData, i)
+            -- Route skip check (global skip or Harandar level)
+            local isSkipped = lureSkipped[i]
+            if not isSkipped and lure.name == "Harandar" and charData.level and charData.level < harandarMinLvl then
+                isSkipped = true
+            end
+            -- Hide entire column if setting enabled (global skip only)
+            if hideSkipped and lureSkipped[i] then
+                cell:Hide()
+            elseif isSkipped then
+                cell.label:SetText("|cffff4444Skip|r")
+                cell.label:SetTextColor(1, 0.27, 0.27)
+                cell:SetScript("OnClick", nil)
+                cell:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+                    GameTooltip:AddLine("Skipped via Route settings", 0.9, 0.3, 0.3)
+                    GameTooltip:Show()
+                end)
+                cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                cellVisCol = cellVisCol + 1
+                if hideSkipped then
+                    cell:ClearAllPoints()
+                    cell:SetPoint("TOPLEFT", row.name, "TOPRIGHT",
+                        (cellVisCol - 1) * COL_WIDTH, 0)
+                    cell:SetWidth(COL_WIDTH)
+                end
+                cell:Show()
+            else
             local text, r, g, b = ns.GetStatusText(charData, lure.name)
             cell.label:SetText(text)
             if canSee then
@@ -2393,7 +2612,15 @@ function ns.UpdateUI()
                 cell:SetScript("OnEnter", nil)
                 cell:SetScript("OnLeave", nil)
             end
+            cellVisCol = cellVisCol + 1
+            if hideSkipped then
+                cell:ClearAllPoints()
+                cell:SetPoint("TOPLEFT", row.name, "TOPRIGHT",
+                    (cellVisCol - 1) * COL_WIDTH, 0)
+                cell:SetWidth(COL_WIDTH)
+            end
             cell:Show()
+            end -- end isSkipped else
         end
 
         -- Per-character goblin loot icon
@@ -2418,7 +2645,7 @@ function ns.UpdateUI()
                     GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.25, 0.78, 0.92)
                     local charLoot = ns.GetCharLoot(capturedData)
                     if charLoot then
-                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices, charLoot.perBeast)
+                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices, charLoot.perBeast, charLoot.perBeastReset)
                     end
                     if not hasLoot then
                         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
@@ -2477,10 +2704,12 @@ function ns.UpdateUI()
     local n = math.max(#keys, 1)
     local statsExtra = 0  -- stats now shares row with consumable box
     local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
-    local consExtra = CONS_BOX_HEIGHT + 2
+    local hasTravelBtns = #activeTravelBtns > 0
+    local travelRowExtra = hasTravelBtns and (TRAVEL_ICON_SIZE + 4) or 0
+    local consExtra = CONS_BOX_HEIGHT + 2 + travelRowExtra
     local h = TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + consExtra + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
-    local w = PAD * 2 + 8 + NAME_COL_WIDTH + #LURES * COL_WIDTH + goblinColWidth
+    local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
     local divY = -(TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
 
@@ -2502,18 +2731,18 @@ function ns.UpdateUI()
         consumableBox:ClearAllPoints()
         consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, divY - 4)
         -- Divider between char rows and bottom bar
-        travelSep:ClearAllPoints()
-        travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
-        travelSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-        travelSep:Show()
+        ns.travelSep:ClearAllPoints()
+        ns.travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
+        ns.travelSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+        ns.travelSep:Show()
 
         -- Hide all first
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
 
-        -- Show + position active ones (right of consumable box)
-        local travelStartX = CONS_BOX_WIDTH + PAD + 8
-        local travelY = divY - (CONS_BOX_HEIGHT - TRAVEL_ICON_SIZE) / 2 - 2
+        -- Show + position active ones (below consumable box)
+        local travelStartX = PAD + 4
+        local travelY = divY - CONS_BOX_HEIGHT - 6
         for idx, btn in ipairs(activeTravelBtns) do
             local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
             if tex then btn.icon:SetTexture(tex) end
@@ -2562,7 +2791,9 @@ function ns.UpdateUI()
             local grandTotal = 0
             local allPriced = true
             for i, lure in ipairs(LURES) do
-                if lure.reagents and reagentIcons[i] then
+                if lureSkipped[i] then
+                    -- skip, don't count skipped routes
+                elseif lure.reagents and reagentIcons[i] then
                     for j, rBtn in ipairs(reagentIcons[i]) do
                         if lure.reagents[j] then
                             local missing = rBtn._missing or 0
@@ -2580,16 +2811,16 @@ function ns.UpdateUI()
             end
             if allPriced and grandTotal > 0 then
                 local goldText = ns.FormatGold(grandTotal)
-                tsmTotalLabel:SetText("Total needed: " .. goldText)
-                tsmTotalLabel:ClearAllPoints()
-                tsmTotalLabel:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, statsY - 12)
-                tsmTotalLabel:Show()
+                ns.tsmTotalLabel:SetText("Total needed: " .. goldText)
+                ns.tsmTotalLabel:ClearAllPoints()
+                ns.tsmTotalLabel:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, statsY - 12)
+                ns.tsmTotalLabel:Show()
                 statsY = statsY - 12
             else
-                tsmTotalLabel:Hide()
+                ns.tsmTotalLabel:Hide()
             end
         else
-            tsmTotalLabel:Hide()
+            ns.tsmTotalLabel:Hide()
         end
 
         -- Weekly knowledge lines (main window, right-aligned, below stats)
@@ -2658,16 +2889,16 @@ function ns.UpdateUI()
         end
     end
     -- Update loot editor sync overlay
-    if lootEditor and lootEditor:IsShown() then
+    if ns.lootEditor and ns.lootEditor:IsShown() then
         if ns.isSyncingLoot then
-            lootEditor.syncOverlay:Show()
-            lootEditor._wasSyncing = true
+            ns.lootEditor.syncOverlay:Show()
+            ns.lootEditor._wasSyncing = true
         else
-            lootEditor.syncOverlay:Hide()
+            ns.lootEditor.syncOverlay:Hide()
             -- Refresh loot counts once when sync finishes
-            if lootEditor._wasSyncing and lootEditor.charKey then
-                lootEditor._wasSyncing = nil
-                ShowLootEditor(lootEditor, lootEditor.charKey)
+            if ns.lootEditor._wasSyncing and ns.lootEditor.charKey then
+                ns.lootEditor._wasSyncing = nil
+                ns.ShowLootEditor(ns.lootEditor, ns.lootEditor.charKey)
             end
         end
     end
@@ -2778,7 +3009,11 @@ init:SetScript("OnEvent", function()
             local key = ns.GetCharKey and ns.GetCharKey()
             local charData = key and MajesticBeastTrackerDB.chars[key]
             local isSkinner = charData and charData.hasSkinning
-            if isSkinner then
+            local isHiddenChar = key and MajesticBeastTrackerDB.settings.hiddenChars and MajesticBeastTrackerDB.settings.hiddenChars[key]
+            if isHiddenChar then
+                -- Hidden character → don't show tracker
+                frame:Hide()
+            elseif isSkinner then
                 frame:Show()
             elseif hideNonSkinner then
                 -- Non-skinner + hide enabled → always hide on login
@@ -2806,13 +3041,14 @@ function ns.ShowFrame()
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = true
     ns.UpdateUI()
+    ns.RefreshAutoHide()
 end
 
 function ns.HideFrame()
     if not InCombatLockdown() then
         frame:Hide()
     end
-    if lootEditor then lootEditor:Hide() end
+    if ns.lootEditor then ns.lootEditor:Hide() end
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = false
     -- Hide consumable buttons and box
@@ -2951,6 +3187,16 @@ local function InitSettings()
         end
     end
 
+    -- Helper for expandable sections
+    local function createExpandableSection(lay, sectionName)
+        local initializer = CreateFromMixins(SettingsExpandableSectionInitializer)
+        local expandData = { name = sectionName, expanded = false }
+        initializer:Init("LureTracker_SettingsExpandTemplate", expandData)
+        initializer.GetExtent = ScrollBoxFactoryInitializerMixin.GetExtent
+        lay:AddInitializer(initializer)
+        return initializer, function() return initializer.data.expanded end
+    end
+
     -- Version
     local version = C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"
     local data = { leftText = "Version: |cffFFFFFF" .. version }
@@ -2967,17 +3213,315 @@ local function InitSettings()
         StaticPopup_Show("MBT_URL", nil, nil, "https://github.com/VichobAddons/MajesticBeastTracker")
     end, "Report bugs or give feedback on GitHub.", true))
 
-    -- Expandable: Slash Commands
-    local function createExpandableSection(lay, sectionName)
-        local initializer = CreateFromMixins(SettingsExpandableSectionInitializer)
-        local expandData = { name = sectionName, expanded = false }
-        initializer:Init("LureTracker_SettingsExpandTemplate", expandData)
-        initializer.GetExtent = ScrollBoxFactoryInitializerMixin.GetExtent
-        lay:AddInitializer(initializer)
-        return initializer, function() return initializer.data.expanded end
+    --------------------------------------------------------
+    -- General (always visible)
+    --------------------------------------------------------
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("General"))
+
+    local s1 = Settings.RegisterAddOnSetting(category, "MBT_showMinimap", "showMinimap",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Minimap Icon", true)
+    Settings.CreateCheckbox(category, s1, "Show or hide the minimap button.")
+    s1:SetValueChangedCallback(function()
+        MajesticBeastTrackerDB.settings.minimap.hide = not MajesticBeastTrackerDB.settings.showMinimap
+        if MajesticBeastTrackerDB.settings.showMinimap then
+            dbIcon:Show("MajesticBeastTracker")
+        else
+            dbIcon:Hide("MajesticBeastTracker")
+        end
+    end)
+
+    local s2 = Settings.RegisterAddOnSetting(category, "MBT_chatNotify", "chatNotify",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Chat Notifications", true)
+    Settings.CreateCheckbox(category, s2, "Show [MBT] messages in chat (waypoints, mark/clear, buff warnings).")
+
+    local s2a = Settings.RegisterAddOnSetting(category, "MBT_hideNonSkinner", "hideNonSkinner",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide on Non-Skinners", true)
+    Settings.CreateCheckbox(category, s2a, "Don't show the tracker automatically on characters without Skinning.")
+
+    --------------------------------------------------------
+    -- Expandable: Route (NEW)
+    --------------------------------------------------------
+    local _, isRouteExpanded = createExpandableSection(layout, "Route")
+
+    -- Ensure routeSkip table exists
+    if type(MajesticBeastTrackerDB.settings.routeSkip) ~= "table" then
+        MajesticBeastTrackerDB.settings.routeSkip = {}
     end
 
-    local _, isExpanded = createExpandableSection(layout, "Slash Commands")
+    -- Per-beast skip toggles
+    for _, lure in ipairs(LURES) do
+        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+        if MajesticBeastTrackerDB.settings[skipKey] == nil then
+            MajesticBeastTrackerDB.settings[skipKey] = MajesticBeastTrackerDB.settings.routeSkip[lure.name] or false
+        end
+        local sSkip = Settings.RegisterAddOnSetting(category, "MBT_" .. skipKey, skipKey,
+            MajesticBeastTrackerDB.settings, Settings.VarType.Boolean,
+            lure.color .. "Skip " .. lure.name .. "|r", false)
+        local cbSkip = Settings.CreateCheckbox(category, sSkip, "Skip " .. lure.name .. " in your daily route. Shows 'Skip' in the tracker and excludes from reagent cost.")
+        sSkip:SetValueChangedCallback(function()
+            MajesticBeastTrackerDB.settings.routeSkip[lure.name] = MajesticBeastTrackerDB.settings[skipKey]
+            ns.UpdateUI()
+        end)
+        cbSkip:AddShownPredicate(isRouteExpanded)
+    end
+
+    -- Harandar minimum level slider
+    local sHarandarLvl = Settings.RegisterAddOnSetting(category, "MBT_routeHarandarMinLevel", "routeHarandarMinLevel",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Harandar Min Level", 80)
+    local lvlOpts = Settings.CreateSliderOptions(80, 90, 1)
+    lvlOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
+        return tostring(math.floor(val))
+    end)
+    local slHarandar = Settings.CreateSlider(category, sHarandarLvl, lvlOpts, "Skip Harandar for characters below this level. Harandar mobs are high level and time-consuming for lower level characters.")
+    sHarandarLvl:SetValueChangedCallback(function()
+        ns.UpdateUI()
+    end)
+    slHarandar:AddShownPredicate(isRouteExpanded)
+
+    local sHideSkipped = Settings.RegisterAddOnSetting(category, "MBT_routeHideSkipped", "routeHideSkipped",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide Skipped Columns", false)
+    local cbHideSkipped = Settings.CreateCheckbox(category, sHideSkipped, "Completely hide skipped beast columns from the tracker instead of showing 'Skip'.")
+    sHideSkipped:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbHideSkipped:AddShownPredicate(isRouteExpanded)
+
+    -- Route Order: move lures left/right with buttons
+    -- Ensure routeOrder is initialized
+    if not MajesticBeastTrackerDB.settings.routeOrder or #MajesticBeastTrackerDB.settings.routeOrder ~= #LURES then
+        MajesticBeastTrackerDB.settings.routeOrder = {}
+        for i = 1, #LURES do MajesticBeastTrackerDB.settings.routeOrder[i] = i end
+    end
+
+    for pos = 1, #LURES do
+        local function getOrder() return MajesticBeastTrackerDB.settings.routeOrder end
+        local function getLureName(p)
+            local o = getOrder()
+            return LURES[o[p]].color .. LURES[o[p]].name .. "|r"
+        end
+        local label = "Route #" .. pos
+        local moveInit = CreateSettingsButtonInitializer(label, "< >", function()
+            local o = getOrder()
+            -- Cycle: move this position's lure one step right (wrap around)
+            if pos < #LURES then
+                o[pos], o[pos + 1] = o[pos + 1], o[pos]
+            else
+                -- Last position: wrap to first
+                local last = o[pos]
+                table.remove(o, pos)
+                table.insert(o, 1, last)
+            end
+            MajesticBeastTrackerDB.settings.routeOrder = o
+            ns.UpdateUI()
+            -- Reopen settings to refresh labels
+            if ns.settingsCategoryID then
+                Settings.OpenToCategory(ns.settingsCategoryID)
+            end
+        end, function()
+            -- Dynamic tooltip showing current lure at this position
+            local o = getOrder()
+            return "Position " .. pos .. ": " .. LURES[o[pos]].name .. "\nClick to swap with next position."
+        end, true)
+        moveInit:AddShownPredicate(isRouteExpanded)
+        layout:AddInitializer(moveInit)
+    end
+
+    --------------------------------------------------------
+    -- Expandable: Reagents & AH
+    --------------------------------------------------------
+    local _, isReagentsExpanded = createExpandableSection(layout, "Reagents & Auction House")
+
+    local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
+    local cb2c = Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
+    s2c:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cb2c:AddShownPredicate(isReagentsExpanded)
+
+    local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Count for All Characters", true)
+    local cb2e = Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
+    s2e:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cb2e:AddShownPredicate(isReagentsExpanded)
+
+    local sMissing = Settings.RegisterAddOnSetting(category, "MBT_showMissingCount", "showMissingCount",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Missing Count", false)
+    local cbMissing = Settings.CreateCheckbox(category, sMissing, "ON: Show how many reagents you're missing (e.g. -56). OFF: Show have/need (e.g. 16/72).")
+    sMissing:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbMissing:AddShownPredicate(isReagentsExpanded)
+
+    local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Autofill AH Quantity", true)
+    local cbAHFill = Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")
+    cbAHFill:AddShownPredicate(isReagentsExpanded)
+
+    -- Per-consumable stock targets
+    if type(MajesticBeastTrackerDB.settings.consumableStock) ~= "table" then
+        MajesticBeastTrackerDB.settings.consumableStock = {}
+    end
+    for _, cons in ipairs(CONSUMABLES) do
+        local flatKey = "consStock_" .. cons.itemID
+        if MajesticBeastTrackerDB.settings[flatKey] == nil then
+            MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
+        end
+    end
+    for _, cons in ipairs(CONSUMABLES) do
+        local flatKey = "consStock_" .. cons.itemID
+        local ok, err = pcall(function()
+            local sStock = Settings.RegisterAddOnSetting(category,
+                "MBT_" .. flatKey, flatKey,
+                MajesticBeastTrackerDB.settings, Settings.VarType.Number,
+                "Stock: " .. cons.name, 0)
+            local stockOpts = Settings.CreateSliderOptions(0, 200, 5)
+            stockOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
+                return tostring(math.floor(val))
+            end)
+            local slStock = Settings.CreateSlider(category, sStock, stockOpts,
+                "Number of " .. cons.name .. " to keep in stock. Used for Auctionator shopping list. 0 = exclude.")
+            sStock:SetValueChangedCallback(function(setting, val)
+                MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
+            end)
+            slStock:AddShownPredicate(isReagentsExpanded)
+        end)
+        if not ok then
+            print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
+        end
+    end
+
+    --------------------------------------------------------
+    -- Expandable: Loot Goblin
+    --------------------------------------------------------
+    local _, isLootExpanded = createExpandableSection(layout, "Loot Goblin")
+
+    local sLoot = Settings.RegisterAddOnSetting(category, "MBT_lootTracking", "lootTracking",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Loot Tracking", true)
+    local cbLoot = Settings.CreateCheckbox(category, sLoot, "Track skinning loot from Majestic Beasts. Shows goblin icons on character rows.")
+    sLoot:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbLoot:AddShownPredicate(isLootExpanded)
+
+    local sLootTSM = Settings.RegisterAddOnSetting(category, "MBT_tsmIntegration", "tsmIntegration",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Integrate TSM", false)
+    local cbLootTSM = Settings.CreateCheckbox(category, sLootTSM, "Show estimated reagent cost and loot value using TradeSkillMaster price data. Requires TSM addon.")
+    sLootTSM:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbLootTSM:AddShownPredicate(isLootExpanded)
+
+    --------------------------------------------------------
+    -- Expandable: Warband Bank
+    --------------------------------------------------------
+    local _, isWarbankExpanded = createExpandableSection(layout, "Warband Bank")
+
+    local sWarbank = Settings.RegisterAddOnSetting(category, "MBT_warbankDeposit", "warbankDeposit",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Warband Bank Deposit", false)
+    local cbWarbank = Settings.CreateCheckbox(category, sWarbank, "Show a deposit button on the tracker when the Warband Bank is open. Click to deposit all tracked skinning reagents.")
+    cbWarbank:AddShownPredicate(isWarbankExpanded)
+
+    local sWarbankAuto = Settings.RegisterAddOnSetting(category, "MBT_warbankAutoDeposit", "warbankAutoDeposit",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Automatically Deposit on Bank Open", false)
+    local cbWarbankAuto = Settings.CreateCheckbox(category, sWarbankAuto, "Automatically deposit tracked reagents when you open the Warband Bank.")
+    cbWarbankAuto:AddShownPredicate(isWarbankExpanded)
+
+    local sWarbankRewards = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositRewards", "warbankDepositRewards",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Beast Rewards", true)
+    local cbWarbankRewards = Settings.CreateCheckbox(category, sWarbankRewards, "Include skinning loot from beast kills (hides, leather, plating, scales, etc.)")
+    cbWarbankRewards:AddShownPredicate(isWarbankExpanded)
+
+    local sWarbankReagents = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositReagents", "warbankDepositReagents",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Lure Reagents", true)
+    local cbWarbankReagents = Settings.CreateCheckbox(category, sWarbankReagents, "Include fish used to craft lures (Arcane Wyrmfish, Gore Guppy, Ominous Octopus, etc.)")
+    cbWarbankReagents:AddShownPredicate(isWarbankExpanded)
+
+    --------------------------------------------------------
+    -- Expandable: Display
+    --------------------------------------------------------
+    local _, isDisplayExpanded = createExpandableSection(layout, "Display")
+
+    local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
+    local cb2d = Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
+    s2d:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cb2d:AddShownPredicate(isDisplayExpanded)
+
+    local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide in Combat", false)
+    local cb2b = Settings.CreateCheckbox(category, s2b, "Automatically hide the tracker window during combat.")
+    cb2b:AddShownPredicate(isDisplayExpanded)
+
+    local sAutoHide = Settings.RegisterAddOnSetting(category, "MBT_autoHide", "autoHide",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto Hide", false)
+    local cbAutoHide = Settings.CreateCheckbox(category, sAutoHide, "Fade out the tracker when the mouse is not hovering over it. Hover to show.")
+    sAutoHide:SetValueChangedCallback(function() ns.RefreshAutoHide() end)
+    cbAutoHide:AddShownPredicate(isDisplayExpanded)
+
+    local s3 = Settings.RegisterAddOnSetting(category, "MBT_locked", "locked",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Lock Frame Position", false)
+    local cb3 = Settings.CreateCheckbox(category, s3, "Prevent the tracker window from being dragged.")
+    s3:SetValueChangedCallback(function() UpdateLockVisual() end)
+    cb3:AddShownPredicate(isDisplayExpanded)
+
+    local s4 = Settings.RegisterAddOnSetting(category, "MBT_windowScale", "windowScale",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Window Scale", 1.0)
+    local scaleOpts = Settings.CreateSliderOptions(0.5, 2.0, 0.05)
+    scaleOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
+        return string.format("%d%%", val * 100)
+    end)
+    local sl4 = Settings.CreateSlider(category, s4, scaleOpts, "Scale the tracker window (50% - 200%).")
+    s4:SetValueChangedCallback(function()
+        frame:SetScale(MajesticBeastTrackerDB.settings.windowScale)
+    end)
+    sl4:AddShownPredicate(isDisplayExpanded)
+
+    --------------------------------------------------------
+    -- Expandable: Data Management
+    --------------------------------------------------------
+    local _, isDataExpanded = createExpandableSection(layout, "Data Management")
+
+    local sShowHidden = Settings.RegisterAddOnSetting(category, "MBT_showHiddenChars", "showHiddenChars",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Hidden Characters", false)
+    local cbShowHidden = Settings.CreateCheckbox(category, sShowHidden, "Temporarily show characters that have been hidden via right-click menu.")
+    sShowHidden:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbShowHidden:AddShownPredicate(isDataExpanded)
+
+    local clearCharInit = CreateSettingsButtonInitializer("Clear Current Character", "Clear", function()
+        StaticPopupDialogs["MBT_CLEAR_CHAR"] = {
+            text = "Clear lure data for |cff3FC7EB" .. (ns.GetCharKey() or "?") .. "|r?",
+            button1 = YES,
+            button2 = NO,
+            OnAccept = function()
+                ns.EnsureDB()
+                local key = ns.GetCharKey()
+                if key and MajesticBeastTrackerDB.chars[key] then
+                    MajesticBeastTrackerDB.chars[key].lures = {}
+                    ns.UpdateUI()
+                    print("|cff3FC7EB[MBT]|r " .. key .. " data cleared.")
+                end
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("MBT_CLEAR_CHAR")
+    end, "Clear all lure cooldown data for your current character.", true)
+    clearCharInit:AddShownPredicate(isDataExpanded)
+    layout:AddInitializer(clearCharInit)
+
+    local clearAllInit = CreateSettingsButtonInitializer("|cffff6666Clear ALL Characters|r", "Clear All", function()
+        StaticPopupDialogs["MBT_CLEAR_ALL"] = {
+            text = "|cffff6666WARNING:|r This will delete ALL tracking data for ALL characters.\n\nAre you sure?",
+            button1 = YES,
+            button2 = NO,
+            OnAccept = function()
+                ns.EnsureDB()
+                MajesticBeastTrackerDB = { chars = {}, settings = MajesticBeastTrackerDB.settings }
+                ns.EnsureDB()
+                ns.UpdateUI()
+                print("|cff3FC7EB[MBT]|r ALL data cleared.")
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
+        }
+        StaticPopup_Show("MBT_CLEAR_ALL")
+    end, "|cffff6666Permanently delete all tracking data for every character.|r", true)
+    clearAllInit:AddShownPredicate(isDataExpanded)
+    layout:AddInitializer(clearAllInit)
+
+    --------------------------------------------------------
+    -- Expandable: Slash Commands
+    --------------------------------------------------------
+    local _, isSlashExpanded = createExpandableSection(layout, "Slash Commands")
 
     local cmdData = {
         leftText = "|cffFFFFFF"
@@ -3005,205 +3549,7 @@ local function InitSettings()
     function cmdText:GetExtent()
         return 28 + select(2, string.gsub(cmdData.leftText, "\n", "")) * 12
     end
-    cmdText:AddShownPredicate(isExpanded)
-
-    -- General settings
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("General"))
-
-    -- Show Minimap Icon
-    local s1 = Settings.RegisterAddOnSetting(category, "MBT_showMinimap", "showMinimap",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Minimap Icon", true)
-    Settings.CreateCheckbox(category, s1, "Show or hide the minimap button.")
-    s1:SetValueChangedCallback(function()
-        MajesticBeastTrackerDB.settings.minimap.hide = not MajesticBeastTrackerDB.settings.showMinimap
-        if MajesticBeastTrackerDB.settings.showMinimap then
-            dbIcon:Show("MajesticBeastTracker")
-        else
-            dbIcon:Hide("MajesticBeastTracker")
-        end
-    end)
-
-    -- Chat Notifications
-    local s2 = Settings.RegisterAddOnSetting(category, "MBT_chatNotify", "chatNotify",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Chat Notifications", true)
-    Settings.CreateCheckbox(category, s2, "Show [MBT] messages in chat (waypoints, mark/clear, buff warnings).")
-
-    -- Hide on Non-Skinners
-    local s2a = Settings.RegisterAddOnSetting(category, "MBT_hideNonSkinner", "hideNonSkinner",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide on Non-Skinners", true)
-    Settings.CreateCheckbox(category, s2a, "Don't show the tracker automatically on characters without Skinning.")
-
-    -- Show Reagent Icons
-    -- Reagents
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Reagents"))
-
-    local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
-    Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
-    s2c:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Count for All Characters", true)
-    Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
-    s2e:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    local sMissing = Settings.RegisterAddOnSetting(category, "MBT_showMissingCount", "showMissingCount",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Missing Count", false)
-    Settings.CreateCheckbox(category, sMissing, "ON: Show how many reagents you're missing (e.g. -56). OFF: Show have/need (e.g. 16/72).")
-    sMissing:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Autofill AH Quantity", true)
-    Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")
-
-    -- Per-consumable stock targets (for shopping list)
-    if type(MajesticBeastTrackerDB.settings.consumableStock) ~= "table" then
-        MajesticBeastTrackerDB.settings.consumableStock = {}
-    end
-    for _, cons in ipairs(CONSUMABLES) do
-        local flatKey = "consStock_" .. cons.itemID
-        if MajesticBeastTrackerDB.settings[flatKey] == nil then
-            MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
-        end
-    end
-    -- Register after init loop to avoid mid-loop errors breaking later settings
-    for _, cons in ipairs(CONSUMABLES) do
-        local flatKey = "consStock_" .. cons.itemID
-        local ok, err = pcall(function()
-            local sStock = Settings.RegisterAddOnSetting(category,
-                "MBT_" .. flatKey, flatKey,
-                MajesticBeastTrackerDB.settings, Settings.VarType.Number,
-                "Stock: " .. cons.name, 0)
-            local stockOpts = Settings.CreateSliderOptions(0, 200, 5)
-            stockOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
-                return tostring(math.floor(val))
-            end)
-            Settings.CreateSlider(category, sStock, stockOpts,
-                "Number of " .. cons.name .. " to keep in stock. Used for Auctionator shopping list. 0 = exclude.")
-            sStock:SetValueChangedCallback(function(setting, val)
-                MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
-            end)
-        end)
-        if not ok then
-            print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
-        end
-    end
-
-    -- Display
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Display"))
-
-    local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
-    Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
-    s2d:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    -- Hide in Combat
-    local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide in Combat", false)
-    Settings.CreateCheckbox(category, s2b, "Automatically hide the tracker window during combat.")
-
-    -- Lock Frame
-    local s3 = Settings.RegisterAddOnSetting(category, "MBT_locked", "locked",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Lock Frame Position", false)
-    Settings.CreateCheckbox(category, s3, "Prevent the tracker window from being dragged.")
-    s3:SetValueChangedCallback(function()
-        UpdateLockVisual()
-    end)
-
-    -- Window Scale
-    local s4 = Settings.RegisterAddOnSetting(category, "MBT_windowScale", "windowScale",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Window Scale", 1.0)
-    local scaleOpts = Settings.CreateSliderOptions(0.5, 2.0, 0.05)
-    scaleOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
-        return string.format("%d%%", val * 100)
-    end)
-    Settings.CreateSlider(category, s4, scaleOpts, "Scale the tracker window (50% - 200%).")
-    s4:SetValueChangedCallback(function()
-        frame:SetScale(MajesticBeastTrackerDB.settings.windowScale)
-    end)
-
-    -- Loot Goblin section
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Loot Goblin"))
-
-    local sLoot = Settings.RegisterAddOnSetting(category, "MBT_lootTracking", "lootTracking",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Loot Tracking", true)
-    Settings.CreateCheckbox(category, sLoot, "Track skinning loot from Majestic Beasts. Shows goblin icons on character rows.")
-    sLoot:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    local sLootTSM = Settings.RegisterAddOnSetting(category, "MBT_tsmIntegration", "tsmIntegration",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Integrate TSM", false)
-    Settings.CreateCheckbox(category, sLootTSM, "Show estimated reagent cost and loot value using TradeSkillMaster price data. Requires TSM addon.")
-    sLootTSM:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-
-    -- Warband Bank
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Warband Bank"))
-
-    local sWarbank = Settings.RegisterAddOnSetting(category, "MBT_warbankDeposit", "warbankDeposit",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Warband Bank Deposit", false)
-    Settings.CreateCheckbox(category, sWarbank, "Show a deposit button on the tracker when the Warband Bank is open. Click to deposit all tracked skinning reagents.")
-
-    local sWarbankAuto = Settings.RegisterAddOnSetting(category, "MBT_warbankAutoDeposit", "warbankAutoDeposit",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Automatically Deposit on Bank Open", false)
-    Settings.CreateCheckbox(category, sWarbankAuto, "Automatically deposit tracked reagents when you open the Warband Bank.")
-
-    local sWarbankRewards = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositRewards", "warbankDepositRewards",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Beast Rewards", true)
-    Settings.CreateCheckbox(category, sWarbankRewards, "Include skinning loot from beast kills (hides, leather, plating, scales, etc.)")
-
-    local sWarbankReagents = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositReagents", "warbankDepositReagents",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Lure Reagents", true)
-    Settings.CreateCheckbox(category, sWarbankReagents, "Include fish used to craft lures (Arcane Wyrmfish, Gore Guppy, Ominous Octopus, etc.)")
-
-    -- Data Management
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Data Management"))
-
-    layout:AddInitializer(CreateSettingsButtonInitializer("Clear Current Character", "Clear", function()
-        StaticPopupDialogs["MBT_CLEAR_CHAR"] = {
-            text = "Clear lure data for |cff3FC7EB" .. (ns.GetCharKey() or "?") .. "|r?",
-            button1 = YES,
-            button2 = NO,
-            OnAccept = function()
-                ns.EnsureDB()
-                local key = ns.GetCharKey()
-                if key and MajesticBeastTrackerDB.chars[key] then
-                    MajesticBeastTrackerDB.chars[key].lures = {}
-                    ns.UpdateUI()
-                    print("|cff3FC7EB[MBT]|r " .. key .. " data cleared.")
-                end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true,
-        }
-        StaticPopup_Show("MBT_CLEAR_CHAR")
-    end, "Clear all lure cooldown data for your current character.", true))
-
-    layout:AddInitializer(CreateSettingsButtonInitializer("|cffff6666Clear ALL Characters|r", "Clear All", function()
-        StaticPopupDialogs["MBT_CLEAR_ALL"] = {
-            text = "|cffff6666WARNING:|r This will delete ALL tracking data for ALL characters.\n\nAre you sure?",
-            button1 = YES,
-            button2 = NO,
-            OnAccept = function()
-                ns.EnsureDB()
-                MajesticBeastTrackerDB = { chars = {}, settings = MajesticBeastTrackerDB.settings }
-                ns.EnsureDB()
-                ns.UpdateUI()
-                print("|cff3FC7EB[MBT]|r ALL data cleared.")
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
-        }
-        StaticPopup_Show("MBT_CLEAR_ALL")
-    end, "|cffff6666Permanently delete all tracking data for every character.|r", true))
+    cmdText:AddShownPredicate(isSlashExpanded)
 end
 
 function ns.OpenSettings()

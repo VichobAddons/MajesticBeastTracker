@@ -21,6 +21,27 @@ local LURES = {
 }
 ns.LURES = LURES
 
+-- Returns ordered lure indices based on user's route order setting
+function ns.GetRouteOrder()
+    local order = MajesticBeastTrackerDB and MajesticBeastTrackerDB.settings and MajesticBeastTrackerDB.settings.routeOrder
+    -- Validate: must contain exactly #LURES unique indices 1..#LURES
+    if order and #order == #LURES then
+        local valid = true
+        local seen = {}
+        for _, idx in ipairs(order) do
+            if type(idx) ~= "number" or idx < 1 or idx > #LURES or seen[idx] then
+                valid = false; break
+            end
+            seen[idx] = true
+        end
+        if valid then return order end
+    end
+    -- Default: natural order
+    local default = {}
+    for i = 1, #LURES do default[i] = i end
+    return default
+end
+
 -- Fast lookup: questID -> lure index (kill detection via hidden quest flags)
 local questToIndex = {}
 for i, lure in ipairs(LURES) do
@@ -266,18 +287,23 @@ local function RecordLoot(beastName, diffs)
     -- Reset thisReset if daily reset has passed
     if charData.loot.resetTime and charData.loot.resetTime < GetLastDailyReset() then
         charData.loot.thisReset = {}
+        charData.loot.perBeastReset = {}
         charData.loot.resetTime = GetServerTime()
     end
 
-    -- Add diffs to both thisReset, allTime, and perBeast; snapshot TSM prices
+    -- Add diffs to both thisReset, allTime, perBeast, and perBeastReset; snapshot TSM prices
     if not charData.loot.prices then charData.loot.prices = {} end
     if not charData.loot.perBeast then charData.loot.perBeast = {} end
     if not charData.loot.perBeast[beastName] then charData.loot.perBeast[beastName] = {} end
+    if not charData.loot.perBeastReset then charData.loot.perBeastReset = {} end
+    if not charData.loot.perBeastReset[beastName] then charData.loot.perBeastReset[beastName] = {} end
     local beastLoot = charData.loot.perBeast[beastName]
+    local beastResetLoot = charData.loot.perBeastReset[beastName]
     for id, count in pairs(diffs) do
         charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
         charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
         beastLoot[id] = (beastLoot[id] or 0) + count
+        beastResetLoot[id] = (beastResetLoot[id] or 0) + count
         -- Snapshot price at loot time (only if TSM available and no price yet this reset)
         if ns.GetTSMPrice and not charData.loot.prices[id] then
             charData.loot.prices[id] = ns.GetTSMPrice(id)
@@ -299,6 +325,7 @@ function ns.GetCharLoot(charData)
     -- Auto-reset thisReset if daily reset has passed
     if loot.resetTime and loot.resetTime < GetLastDailyReset() then
         loot.thisReset = {}
+        loot.perBeastReset = {}
         loot.prices = {}
         loot.resetTime = GetServerTime()
     end
@@ -307,11 +334,12 @@ end
 
 -- Get aggregated loot across all characters
 function ns.GetGlobalLoot()
-    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.chars then return nil, nil, nil, nil end
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.chars then return nil, nil, nil, nil, nil end
     local globalReset = {}
     local globalAllTime = {}
     local globalPrices = {}
     local globalPerBeast = {}
+    local globalPerBeastReset = {}
     for _, charData in pairs(MajesticBeastTrackerDB.chars) do
         local loot = ns.GetCharLoot(charData)
         if loot then
@@ -325,16 +353,23 @@ function ns.GetGlobalLoot()
             for id, price in pairs(loot.prices or {}) do
                 if price then globalPrices[id] = price end
             end
-            -- Merge per-beast data
+            -- Merge per-beast data (all time)
             for beastName, items in pairs(loot.perBeast or {}) do
                 if not globalPerBeast[beastName] then globalPerBeast[beastName] = {} end
                 for id, count in pairs(items) do
                     globalPerBeast[beastName][id] = (globalPerBeast[beastName][id] or 0) + count
                 end
             end
+            -- Merge per-beast data (this reset)
+            for beastName, items in pairs(loot.perBeastReset or {}) do
+                if not globalPerBeastReset[beastName] then globalPerBeastReset[beastName] = {} end
+                for id, count in pairs(items) do
+                    globalPerBeastReset[beastName][id] = (globalPerBeastReset[beastName][id] or 0) + count
+                end
+            end
         end
     end
-    return globalReset, globalAllTime, globalPrices, globalPerBeast
+    return globalReset, globalAllTime, globalPrices, globalPerBeast, globalPerBeastReset
 end
 
 -- Accumulated loot diffs (collected across multiple LOOT_CLOSED events)
@@ -589,6 +624,14 @@ local SETTINGS_DEFAULTS = {
     showMissingCount = false,
     ahAutofillQuantity = true,
     consumableStock = {},  -- per-item stock targets: { [itemID] = count }
+    -- Route: per-beast skip toggles and level thresholds
+    routeSkip = {},  -- { ["Zul'Aman"] = true, ... }
+    routeHarandarMinLevel = 80,  -- slider 80-90
+    routeHideSkipped = false,  -- hide entire column for skipped beasts
+    routeOrder = {},  -- custom column order: { 4, 5, 1, 3, 2 } = Voidstorm, Grand, Eversong, Harandar, Zul'Aman
+    autoHide = false,  -- fade out when mouse leaves tracker
+    hiddenChars = {},  -- { ["Name-Realm"] = true, ... }
+    showHiddenChars = false,  -- temporarily show hidden characters
 }
 
 local function EnsureDB()
@@ -1093,7 +1136,13 @@ local function CursorDepositItems(items, callback)
             depositNext(idx + 1)
             return
         end
-        C_Timer.After(0.15, function()
+        C_Timer.After(0.2, function()
+            -- Verify item is on cursor before finding destination
+            local cursorType = GetCursorInfo()
+            if cursorType ~= "item" then
+                depositNext(idx + 1)
+                return
+            end
             local destBag, destSlot = FindWarbankSlot(entry.itemID)
             if not destBag then
                 pcall(ClearCursor)
@@ -1101,11 +1150,15 @@ local function CursorDepositItems(items, callback)
                 return
             end
             pcall(C_Container.PickupContainerItem, destBag, destSlot)
-            C_Timer.After(0.3, function()
-                local cursorType = GetCursorInfo()
-                if cursorType == "item" then
-                    pcall(C_Container.PickupContainerItem, destBag, destSlot)
-                    C_Timer.After(0.3, function()
+            C_Timer.After(0.4, function()
+                local cursorType2 = GetCursorInfo()
+                if cursorType2 == "item" then
+                    -- Retry once
+                    local destBag2, destSlot2 = FindWarbankSlot(entry.itemID)
+                    if destBag2 then
+                        pcall(C_Container.PickupContainerItem, destBag2, destSlot2)
+                    end
+                    C_Timer.After(0.4, function()
                         pcall(ClearCursor)
                         totalDeposited = totalDeposited + 1
                         depositNext(idx + 1)
@@ -1172,15 +1225,27 @@ end
 function ns.GetMissingReagents()
     EnsureDB()
     local missing = {}
+    local routeSkip = MajesticBeastTrackerDB.settings.routeSkip or {}
+    local harandarMinLvl = MajesticBeastTrackerDB.settings.routeHarandarMinLevel or 80
+    local hiddenChars = MajesticBeastTrackerDB.settings.hiddenChars or {}
     for i, lure in ipairs(LURES) do
-        if lure.reagents then
+        -- Skip globally skipped lures
+        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+        local isSkipped = routeSkip[lure.name] or MajesticBeastTrackerDB.settings[skipKey] or false
+        if isSkipped then
+            -- do nothing, skip this lure entirely
+        elseif lure.reagents then
             -- Count characters that still need this lure today
             local numLeft = 0
-            for _, cData in pairs(MajesticBeastTrackerDB.chars) do
-                if ns.CanSeeLure(cData, i) then
-                    local ts = cData.lures[lure.name]
-                    if not ts or ns.IsLureReady(ts) then
-                        numLeft = numLeft + 1
+            for charKey, cData in pairs(MajesticBeastTrackerDB.chars) do
+                if not hiddenChars[charKey] and ns.CanSeeLure(cData, i) then
+                    -- Harandar level check
+                    local skipForLevel = lure.name == "Harandar" and cData.level and cData.level < harandarMinLvl
+                    if not skipForLevel then
+                        local ts = cData.lures[lure.name]
+                        if not ts or ns.IsLureReady(ts) then
+                            numLeft = numLeft + 1
+                        end
                     end
                 end
             end
@@ -1419,6 +1484,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         EnsureChar(charKey)
         local _, class = UnitClass("player")
         MajesticBeastTrackerDB.chars[charKey].class = class
+        MajesticBeastTrackerDB.chars[charKey].level = UnitLevel("player")
         DetectSkinningAndTalent()
         SyncKillsFromQuests()
         C_Timer.After(5, function()
