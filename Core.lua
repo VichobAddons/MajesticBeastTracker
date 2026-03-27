@@ -604,6 +604,80 @@ ns.GetLureStatus = GetLureStatus
 ns.GetCharKey = GetCharKey
 ns.GetClassColor = GetClassColor
 
+-- Auto-waypoint: after killing a beast, pin the next one in route order
+local lastWaypointLure = nil
+local lastWaypointTime = 0
+function ns.SetNextRouteWaypoint(killedLureIdx)
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.settings then return end
+    if not MajesticBeastTrackerDB.settings.autoRouteWaypoint then return end
+    -- Dedup: don't fire twice for the same kill (QUEST_TURNED_IN + SyncKillsFromQuests)
+    local now = GetTime()
+    if killedLureIdx == lastWaypointLure and (now - lastWaypointTime) < 10 then return end
+    lastWaypointLure = killedLureIdx
+    lastWaypointTime = now
+
+    local key = GetCharKey()
+    if not key then return end
+    local charData = MajesticBeastTrackerDB.chars[key]
+    if not charData then return end
+
+    local routeOrder = ns.GetRouteOrder()
+    local routeSkip = MajesticBeastTrackerDB.settings.routeSkip or {}
+    local harandarMinLvl = MajesticBeastTrackerDB.settings.routeHarandarMinLevel or 80
+
+    -- Find position of killed beast in route
+    local killedPos = nil
+    for pos, li in ipairs(routeOrder) do
+        if li == killedLureIdx then
+            killedPos = pos
+            break
+        end
+    end
+    if not killedPos then return end
+
+    -- Search forward in route for next available beast
+    for offset = 1, #LURES - 1 do
+        local nextPos = ((killedPos - 1 + offset) % #LURES) + 1
+        local li = routeOrder[nextPos]
+        local lure = LURES[li]
+
+        -- Skip: globally skipped
+        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+        if routeSkip[lure.name] or MajesticBeastTrackerDB.settings[skipKey] then
+            -- skip this one
+        -- Skip: Harandar level check
+        elseif lure.name == "Harandar" and charData.level and charData.level < harandarMinLvl then
+            -- skip this one
+        -- Skip: can't see this lure (not enough talent points)
+        elseif not ns.CanSeeLure(charData, li) then
+            -- skip this one
+        -- Skip: already killed today
+        elseif charData.lures[lure.name] and not IsLureReady(charData.lures[lure.name]) then
+            -- skip this one
+        else
+            -- Found next available beast — set waypoint
+            local wp = lure.waypoint
+            if wp then
+                local mapPoint = UiMapPoint.CreateFromCoordinates(wp.map, wp.x, wp.y)
+                C_Map.SetUserWaypoint(mapPoint)
+                C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+                if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                    print("|cff3FC7EB[MBT]|r Next route: " .. lure.color .. lure.name .. "|r (waypoint set)")
+                end
+            end
+            return
+        end
+    end
+
+    -- All beasts done — clear waypoint and notify
+    if C_Map.HasUserWaypoint() then
+        C_Map.ClearUserWaypoint()
+    end
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        print("|cff3FC7EB[MBT]|r Route complete! All beasts done for today.")
+    end
+end
+
 ------------------------------------------------------
 -- Core functions
 ------------------------------------------------------
@@ -629,6 +703,7 @@ local SETTINGS_DEFAULTS = {
     routeHarandarMinLevel = 80,  -- slider 80-90
     routeHideSkipped = false,  -- hide entire column for skipped beasts
     routeOrder = {},  -- custom column order: { 4, 5, 1, 3, 2 } = Voidstorm, Grand, Eversong, Harandar, Zul'Aman
+    autoRouteWaypoint = false,  -- auto-set waypoint to next route beast after kill
     autoHide = false,  -- fade out when mouse leaves tracker
     hiddenChars = {},  -- { ["Name-Realm"] = true, ... }
     showHiddenChars = false,  -- temporarily show hidden characters
@@ -725,6 +800,8 @@ local function SyncKillsFromQuests(skipSanityCheck)
             if not existing or existing < GetLastDailyReset() then
                 charData.lures[lure.name] = GetServerTime()
                 changed = true
+                -- Auto-waypoint to next route beast (if not already triggered by QUEST_TURNED_IN)
+                ns.SetNextRouteWaypoint(i)
                 -- Start loot tracking if we have a pre-combat snapshot
                 if not pendingLootBeast and preCombatSnapshot then
                     pendingLootBeast = lure.name
@@ -1136,7 +1213,7 @@ local function CursorDepositItems(items, callback)
             depositNext(idx + 1)
             return
         end
-        C_Timer.After(0.2, function()
+        C_Timer.After(0.3, function()
             -- Verify item is on cursor before finding destination
             local cursorType = GetCursorInfo()
             if cursorType ~= "item" then
@@ -1150,15 +1227,15 @@ local function CursorDepositItems(items, callback)
                 return
             end
             pcall(C_Container.PickupContainerItem, destBag, destSlot)
-            C_Timer.After(0.4, function()
+            C_Timer.After(0.5, function()
                 local cursorType2 = GetCursorInfo()
                 if cursorType2 == "item" then
-                    -- Retry once
+                    -- Retry with a different slot
                     local destBag2, destSlot2 = FindWarbankSlot(entry.itemID)
                     if destBag2 then
                         pcall(C_Container.PickupContainerItem, destBag2, destSlot2)
                     end
-                    C_Timer.After(0.4, function()
+                    C_Timer.After(0.5, function()
                         pcall(ClearCursor)
                         totalDeposited = totalDeposited + 1
                         depositNext(idx + 1)
@@ -1168,6 +1245,25 @@ local function CursorDepositItems(items, callback)
                     depositNext(idx + 1)
                 end
             end)
+        end)
+    end
+    depositNext(1)
+end
+
+-- Deposit specific items using UseContainerItem API (no cursor, no taint)
+local function UseItemDeposit(items, callback)
+    local deposited = 0
+    local function depositNext(idx)
+        if idx > #items then
+            if callback then callback(deposited) end
+            return
+        end
+        local entry = items[idx]
+        local ok = pcall(C_Container.UseContainerItem, entry.bag, entry.slot, nil, Enum.BankType.Account)
+        if ok then deposited = deposited + 1 end
+        -- Small delay between items to let server process
+        C_Timer.After(0.15, function()
+            depositNext(idx + 1)
         end)
     end
     depositNext(1)
@@ -1197,21 +1293,30 @@ function ns.DepositTrackedToWarbank(callback)
         print("|cff3FC7EB[MBT]|r Depositing " .. #items .. " stack(s) to Warband Bank...")
     end
 
-    -- Primary: try Blizzard's built-in deposit button (no taint)
-    if TryClickDepositAllButton() then
-        if MajesticBeastTrackerDB.settings.chatNotify then
-            print("|cff3FC7EB[MBT]|r Used Blizzard Deposit All button.")
+    -- Method 1: UseContainerItem per tracked item (clean API, no cursor, item-specific)
+    UseItemDeposit(items, function(count)
+        if count > 0 then
+            if MajesticBeastTrackerDB.settings.chatNotify then
+                print("|cff3FC7EB[MBT]|r Deposited " .. count .. " stack(s) to Warband Bank.")
+            end
+            if callback then callback(count) end
+            return
         end
-        if callback then callback(#items) end
-        return
-    end
-
-    -- Fallback: cursor-based deposit (pcall-wrapped to contain taint)
-    CursorDepositItems(items, function(count)
-        if count > 0 and MajesticBeastTrackerDB.settings.chatNotify then
-            print("|cff3FC7EB[MBT]|r Deposited " .. count .. " stack(s) to Warband Bank.")
+        -- Method 2: try Blizzard's built-in deposit button
+        if TryClickDepositAllButton() then
+            if MajesticBeastTrackerDB.settings.chatNotify then
+                print("|cff3FC7EB[MBT]|r Used Blizzard Deposit All button.")
+            end
+            if callback then callback(#items) end
+            return
         end
-        if callback then callback(count) end
+        -- Method 3: cursor-based fallback (longer delays)
+        CursorDepositItems(items, function(cursorCount)
+            if cursorCount > 0 and MajesticBeastTrackerDB.settings.chatNotify then
+                print("|cff3FC7EB[MBT]|r Deposited " .. cursorCount .. " stack(s) to Warband Bank (cursor).")
+            end
+            if callback then callback(cursorCount) end
+        end)
     end)
 end
 
@@ -1297,7 +1402,7 @@ function ns.InstallAHHook()
             -- Check missing reagents
             local missingReagents = ns.GetMissingReagents()
             local needed = missingReagents[itemID]
-            -- Check missing consumables (per-item stock target)
+            -- Check missing consumables (per-item stock target, bags only — not bank/warbank)
             if not needed and ns.CONSUMABLE_ITEMS then
                 local stockTargets = type(settings.consumableStock) == "table" and settings.consumableStock or {}
                 local target = stockTargets[itemID] or settings["consStock_" .. itemID] or 0
@@ -1305,9 +1410,9 @@ function ns.InstallAHHook()
                     local itemName = C_Item.GetItemNameByID(itemID)
                     local have = 0
                     if itemName then
-                        have = C_Item.GetItemCount(itemName, true, false, true, true)
+                        have = C_Item.GetItemCount(itemName, false, false, false, false)
                     else
-                        have = C_Item.GetItemCount(itemID, true, false, true, true)
+                        have = C_Item.GetItemCount(itemID, false, false, false, false)
                     end
                     needed = math.max(target - have, 0)
                 end
@@ -1345,7 +1450,7 @@ function ns.CreateAuctionatorShoppingList()
         end
     end
 
-    -- Missing consumables (per-item stock target - bag count)
+    -- Missing consumables (per-item stock target - bag count only, not bank/warbank)
     local stockTargets = type(MajesticBeastTrackerDB.settings.consumableStock) == "table" and MajesticBeastTrackerDB.settings.consumableStock or {}
     if ns.CONSUMABLE_ITEMS then
         for _, cons in ipairs(ns.CONSUMABLE_ITEMS) do
@@ -1354,9 +1459,9 @@ function ns.CreateAuctionatorShoppingList()
                 local itemName = C_Item.GetItemNameByID(cons.itemID)
                 local have = 0
                 if itemName then
-                    have = C_Item.GetItemCount(itemName, true, false, true, true)
+                    have = C_Item.GetItemCount(itemName, false, false, false, false)
                 else
-                    have = C_Item.GetItemCount(cons.itemID, true, false, true, true)
+                    have = C_Item.GetItemCount(cons.itemID, false, false, false, false)
                 end
                 local need = math.max(target - have, 0)
                 if need > 0 and itemName then
@@ -1420,6 +1525,8 @@ f:SetScript("OnEvent", function(_, event, ...)
         if questToIndex[questID] then
             local lureIdx = questToIndex[questID]
             RecordLureKill(lureIdx)
+            -- Auto-waypoint to next route beast
+            ns.SetNextRouteWaypoint(lureIdx)
             -- Use pre-combat snapshot if available (taken before loot), else snapshot now
             pendingLootBeast = LURES[lureIdx].name
             pendingLootSnapshot = preCombatSnapshot or SnapshotTrackedItems()

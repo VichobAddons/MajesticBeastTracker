@@ -61,15 +61,28 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Profession stats** — Per-character Skill, Perception, Finesse, and Deftness (base + talents + gear + buffs)
 - **Profession talent detection** — Automatically reads your Talented Tracker points to show only available lures
 
+### Route Planning
+- **Per-beast skip** — Skip individual beasts from your daily route
+- **Harandar min level** — Auto-skip Harandar for characters below a set level (80-90)
+- **Hide Skipped Columns** — Remove skipped columns for a cleaner view
+- **Custom route order** — Reorder beasts with up/down arrows in Settings to match your preferred route
+- **Auto-Waypoint** — After a kill, automatically pins the next beast in your route on the map
+
+### Character Management
+- **Hide characters** — Right-click to hide a character from the tracker without deleting data
+- **Show Hidden Characters** — Toggle to temporarily reveal hidden characters
+- **Remove characters** — Right-click to permanently remove a character
+
 ### UI & Settings
+- **Auto-hide** — Tracker fades out when mouse leaves, fades back in on hover
 - **Compact bottom bar** — Consumables, travel icons, and profession stats in a single row
+- **Adaptive stats layout** — Stats wrap to two rows when the tracker is narrow
 - **Golden hover highlights** — Border highlights on lure icons, travel buttons, and consumable icons
 - **Zone labels** — Color-coded zone names below each lure column
 - **Minimap button** — Left-click toggles window, right-click opens settings
 - **Non-skinner auto-hide** — Tracker stays hidden on characters without Midnight Skinning
 - **Hide in combat** — Optionally hide the tracker during combat
-- **Settings panel** — Full Interface > AddOns settings page with Reagents, Display, Loot Goblin, Warband Bank, and Data Management sections
-- **Character management** — Right-click a character name to remove them
+- **Expandable settings** — Collapsible sections: Route, Reagents & AH, Loot Goblin, Warband Bank, Display, Data Management, Slash Commands
 
 ## Lure Locations
 

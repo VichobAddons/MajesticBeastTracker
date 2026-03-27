@@ -17,6 +17,69 @@
 		</Layers>
 	</Frame>
 
+	<Frame name="LureTracker_SettingsRouteRow" mixin="LureTracker_SettingsRouteRowMixin" virtual="true">
+		<Size y="26" />
+		<Layers>
+			<Layer level="OVERLAY">
+				<FontString parentKey="Label" inherits="GameFontNormal" justifyH="LEFT" justifyV="MIDDLE">
+					<Anchors>
+						<Anchor point="LEFT" x="37" y="0" />
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Frames>
+			<Button parentKey="UpButton" registerForClicks="LeftButtonUp">
+				<Size x="22" y="20" />
+				<Anchors>
+					<Anchor point="RIGHT" relativeKey="$parent" relativePoint="RIGHT" x="-52" y="0" />
+				</Anchors>
+				<NormalTexture parentKey="Arrow" file="Interface\ChatFrame\UI-ChatIcon-ScrollUp-Up">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</NormalTexture>
+				<HighlightTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollUp-Highlight">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</HighlightTexture>
+				<PushedTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollUp-Down">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</PushedTexture>
+			</Button>
+			<Button parentKey="DownButton" registerForClicks="LeftButtonUp">
+				<Size x="22" y="20" />
+				<Anchors>
+					<Anchor point="RIGHT" relativeKey="$parent" relativePoint="RIGHT" x="-28" y="0" />
+				</Anchors>
+				<NormalTexture parentKey="Arrow" file="Interface\ChatFrame\UI-ChatIcon-ScrollDown-Up">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</NormalTexture>
+				<HighlightTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollDown-Highlight">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</HighlightTexture>
+				<PushedTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollDown-Down">
+					<Size x="16" y="16" />
+					<Anchors>
+						<Anchor point="CENTER" />
+					</Anchors>
+				</PushedTexture>
+			</Button>
+		</Frames>
+	</Frame>
+
 	<Frame name="LureTracker_SettingsExpandTemplate" inherits="SettingsExpandableSectionTemplate" mixin="LureTracker_SettingsExpandMixin" virtual="true">
 		<Size y="24" />
 	</Frame>

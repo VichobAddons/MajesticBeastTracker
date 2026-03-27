@@ -1,5 +1,40 @@
 # Majestic Beast Tracker
 
+## [v1.6.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.6.0) (2026-03-27)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.5.1...v1.6.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Route system with custom beast ordering, per-beast skip toggles, and auto-waypoint navigation
+
+### Route System (NEW)
+- **Per-beast skip** — Skip individual beasts from your daily route (e.g. skip Zul'Aman and Harandar)
+- **Harandar min level** — Automatically skip Harandar for characters below a set level (80-90 slider) since the mobs are high level and slow to kill on lower characters
+- **Hide Skipped Columns** — Completely remove skipped beast columns from the tracker for a cleaner view
+- **Custom route order** — Reorder beasts in the Settings panel with up/down arrow buttons to match your preferred route
+- **Auto-Waypoint** — After killing a beast, automatically sets a map waypoint to the next beast in your route. Skips beasts that are already killed, skipped, or locked. Clears waypoint when route is complete
+
+### Hide Characters
+- **Hide from tracker** — Right-click a character name and select "Hide character" to remove them from the tracker without deleting their data
+- **Show Hidden Characters** — Toggle in Data Management to temporarily reveal hidden characters
+- **Route-aware** — Hidden characters are excluded from reagent counts, costs, and AH calculations
+
+### Auto-Hide
+- **Fade on mouse leave** — Tracker fades out when your mouse leaves the frame, fades back in on hover
+- **Toggle button** — Invisibility icon next to close button for quick toggle
+- **Settings toggle** — "Auto-Hide on Mouse Leave" in Display section
+
+### Per-Beast Loot Tracking
+- **Loot breakdown by beast** — Hover the goblin icon to see loot per beast (e.g. how much you got from Voidstorm vs Grand Beast)
+- **This Reset vs All Time** — Two-column tooltip showing daily and total loot with item quality colors
+
+### Expandable Settings
+- Settings panel reorganized into collapsible sections: Route, Reagents & AH, Loot Goblin, Warband Bank, Display, Data Management, and Slash Commands
+- General settings (Minimap Icon, Chat Notifications, Hide on Non-Skinners) always visible at the top
+
+### Improvements
+- **Warband Bank deposit** — More reliable item deposits using UseContainerItem API instead of cursor manipulation
+- **Stats layout** — Profession stats automatically wrap to two rows when the tracker is narrow (fewer columns)
+- **Consumable stock fix** — AH autofill now correctly counts only items in your bags, not your warband bank
+
 ## [v1.5.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.5.1) (2026-03-18)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.5.0...v1.5.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

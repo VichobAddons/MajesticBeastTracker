@@ -2063,10 +2063,11 @@ function ns.UpdateUI()
         end
     end
     local numVisibleLures = hideSkipped and visibleLureCount or #LURES
-    -- Map lure index → visible column index (for layout)
+    -- Map lure index → visible column index (respects routeOrder + hideSkipped)
+    local routeOrder = ns.GetRouteOrder()
     local lureToCol = {}
     local colIdx = 0
-    for li = 1, #LURES do
+    for _, li in ipairs(routeOrder) do
         if hideSkipped and lureSkipped[li] then
             lureToCol[li] = -1  -- hidden
         else
@@ -2077,9 +2078,8 @@ function ns.UpdateUI()
 
     -- Header icons: texture, count, glow
     local charData = MajesticBeastTrackerDB.chars[currentChar]
-    local visCol = 0  -- visible column counter for layout when hiding skipped
     for i, lure in ipairs(LURES) do
-        local isHidden = hideSkipped and lureSkipped[i]
+        local isHidden = lureToCol[i] == -1
         if isHidden then
             if not InCombatLockdown() then headerIcons[i]:Hide() end
             zoneLabels[i]:Hide()
@@ -2089,7 +2089,6 @@ function ns.UpdateUI()
             if lureBoxes[i] then lureBoxes[i]:Hide() end
             if tsmPriceLabels[i] then tsmPriceLabels[i]:Hide() end
         else
-        visCol = visCol + 1
         local tex = C_Item.GetItemIconByID(lure.itemID)
         if tex then headerIcons[i].icon:SetTexture(tex) end
 
@@ -2139,20 +2138,18 @@ function ns.UpdateUI()
         end -- end isHidden else
     end
 
-    -- Reposition lure icons and separator based on reagent visibility
+    -- Reposition lure icons and separator based on reagent visibility + route order
     if not InCombatLockdown() then
-        local reposCol = 0
         for i = 1, #LURES do
-            if hideSkipped and lureSkipped[i] then
+            if lureToCol[i] == -1 then
                 headerIcons[i]:Hide()
             else
                 headerIcons[i]:ClearAllPoints()
                 headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                    PAD + 4 + NAME_COL_WIDTH + reposCol * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
+                    PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
                     contentTop - 2 - reagentExtra)
                 zoneLabels[i]:ClearAllPoints()
                 zoneLabels[i]:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
-                reposCol = reposCol + 1
             end
         end
         ns.iconSep:ClearAllPoints()
@@ -2236,22 +2233,20 @@ function ns.UpdateUI()
 
     for i, lure in ipairs(LURES) do
         -- Skip hidden lure columns entirely
-        if hideSkipped and lureSkipped[i] then
+        if lureToCol[i] == -1 then
             if reagentIcons[i] then
                 for _, rBtn in ipairs(reagentIcons[i]) do rBtn:Hide() end
             end
         elseif reagentIcons[i] and showReagents and lure.reagents then
-            -- Reposition reagent icons if hiding skipped columns
-            if hideSkipped and lureToCol[i] >= 0 then
-                local col = lureToCol[i]
-                local lureCenter = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH + COL_WIDTH / 2
-                local numR = #lure.reagents
-                local totalW = numR * REAGENT_ICON_SIZE + (numR - 1) * REAGENT_GAP
-                for j, rBtn in ipairs(reagentIcons[i]) do
-                    rBtn:ClearAllPoints()
-                    local rx = lureCenter - totalW / 2 + (j - 1) * (REAGENT_ICON_SIZE + REAGENT_GAP)
-                    rBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", rx, contentTop - 2 - 1)
-                end
+            -- Always reposition reagent icons via lureToCol (handles route order + unhide restore)
+            local col = lureToCol[i]
+            local lureCenter = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH + COL_WIDTH / 2
+            local numR = #lure.reagents
+            local totalW = numR * REAGENT_ICON_SIZE + (numR - 1) * REAGENT_GAP
+            for j, rBtn in ipairs(reagentIcons[i]) do
+                rBtn:ClearAllPoints()
+                local rx = lureCenter - totalW / 2 + (j - 1) * (REAGENT_ICON_SIZE + REAGENT_GAP)
+                rBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", rx, contentTop - 2 - 1)
             end
             local numLeft = charsNeedLure[i]
             local anyMissing = false
@@ -2417,8 +2412,7 @@ function ns.UpdateUI()
                 label:SetText(ns.FormatGold(totalCost))
                 label:SetTextColor(1, 0.84, 0)
                 label:ClearAllPoints()
-                local col = hideSkipped and lureToCol[i] or (i - 1)
-                local colCenter = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH + COL_WIDTH / 2
+                local colCenter = PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH + COL_WIDTH / 2
                 label:SetPoint("TOP", frame, "TOPLEFT", colCenter, contentTop - 2 - REAGENT_ICON_SIZE - REAGENT_COUNT_HEIGHT - 3)
                 label:Show()
             else
@@ -2432,13 +2426,12 @@ function ns.UpdateUI()
     -- Update lure column boxes
     for i, lure in ipairs(LURES) do
         local box = lureBoxes[i]
-        if hideSkipped and lureSkipped[i] then
+        if lureToCol[i] == -1 then
             box:Hide()
         elseif showReagents and lure.reagents and #lure.reagents > 0 then
             -- Position border box around reagent icons + lure icon
             local boxPad = 3
-            local col = hideSkipped and lureToCol[i] or (i - 1)
-            local colX = PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH
+            local colX = PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH
             local boxTop = contentTop - 2 + boxPad
             local boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
             box:ClearAllPoints()
@@ -2485,9 +2478,12 @@ function ns.UpdateUI()
         end
         for ci = 1, #LURES do
             if row.cells and row.cells[ci] then
-                row.cells[ci]:ClearAllPoints()
-                row.cells[ci]:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                    PAD + 4 + NAME_COL_WIDTH + (ci - 1) * COL_WIDTH, yOff)
+                local col = lureToCol[ci]
+                if col and col >= 0 then
+                    row.cells[ci]:ClearAllPoints()
+                    row.cells[ci]:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                        PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH, yOff)
+                end
             end
         end
         -- Reposition goblin icon
@@ -2535,7 +2531,6 @@ function ns.UpdateUI()
         row.name:Show()
         if row.bg then row.bg:Show() end
 
-        local cellVisCol = 0
         for i, lure in ipairs(LURES) do
             local cell = row.cells[i]
             cell.charKey = key
@@ -2546,7 +2541,7 @@ function ns.UpdateUI()
                 isSkipped = true
             end
             -- Hide entire column if setting enabled (global skip only)
-            if hideSkipped and lureSkipped[i] then
+            if lureToCol[i] == -1 then
                 cell:Hide()
             elseif isSkipped then
                 cell.label:SetText("|cffff4444Skip|r")
@@ -2558,13 +2553,6 @@ function ns.UpdateUI()
                     GameTooltip:Show()
                 end)
                 cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                cellVisCol = cellVisCol + 1
-                if hideSkipped then
-                    cell:ClearAllPoints()
-                    cell:SetPoint("TOPLEFT", row.name, "TOPRIGHT",
-                        (cellVisCol - 1) * COL_WIDTH, 0)
-                    cell:SetWidth(COL_WIDTH)
-                end
                 cell:Show()
             else
             local text, r, g, b = ns.GetStatusText(charData, lure.name)
@@ -2611,13 +2599,6 @@ function ns.UpdateUI()
                 cell:SetScript("OnClick", nil)
                 cell:SetScript("OnEnter", nil)
                 cell:SetScript("OnLeave", nil)
-            end
-            cellVisCol = cellVisCol + 1
-            if hideSkipped then
-                cell:ClearAllPoints()
-                cell:SetPoint("TOPLEFT", row.name, "TOPRIGHT",
-                    (cellVisCol - 1) * COL_WIDTH, 0)
-                cell:SetWidth(COL_WIDTH)
             end
             cell:Show()
             end -- end isSkipped else
@@ -2762,22 +2743,64 @@ function ns.UpdateUI()
             end
         end
 
-        -- Position stats on the right side of bottom row
+        -- Position stats on the right side of bottom row (2-row layout when narrow)
         local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
         local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
         local statsY = divY - 4 - CONS_BOX_HEIGHT / 2
         if hasAnyStats then
-            local statsX = w - PAD - 4
-            for i = #STAT_LABELS, 1, -1 do
-                local val = profStats[STAT_LABELS[i].key] or 0
+            -- Collect visible stats
+            local visibleStats = {}
+            for i, stat in ipairs(STAT_LABELS) do
+                local val = profStats[stat.key] or 0
                 if val > 0 then
-                    statsTexts[i]:SetText(STAT_LABELS[i].label .. ":" .. val)
-                    statsTexts[i]:ClearAllPoints()
-                    statsTexts[i]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, statsY)
-                    statsX = statsX - statsTexts[i]:GetStringWidth() - 6
-                    statsTexts[i]:Show()
+                    statsTexts[i]:SetText(stat.label .. ":" .. val)
+                    visibleStats[#visibleStats + 1] = i
                 else
                     statsTexts[i]:Hide()
+                end
+            end
+            -- Calculate total width needed
+            local totalStatsWidth = 0
+            for _, si in ipairs(visibleStats) do
+                totalStatsWidth = totalStatsWidth + statsTexts[si]:GetStringWidth() + 6
+            end
+            -- Available space: frame width minus consumable box
+            local availableWidth = w - CONS_BOX_WIDTH - PAD * 2 - 16
+            local useTwoRows = totalStatsWidth > availableWidth and #visibleStats > 2
+            if useTwoRows then
+                -- Two rows: top row = first half, bottom row = second half
+                local half = math.ceil(#visibleStats / 2)
+                local rowHeight = 7
+                -- Top row: first half (Skl, Per)
+                local statsX = w - PAD - 4
+                local topRowY = divY - 4 - CONS_BOX_HEIGHT / 2 + rowHeight
+                for ri = half, 1, -1 do
+                    local si = visibleStats[ri]
+                    statsTexts[si]:ClearAllPoints()
+                    statsTexts[si]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, topRowY)
+                    statsX = statsX - statsTexts[si]:GetStringWidth() - 6
+                    statsTexts[si]:Show()
+                end
+                -- Bottom row: second half (Fin, Dft)
+                statsX = w - PAD - 4
+                local bottomRowY = divY - 4 - CONS_BOX_HEIGHT / 2 - rowHeight
+                statsY = bottomRowY
+                for ri = #visibleStats, half + 1, -1 do
+                    local si = visibleStats[ri]
+                    statsTexts[si]:ClearAllPoints()
+                    statsTexts[si]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, bottomRowY)
+                    statsX = statsX - statsTexts[si]:GetStringWidth() - 6
+                    statsTexts[si]:Show()
+                end
+            else
+                -- Single row (right-aligned)
+                local statsX = w - PAD - 4
+                for ri = #visibleStats, 1, -1 do
+                    local si = visibleStats[ri]
+                    statsTexts[si]:ClearAllPoints()
+                    statsTexts[si]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, statsY)
+                    statsX = statsX - statsTexts[si]:GetStringWidth() - 6
+                    statsTexts[si]:Show()
                 end
             end
         else
@@ -3166,6 +3189,29 @@ local function InitSettings()
         self.RightText:SetTextToFit(data.rightText or "")
     end
 
+    -- Route order row mixin (arrow up/down buttons)
+    LureTracker_SettingsRouteRowMixin = {}
+    function LureTracker_SettingsRouteRowMixin:Init(initializer)
+        local data = initializer:GetData()
+        -- Store frame reference for direct label updates after swap
+        ns.routeRowFrames = ns.routeRowFrames or {}
+        ns.routeRowFrames[data.pos] = self
+        self.Label:SetText(data.getLabel())
+        self.UpButton:SetScript("OnClick", function()
+            data.onMoveUp()
+        end)
+        self.DownButton:SetScript("OnClick", function()
+            data.onMoveDown()
+        end)
+        -- Dim arrows at boundaries
+        local canUp = data.pos > 1
+        local canDown = data.pos < data.total
+        self.UpButton:SetEnabled(canUp)
+        self.DownButton:SetEnabled(canDown)
+        self.UpButton.Arrow:SetAlpha(canUp and 1.0 or 0.2)
+        self.DownButton.Arrow:SetAlpha(canDown and 1.0 or 0.2)
+    end
+
     -- Expand mixin for collapsible sections
     LureTracker_SettingsExpandMixin = CreateFromMixins(SettingsExpandableSectionMixin)
     function LureTracker_SettingsExpandMixin:Init(initializer)
@@ -3248,6 +3294,11 @@ local function InitSettings()
         MajesticBeastTrackerDB.settings.routeSkip = {}
     end
 
+    -- "Skip from Route" sub-header
+    local skipHeader = CreateSettingsListSectionHeaderInitializer("Skip from Route")
+    skipHeader:AddShownPredicate(isRouteExpanded)
+    layout:AddInitializer(skipHeader)
+
     -- Per-beast skip toggles
     for _, lure in ipairs(LURES) do
         local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
@@ -3261,6 +3312,7 @@ local function InitSettings()
         sSkip:SetValueChangedCallback(function()
             MajesticBeastTrackerDB.settings.routeSkip[lure.name] = MajesticBeastTrackerDB.settings[skipKey]
             ns.UpdateUI()
+            if ns.refreshRouteLabels then ns.refreshRouteLabels() end
         end)
         cbSkip:AddShownPredicate(isRouteExpanded)
     end
@@ -3284,44 +3336,67 @@ local function InitSettings()
     sHideSkipped:SetValueChangedCallback(function() ns.UpdateUI() end)
     cbHideSkipped:AddShownPredicate(isRouteExpanded)
 
-    -- Route Order: move lures left/right with buttons
+    local sAutoWP = Settings.RegisterAddOnSetting(category, "MBT_autoRouteWaypoint", "autoRouteWaypoint",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto-Waypoint Next Beast", false)
+    local cbAutoWP = Settings.CreateCheckbox(category, sAutoWP, "Automatically set a map waypoint to the next beast in your route after a kill. Clears waypoint when route is complete.")
+    cbAutoWP:AddShownPredicate(isRouteExpanded)
+
+    -- Route Order sub-header
+    local routeOrderHeader = CreateSettingsListSectionHeaderInitializer("Route Order")
+    routeOrderHeader:AddShownPredicate(isRouteExpanded)
+    layout:AddInitializer(routeOrderHeader)
+
     -- Ensure routeOrder is initialized
     if not MajesticBeastTrackerDB.settings.routeOrder or #MajesticBeastTrackerDB.settings.routeOrder ~= #LURES then
         MajesticBeastTrackerDB.settings.routeOrder = {}
         for i = 1, #LURES do MajesticBeastTrackerDB.settings.routeOrder[i] = i end
     end
 
-    for pos = 1, #LURES do
-        local function getOrder() return MajesticBeastTrackerDB.settings.routeOrder end
-        local function getLureName(p)
-            local o = getOrder()
-            return LURES[o[p]].color .. LURES[o[p]].name .. "|r"
+    local function getOrder() return MajesticBeastTrackerDB.settings.routeOrder end
+    local function isLureSkipped(li)
+        local lure = LURES[li]
+        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+        local routeSkipTbl = MajesticBeastTrackerDB.settings.routeSkip or {}
+        return routeSkipTbl[lure.name] or MajesticBeastTrackerDB.settings[skipKey] or false
+    end
+    local function getRouteLabel(pos)
+        local o = getOrder()
+        local li = o[pos]
+        if isLureSkipped(li) then
+            return "|cff666666#" .. pos .. "  " .. LURES[li].name .. " (skip)|r"
         end
-        local label = "Route #" .. pos
-        local moveInit = CreateSettingsButtonInitializer(label, "< >", function()
-            local o = getOrder()
-            -- Cycle: move this position's lure one step right (wrap around)
-            if pos < #LURES then
-                o[pos], o[pos + 1] = o[pos + 1], o[pos]
-            else
-                -- Last position: wrap to first
-                local last = o[pos]
-                table.remove(o, pos)
-                table.insert(o, 1, last)
+        return "#" .. pos .. "  " .. LURES[li].color .. LURES[li].name .. "|r"
+    end
+
+    local function refreshRouteLabels()
+        if not ns.routeRowFrames then return end
+        for pos = 1, #LURES do
+            local f = ns.routeRowFrames[pos]
+            if f and f.Label then
+                f.Label:SetText(getRouteLabel(pos))
             end
-            MajesticBeastTrackerDB.settings.routeOrder = o
-            ns.UpdateUI()
-            -- Reopen settings to refresh labels
-            if ns.settingsCategoryID then
-                Settings.OpenToCategory(ns.settingsCategoryID)
-            end
-        end, function()
-            -- Dynamic tooltip showing current lure at this position
-            local o = getOrder()
-            return "Position " .. pos .. ": " .. LURES[o[pos]].name .. "\nClick to swap with next position."
-        end, true)
-        moveInit:AddShownPredicate(isRouteExpanded)
-        layout:AddInitializer(moveInit)
+        end
+    end
+    ns.refreshRouteLabels = refreshRouteLabels
+
+    local function swapRoute(posA, posB)
+        local o = getOrder()
+        o[posA], o[posB] = o[posB], o[posA]
+        MajesticBeastTrackerDB.settings.routeOrder = o
+        ns.UpdateUI()
+        refreshRouteLabels()
+    end
+
+    for pos = 1, #LURES do
+        local routeInit = Settings.CreateElementInitializer("LureTracker_SettingsRouteRow", {
+            pos = pos,
+            total = #LURES,
+            getLabel = function() return getRouteLabel(pos) end,
+            onMoveUp = function() if pos > 1 then swapRoute(pos, pos - 1) end end,
+            onMoveDown = function() if pos < #LURES then swapRoute(pos, pos + 1) end end,
+        })
+        routeInit:AddShownPredicate(isRouteExpanded)
+        layout:AddInitializer(routeInit)
     end
 
     --------------------------------------------------------
