@@ -125,12 +125,32 @@ local function BuildItemList(lootTable, savedPrices)
 end
 
 -- Helper: add two-column loot display (This Reset | All Time) to tooltip
+-- Reusable component: format a single loot column (item + count + value)
+-- Returns formatted string for one item in one column
+local function FormatLootEntry(item)
+    if not item then return "|cff666666—|r" end
+    local text = "x" .. item.count
+    if item.priceText ~= "" then text = text .. " " .. item.priceText end
+    return text
+end
+
+-- Reusable component: add a loot column to tooltip
+-- lootTable = { [itemID] = count }, header = "Reset" or "All Time"
+local function AddLootColumnToTooltip(items, total, header, isLeft)
+    -- Returns formatted lines for this column
+    local lines = {}
+    for _, item in ipairs(items) do
+        lines[item.sortKey] = FormatLootEntry(item)
+    end
+    return lines, total
+end
+
 function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeast, perBeastReset)
     local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
     local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
     local hasTSM = TSM_API ~= nil
 
-    -- Collect all unique item names from both lists
+    -- Collect all unique item keys
     local allNames = {}
     local nameSet = {}
     for _, item in ipairs(resetItems) do
@@ -147,33 +167,28 @@ function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeas
     local allTimeByKey = {}
     for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
 
-    -- Headers: Item name left, "Reset" and "All Time" right
+    -- Header
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine(" ", "Reset          All Time", 1, 1, 1, 1, 0.84, 0)
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 50) .. "|r")
+    GameTooltip:AddDoubleLine("|cffffd700Reset|r", "|cffffd700All Time|r", 1, 0.84, 0, 1, 0.84, 0)
 
-    -- Rows: one item per line, reset count+value and alltime count+value on right
+    -- Rows: left = item name + reset entry, right = alltime entry
     for _, key in ipairs(allNames) do
         local ri = resetByKey[key]
         local ai = allTimeByKey[key]
         local ref = ai or ri
         if ref then
-            local resetStr = ri and ("x" .. ri.count .. (ri.priceText ~= "" and " " .. ri.priceText or "")) or "|cff666666—|r"
-            local allTimeStr = ai and ("x" .. ai.count .. (ai.priceText ~= "" and " " .. ai.priceText or "")) or ""
-            local rightText = string.format("%-14s %s", resetStr, allTimeStr)
-            GameTooltip:AddDoubleLine(ref.name, rightText, ref.r, ref.g, ref.b, 0.9, 0.9, 0.9)
+            local leftText = ref.name .. "  " .. FormatLootEntry(ri)
+            local rightText = FormatLootEntry(ai)
+            GameTooltip:AddDoubleLine(leftText, rightText, ref.r, ref.g, ref.b, 0.9, 0.9, 0.9)
         end
     end
 
     -- Value totals
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 50) .. "|r")
-    if hasTSM then
-        local resetVal = resetTotal > 0 and ns.FormatGoldPositive(resetTotal) or ""
-        local allTimeVal = allTimeTotal > 0 and ns.FormatGoldPositive(allTimeTotal) or ""
-        GameTooltip:AddDoubleLine("Value:", string.format("%-14s %s", resetVal, allTimeVal), 1, 0.84, 0, 1, 0.84, 0)
+    if hasTSM and (resetTotal > 0 or allTimeTotal > 0) then
+        local leftVal = resetTotal > 0 and ("|cffffd700Value: " .. ns.FormatGoldPositive(resetTotal) .. "|r") or " "
+        local rightVal = allTimeTotal > 0 and ("|cffffd700Value: " .. ns.FormatGoldPositive(allTimeTotal) .. "|r") or " "
+        GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
     end
-
-    -- Per-beast breakdown moved to Loot Summary window
 end
 
 -- Helper: add per-beast breakdown lines to tooltip
