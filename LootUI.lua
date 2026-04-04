@@ -242,12 +242,11 @@ function ns.AddPerBeastTooltipLines(perBeastReset, perBeastAllTime)
                 local leftText = rc and ("  " .. name .. " x" .. rc) or " "
                 local rightText = ac and (name .. " x" .. ac) or " "
                 local lr, lg, lb = rc and r or 0.4, rc and g or 0.4, rc and b or 0.4
-
--- Block 2: Loot Editor + Loot Summary
-    dd:SetSize(btnWidth + 12, math.abs(yOff) + 6)
-    dd:ClearAllPoints()
-    dd:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
-    dd:Show()
+                local rr, rg, rb = ac and r or 0.4, ac and g or 0.4, ac and b or 0.4
+                GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
+            end
+        end
+    end
 end
 
 ------------------------------------------------------

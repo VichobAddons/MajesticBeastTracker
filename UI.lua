@@ -1098,12 +1098,6 @@ function ns.FormatGoldPositive(copper)
     end
 end
 
-                local rr, rg, rb = ac and r or 0.4, ac and g or 0.4, ac and b or 0.4
-                GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
-            end
-        end
-    end
-end
 
 -- Helper: check if player has Engineering as second profession
 function ns.HasEngineering()
@@ -1603,11 +1597,10 @@ local function ShowDropdown(anchor, items)
         yOff = yOff - btnHeight
     end
 
-        else
-            ns.lootSummary:SetPoint("TOPLEFT", frame, "TOPRIGHT", 4, 0)
-        end
-        ns.lootSummary:Show()
-    end
+    dd:SetSize(btnWidth + 12, math.abs(yOff) + 6)
+    dd:ClearAllPoints()
+    dd:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    dd:Show()
 end
 
 ------------------------------------------------------
