@@ -539,8 +539,8 @@ local leDecreaseBtn = CreateToolbarButton(leToolbar,
     MEDIA_PATH .. "Icon_Close",
     function(self)
         local state = ns.lootEditorAllowDecrease
-        GameTooltip:AddLine(state and "Disable Decrease" or "Enable Decrease", 1, 1, 1)
-        GameTooltip:AddLine("Allow minus button to reduce loot counts", 0.5, 0.8, 1, true)
+        GameTooltip:AddLine(state and "Lock All Time" or "Unlock All Time", 1, 1, 1)
+        GameTooltip:AddLine("Allow decreasing Reset and All Time counts", 0.5, 0.8, 1, true)
     end,
     nil, nil)
 leDecreaseBtn:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
