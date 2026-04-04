@@ -491,7 +491,7 @@ ns.lootEditor.rows = {}
 ns.lootEditor.charKey = nil
 
 local LOOT_ROW_HEIGHT = 22
-local LOOT_EDITOR_WIDTH = 320
+local LOOT_EDITOR_WIDTH = 360
 local LE_TOOLBAR_HEIGHT = 20
 
 -- Loot Editor toolbar
@@ -582,7 +582,32 @@ local function PopulateLootEditor(anchor, charKey)
 
     local sortedItems = BuildSortedLootList()
 
+    -- Layout columns
+    local LE_NAME_W = 150
+    local LE_RESET_X = 8 + 18 + 5 + LE_NAME_W + 4  -- icon + name + gap
+    local LE_ALLTIME_X = LE_RESET_X + 80  -- reset area (count + edit + buttons)
+
     local yOff = -(LE_TOOLBAR_HEIGHT + 8)
+
+    -- Column header
+    if not ns.lootEditor._header then
+        local hdr = CreateFrame("Frame", nil, ns.lootEditor)
+        hdr:SetHeight(14)
+        local hdrReset = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        hdrReset:SetFont(hdrReset:GetFont(), 9)
+        hdrReset:SetPoint("LEFT", hdr, "LEFT", LE_RESET_X, 0)
+        hdrReset:SetText("|cffffd700Reset|r")
+        local hdrAllTime = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        hdrAllTime:SetFont(hdrAllTime:GetFont(), 9)
+        hdrAllTime:SetPoint("LEFT", hdr, "LEFT", LE_ALLTIME_X, 0)
+        hdrAllTime:SetText("|cffffd700All Time|r")
+        ns.lootEditor._header = hdr
+    end
+    ns.lootEditor._header:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 0, yOff)
+    ns.lootEditor._header:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", 0, yOff)
+    ns.lootEditor._header:Show()
+    yOff = yOff - 16
+
     for idx, entry in ipairs(sortedItems) do
         local itemID = entry.id
         local row = ns.lootEditor.rows[idx]
@@ -602,26 +627,26 @@ local function PopulateLootEditor(anchor, charKey)
             local name = row:CreateFontString(nil, "OVERLAY")
             name:SetFont(STANDARD_TEXT_FONT, 10)
             name:SetPoint("LEFT", icon, "RIGHT", 5, 0)
-            name:SetWidth(150)
+            name:SetWidth(LE_NAME_W)
             name:SetJustifyH("LEFT")
             name:SetWordWrap(false)
             row.nameText = name
 
-            -- Count display (clickable to edit)
+            -- Reset count display (clickable to edit)
             local countBtn = CreateFrame("Button", nil, row)
-            countBtn:SetSize(50, LOOT_ROW_HEIGHT)
-            countBtn:SetPoint("RIGHT", row, "RIGHT", -56, 0)
+            countBtn:SetSize(36, LOOT_ROW_HEIGHT)
+            countBtn:SetPoint("LEFT", row, "LEFT", LE_RESET_X, 0)
             local countLabel = countBtn:CreateFontString(nil, "OVERLAY")
             countLabel:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
             countLabel:SetAllPoints()
-            countLabel:SetJustifyH("RIGHT")
+            countLabel:SetJustifyH("CENTER")
             row.countLabel = countLabel
             row.countBtn = countBtn
 
             -- Inline EditBox (hidden by default)
             local editBox = CreateFrame("EditBox", nil, row, "BackdropTemplate")
             editBox:SetSize(36, 16)
-            editBox:SetPoint("RIGHT", row, "RIGHT", -58, 0)
+            editBox:SetPoint("LEFT", row, "LEFT", LE_RESET_X, 0)
             editBox:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
             editBox:SetJustifyH("CENTER")
             editBox:SetAutoFocus(false)
@@ -637,7 +662,7 @@ local function PopulateLootEditor(anchor, charKey)
             -- Minus button
             local minusBtn = CreateFrame("Button", nil, row)
             minusBtn:SetSize(18, 18)
-            minusBtn:SetPoint("RIGHT", row, "RIGHT", -30, 0)
+            minusBtn:SetPoint("LEFT", row, "LEFT", LE_RESET_X + 38, 0)
             local minusTex = minusBtn:CreateFontString(nil, "OVERLAY")
             minusTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
             minusTex:SetAllPoints()
@@ -650,7 +675,7 @@ local function PopulateLootEditor(anchor, charKey)
             -- Plus button
             local plusBtn = CreateFrame("Button", nil, row)
             plusBtn:SetSize(18, 18)
-            plusBtn:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+            plusBtn:SetPoint("LEFT", row, "LEFT", LE_RESET_X + 56, 0)
             local plusTex = plusBtn:CreateFontString(nil, "OVERLAY")
             plusTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
             plusTex:SetAllPoints()
@@ -659,6 +684,14 @@ local function PopulateLootEditor(anchor, charKey)
             plusHl:SetAllPoints()
             plusHl:SetColorTexture(0.3, 1, 0.3, 0.15)
             row.plusBtn = plusBtn
+
+            -- All Time label (readonly)
+            local allTimeLabel = row:CreateFontString(nil, "OVERLAY")
+            allTimeLabel:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+            allTimeLabel:SetPoint("LEFT", row, "LEFT", LE_ALLTIME_X, 0)
+            allTimeLabel:SetJustifyH("LEFT")
+            allTimeLabel:SetTextColor(0.7, 0.7, 0.7)
+            row.allTimeLabel = allTimeLabel
 
             ns.lootEditor.rows[idx] = row
         end
@@ -678,7 +711,8 @@ local function PopulateLootEditor(anchor, charKey)
 
         local resetCount = loot.thisReset[itemID] or 0
         local allCount = loot.allTime[itemID] or 0
-        row.countLabel:SetText("|cffffd700" .. resetCount .. "|r / " .. allCount)
+        row.countLabel:SetText("|cffffd700" .. resetCount .. "|r")
+        row.allTimeLabel:SetText(tostring(allCount))
         row.editBox:Hide()
         row.countBtn:Show()
 
@@ -699,7 +733,8 @@ local function PopulateLootEditor(anchor, charKey)
             local cl = ns.GetCharLoot(charData)
             local rc = cl.thisReset[capturedID] or 0
             local ac = cl.allTime[capturedID] or 0
-            ns.lootEditor.rows[capturedIdx].countLabel:SetText("|cffffd700" .. rc .. "|r / " .. ac)
+            ns.lootEditor.rows[capturedIdx].countLabel:SetText("|cffffd700" .. rc .. "|r")
+            ns.lootEditor.rows[capturedIdx].allTimeLabel:SetText(tostring(ac))
             if ns.UpdateUI then ns.UpdateUI() end
         end
 
