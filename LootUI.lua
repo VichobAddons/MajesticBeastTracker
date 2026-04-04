@@ -1060,7 +1060,7 @@ lsBreakdownBtn:SetScript("OnClick", function()
     lsBreakdownBtn.icon:SetAlpha(ns.lootSummaryShowBreakdown and 1.0 or 0.4)
     if ns.lootSummary:IsShown() and ns._populateLootSummary then
         ns._populateLootSummary()
-        lootSumScroll:SetVerticalScroll(0)
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
     end
 end)
 
@@ -1078,6 +1078,7 @@ lootSumScroll:SetScrollChild(lootSumChild)
 
 -- Vertical scrollbar (custom slider)
 local lsScrollbar = CreateFrame("Slider", nil, ns.lootSummary, "UISliderTemplate")
+ns._lootSumScrollbar = lsScrollbar
 lsScrollbar:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", -2, -lsHeaderHeight)
 lsScrollbar:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -2, 4)
 lsScrollbar:SetWidth(6)
