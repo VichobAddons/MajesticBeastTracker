@@ -549,6 +549,7 @@ leDecreaseBtn.icon:SetTexCoord(0, 1, 0, 1)
 leDecreaseBtn.icon:SetAlpha(0.4)
 leDecreaseBtn:SetScript("OnClick", function()
     ns.lootEditorAllowDecrease = not ns.lootEditorAllowDecrease
+    leDecreaseBtn.icon:SetTexture(MEDIA_PATH .. (ns.lootEditorAllowDecrease and "Icon_LockOpen" or "Icon_Lock"))
     leDecreaseBtn.icon:SetAlpha(ns.lootEditorAllowDecrease and 1.0 or 0.4)
 end)
 
