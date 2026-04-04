@@ -908,15 +908,7 @@ lootSumChild:SetWidth(LOOT_SUMMARY_WIDTH - 24)
 lootSumScroll:SetScrollChild(lootSumChild)
 
 -- Column group borders (inside scroll child, resized dynamically)
-local LS_GROUP_WIDTH = LS_COL_COUNT + LS_COL_VALUE + 4
 
-local resetBorder = CreateFrame("Frame", nil, lootSumChild, "BackdropTemplate")
-resetBorder:SetBackdrop({ edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
-resetBorder:SetBackdropBorderColor(0.82, 0.71, 0.35, 0.5)
-
-local alltimeBorder = CreateFrame("Frame", nil, lootSumChild, "BackdropTemplate")
-alltimeBorder:SetBackdrop({ edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
-alltimeBorder:SetBackdropBorderColor(0.82, 0.71, 0.35, 0.5)
 
 local function CreateLootSummaryRow(parent)
     local row = CreateFrame("Frame", nil, parent)
@@ -957,8 +949,6 @@ local function PopulateLootSummary()
         for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
         lootSumTitle:SetText("Loot Summary — No data yet")
         ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, 40)
-        resetBorder:Hide()
-        alltimeBorder:Hide()
         return
     end
 
@@ -1207,18 +1197,6 @@ local function PopulateLootSummary()
     local windowH = math.min(contentH + lsHeaderHeight + 4, LOOT_SUMMARY_MAX_HEIGHT)
     ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, windowH)
 
-    -- Position column group borders (inside scroll child)
-    local borderTop = 0
-    local borderH = contentH - 4
-    resetBorder:ClearAllPoints()
-    resetBorder:SetPoint("TOPLEFT", container, "TOPLEFT", LS_RESET_X - 4, borderTop)
-    resetBorder:SetSize(LS_GROUP_WIDTH + 6, borderH)
-    resetBorder:Show()
-
-    alltimeBorder:ClearAllPoints()
-    alltimeBorder:SetPoint("TOPLEFT", container, "TOPLEFT", LS_ALLTIME_X - 4, borderTop)
-    alltimeBorder:SetSize(LS_GROUP_WIDTH + 6, borderH)
-    alltimeBorder:Show()
 end
 
 ns._populateLootSummary = PopulateLootSummary
