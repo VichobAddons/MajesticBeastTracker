@@ -583,10 +583,25 @@ leHistoryBtn:SetScript("OnClick", function()
 end)
 
 -- History pagination controls (left of history button)
+-- ChevronRight (>) = newer day (lower page number)
+local lePageRight = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_ChevronRight", "Newer", nil, nil)
+lePageRight:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+lePageRight:SetPoint("RIGHT", leHistoryBtn, "LEFT", 0, 0)
+lePageRight.icon:SetTexCoord(0, 1, 0, 1)
+lePageRight:Hide()
+lePageRight:SetScript("OnClick", function()
+    if ns.lootEditorHistoryPage > 1 then
+        ns.lootEditorHistoryPage = ns.lootEditorHistoryPage - 1
+        ns._repopulateLootEditor()
+    end
+end)
+
+-- ChevronLeft (<) = older day (higher page number)
 local lePageLeft = CreateToolbarButton(leToolbar,
-    MEDIA_PATH .. "Icon_ChevronLeft", "Previous Day", nil, nil)
+    MEDIA_PATH .. "Icon_ChevronLeft", "Older", nil, nil)
 lePageLeft:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
-lePageLeft:SetPoint("RIGHT", leHistoryBtn, "LEFT", 0, 0)
+lePageLeft:SetPoint("RIGHT", lePageRight, "LEFT", 0, 0)
 lePageLeft.icon:SetTexCoord(0, 1, 0, 1)
 lePageLeft:Hide()
 lePageLeft:SetScript("OnClick", function()
@@ -595,19 +610,6 @@ lePageLeft:SetScript("OnClick", function()
     local maxPage = charData and charData.loot and charData.loot.history and #charData.loot.history or 0
     if ns.lootEditorHistoryPage < maxPage then
         ns.lootEditorHistoryPage = ns.lootEditorHistoryPage + 1
-        ns._repopulateLootEditor()
-    end
-end)
-
-local lePageRight = CreateToolbarButton(leToolbar,
-    MEDIA_PATH .. "Icon_ChevronRight", "Next Day", nil, nil)
-lePageRight:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
-lePageRight:SetPoint("RIGHT", lePageLeft, "LEFT", 0, 0)
-lePageRight.icon:SetTexCoord(0, 1, 0, 1)
-lePageRight:Hide()
-lePageRight:SetScript("OnClick", function()
-    if ns.lootEditorHistoryPage > 1 then
-        ns.lootEditorHistoryPage = ns.lootEditorHistoryPage - 1
         ns._repopulateLootEditor()
     end
 end)
@@ -674,8 +676,11 @@ local function PopulateLootEditor(anchor, charKey)
     if ns.lootEditorHistoryMode then
         lePageLeft:Show()
         lePageRight:Show()
-        local histDate = historyEntry and historyEntry.date or "—"
-        ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " — " .. histDate)
+        if isHistory and historyEntry then
+            ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " — " .. historyEntry.date)
+        else
+            ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " — No history yet")
+        end
     else
         lePageLeft:Hide()
         lePageRight:Hide()
