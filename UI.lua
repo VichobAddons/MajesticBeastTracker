@@ -130,13 +130,32 @@ frame:SetScript("OnDragStop", function(self)
 end)
 
 -- Autohide: fade in/out on hover
+local function IsMouseOverAnyMBT()
+    if frame:IsMouseOver() then return true end
+    if ns.lootSummary and ns.lootSummary:IsShown() and ns.lootSummary:IsMouseOver() then return true end
+    if ns.lootEditor and ns.lootEditor:IsShown() and ns.lootEditor:IsMouseOver() then return true end
+    return false
+end
+
 function ns.RefreshAutoHide()
     if not frame:IsShown() then return end
     ns.EnsureDB()
-    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+    if MajesticBeastTrackerDB.settings.autoHide and not IsMouseOverAnyMBT() then
         UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
+        if ns.lootSummary and ns.lootSummary:IsShown() then
+            UIFrameFadeOut(ns.lootSummary, 0.5, ns.lootSummary:GetAlpha(), 0)
+        end
+        if ns.lootEditor and ns.lootEditor:IsShown() then
+            UIFrameFadeOut(ns.lootEditor, 0.5, ns.lootEditor:GetAlpha(), 0)
+        end
     else
         UIFrameFadeIn(frame, 0.1, frame:GetAlpha(), 1)
+        if ns.lootSummary and ns.lootSummary:IsShown() then
+            UIFrameFadeIn(ns.lootSummary, 0.1, ns.lootSummary:GetAlpha(), 1)
+        end
+        if ns.lootEditor and ns.lootEditor:IsShown() then
+            UIFrameFadeIn(ns.lootEditor, 0.1, ns.lootEditor:GetAlpha(), 1)
+        end
     end
 end
 
@@ -148,12 +167,16 @@ local function OnFrameEnter()
 end
 local function OnFrameLeave()
     ns.EnsureDB()
-    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+    if MajesticBeastTrackerDB.settings.autoHide and not IsMouseOverAnyMBT() then
         UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
     end
 end
 frame:SetScript("OnEnter", OnFrameEnter)
 frame:SetScript("OnLeave", OnFrameLeave)
+frame:SetScript("OnHide", function()
+    if ns.lootSummary then ns.lootSummary:Hide() end
+    if ns.lootEditor then ns.lootEditor:Hide() end
+end)
 
 -- Logout button (left of close button)
 local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
@@ -381,7 +404,8 @@ local globalGoblinBtn = CreateToolbarButton(toolbar,
     end,
     nil,
     function() ns.ToggleLootSummary() end)
-local globalGoblinIcon = globalGoblinBtn.icon
+ns.globalGoblinIcon = globalGoblinBtn.icon
+ns.globalGoblinBtn = globalGoblinBtn
 
 -- Warband Bank deposit button (bank icon, only visible when bank is open)
 local warbankBtn = CreateToolbarButton(toolbar,
@@ -393,6 +417,7 @@ local warbankBtn = CreateToolbarButton(toolbar,
     nil,
     function() ns.DepositTrackedToWarbank() end)
 warbankBtn:Hide()
+ns.warbankBtn = warbankBtn
 
 -- Auctionator shopping list button
 local auctionatorBtn = CreateToolbarButton(toolbar,
@@ -404,6 +429,7 @@ local auctionatorBtn = CreateToolbarButton(toolbar,
     nil,
     function() ns.CreateAuctionatorShoppingList() end)
 auctionatorBtn:Hide()
+ns.auctionatorBtn = auctionatorBtn
 
 -- Toggle TSM prices button (coin icon)
 local coinBtn = CreateToolbarButton(toolbar,
@@ -1227,10 +1253,7 @@ function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeas
         GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
     end
 
-    -- Per-beast breakdown below (this reset + all time)
-    if perBeastReset or perBeast then
-        ns.AddPerBeastTooltipLines(perBeastReset, perBeast)
-    end
+    -- Per-beast breakdown moved to Loot Summary window
 end
 
 -- Helper: add per-beast breakdown lines to tooltip
@@ -1690,8 +1713,9 @@ local function CreateCharRow(index)
     goblinBtn:SetPoint("LEFT", frame, "TOPLEFT", goblinX, yOffset - ROW_HEIGHT / 2)
     local goblinIcon = goblinBtn:CreateTexture(nil, "ARTWORK")
     goblinIcon:SetAllPoints()
-    goblinIcon:SetTexture("Interface\\Icons\\Achievement_GoblinHead")
-    goblinIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    goblinIcon:SetTexture(MEDIA_PATH .. "Icon_Results")
+    goblinIcon:SetTexCoord(0, 1, 0, 1)
+    goblinIcon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
     goblinBtn.icon = goblinIcon
     goblinBtn:RegisterForClicks("LeftButtonUp")
     goblinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2125,35 +2149,90 @@ ns.lootSummary:SetMovable(true)
 ns.lootSummary:RegisterForDrag("LeftButton")
 ns.lootSummary:SetScript("OnDragStart", function(self) self:StartMoving() end)
 ns.lootSummary:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+ns.lootSummary:SetScript("OnEnter", function() ns.RefreshAutoHide() end)
+ns.lootSummary:SetScript("OnLeave", function() ns.RefreshAutoHide() end)
 ns.lootSummary:Hide()
 ns.lootSummary.rows = {}
 
-local lootSumTitle = ns.lootSummary:CreateFontString(nil, "OVERLAY")
-lootSumTitle:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
-lootSumTitle:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 8, -8)
+local LOOT_SUMMARY_MAX_HEIGHT = 400
+local LS_TOOLBAR_HEIGHT = 20
+
+-- Loot Summary toolbar
+local lsToolbar = CreateFrame("Frame", nil, ns.lootSummary)
+lsToolbar:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 4, -4)
+lsToolbar:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", -4, -4)
+lsToolbar:SetHeight(LS_TOOLBAR_HEIGHT)
+local lsToolbarBg = lsToolbar:CreateTexture(nil, "BACKGROUND")
+lsToolbarBg:SetAllPoints()
+lsToolbarBg:SetColorTexture(0, 0, 0, 0.4)
+local lsToolbarSep = lsToolbar:CreateTexture(nil, "ARTWORK")
+lsToolbarSep:SetHeight(1)
+lsToolbarSep:SetPoint("BOTTOMLEFT", lsToolbar, "BOTTOMLEFT")
+lsToolbarSep:SetPoint("BOTTOMRIGHT", lsToolbar, "BOTTOMRIGHT")
+lsToolbarSep:SetColorTexture(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.3)
+
+local lootSumTitle = lsToolbar:CreateFontString(nil, "OVERLAY")
+lootSumTitle:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+lootSumTitle:SetPoint("LEFT", lsToolbar, "LEFT", 4, 0)
 lootSumTitle:SetTextColor(0.82, 0.71, 0.35)
-lootSumTitle:SetText("Loot Summary (All Characters)")
+lootSumTitle:SetText("Loot Summary")
 
-local lootSumClose = CreateFrame("Button", nil, ns.lootSummary)
-lootSumClose:SetSize(16, 16)
-lootSumClose:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", -4, -4)
-local lootSumCloseIcon = lootSumClose:CreateTexture(nil, "ARTWORK")
-lootSumCloseIcon:SetAllPoints()
-lootSumCloseIcon:SetTexture(MEDIA_PATH .. "Icon_Close")
-lootSumCloseIcon:SetTexCoord(0, 1, 0, 1)
-lootSumCloseIcon:SetVertexColor(0.6, 0.6, 0.6)
-lootSumClose:SetScript("OnClick", function() ns.lootSummary:Hide() end)
-lootSumClose:SetScript("OnEnter", function() lootSumCloseIcon:SetVertexColor(1, 0.3, 0.3) end)
-lootSumClose:SetScript("OnLeave", function() lootSumCloseIcon:SetVertexColor(0.6, 0.6, 0.6) end)
+-- Close button (toolbar)
+local lootSumClose = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_Close", "Close", nil,
+    function() ns.lootSummary:Hide() end)
+lootSumClose:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lootSumClose:SetPoint("RIGHT", lsToolbar, "RIGHT", -2, 0)
+lootSumClose.icon:SetTexCoord(0, 1, 0, 1)
+lootSumClose:SetScript("OnEnter", function(self)
+    self.icon:SetVertexColor(1, 0.3, 0.3, 1)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    GameTooltip:AddLine("Close", 1, 1, 1)
+    GameTooltip:Show()
+end)
+lootSumClose:SetScript("OnLeave", function(self)
+    self.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+    GameTooltip:Hide()
+end)
 
--- Column group borders (resized dynamically in PopulateLootSummary)
+-- Show Breakdown toggle (toolbar)
+ns.lootSummaryShowBreakdown = true
+local lsBreakdownBtn = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_Results",
+    function(self)
+        local state = ns.lootSummaryShowBreakdown
+        GameTooltip:AddLine(state and "Hide Beast Breakdown" or "Show Beast Breakdown", 1, 1, 1)
+    end,
+    nil, nil)
+lsBreakdownBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsBreakdownBtn:SetPoint("RIGHT", lootSumClose, "LEFT", -2, 0)
+lsBreakdownBtn.icon:SetTexCoord(0, 1, 0, 1)
+lsBreakdownBtn:SetScript("OnClick", function()
+    ns.lootSummaryShowBreakdown = not ns.lootSummaryShowBreakdown
+    lsBreakdownBtn.icon:SetAlpha(ns.lootSummaryShowBreakdown and 1.0 or 0.4)
+    if ns.lootSummary:IsShown() and ns._populateLootSummary then
+        ns._populateLootSummary()
+    end
+end)
+
+-- Scroll frame for content
+local lsHeaderHeight = LS_TOOLBAR_HEIGHT + 4
+local lootSumScroll = CreateFrame("ScrollFrame", nil, ns.lootSummary, "UIPanelScrollFrameTemplate")
+lootSumScroll:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, -lsHeaderHeight)
+lootSumScroll:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -20, 4)
+
+local lootSumChild = CreateFrame("Frame", nil, lootSumScroll)
+lootSumChild:SetWidth(LOOT_SUMMARY_WIDTH - 24)
+lootSumScroll:SetScrollChild(lootSumChild)
+
+-- Column group borders (inside scroll child, resized dynamically)
 local LS_GROUP_WIDTH = LS_COL_COUNT + LS_COL_VALUE + 4
 
-local resetBorder = CreateFrame("Frame", nil, ns.lootSummary, "BackdropTemplate")
+local resetBorder = CreateFrame("Frame", nil, lootSumChild, "BackdropTemplate")
 resetBorder:SetBackdrop({ edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
 resetBorder:SetBackdropBorderColor(0.82, 0.71, 0.35, 0.5)
 
-local alltimeBorder = CreateFrame("Frame", nil, ns.lootSummary, "BackdropTemplate")
+local alltimeBorder = CreateFrame("Frame", nil, lootSumChild, "BackdropTemplate")
 alltimeBorder:SetBackdrop({ edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
 alltimeBorder:SetBackdropBorderColor(0.82, 0.71, 0.35, 0.5)
 
@@ -2190,15 +2269,18 @@ local function CreateLootSummaryRow(parent)
 end
 
 local function PopulateLootSummary()
+    local container = lootSumChild
     local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
     if not resetLoot and not allTimeLoot then
         for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
         lootSumTitle:SetText("Loot Summary — No data yet")
         ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, 40)
+        resetBorder:Hide()
+        alltimeBorder:Hide()
         return
     end
 
-    lootSumTitle:SetText("Loot Summary (All Characters)")
+    lootSumTitle:SetText("Loot Summary")
     local hasTSM = TSM_API ~= nil
 
     local resetItems, resetTotal = BuildItemList(resetLoot, globalPrices)
@@ -2221,17 +2303,17 @@ local function PopulateLootSummary()
     for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
 
     local idx = 0
-    local yOff = -26
+    local yOff = -2
 
     -- Header row
     idx = idx + 1
     local headerRow = ns.lootSummary.rows[idx]
     if not headerRow then
-        headerRow = CreateLootSummaryRow(ns.lootSummary)
+        headerRow = CreateLootSummaryRow(container)
         ns.lootSummary.rows[idx] = headerRow
     end
-    headerRow:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, yOff)
-    headerRow:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", 0, yOff)
+    headerRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+    headerRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
     headerRow.item:SetText("")
     headerRow.resetCount:SetText("|cffffd700Reset|r")
     headerRow.resetValue:SetText("")
@@ -2244,7 +2326,7 @@ local function PopulateLootSummary()
     idx = idx + 1
     local sepRow = ns.lootSummary.rows[idx]
     if not sepRow then
-        sepRow = CreateFrame("Frame", nil, ns.lootSummary)
+        sepRow = CreateFrame("Frame", nil, container)
         sepRow:SetHeight(6)
         local sepTex = sepRow:CreateTexture(nil, "ARTWORK")
         sepTex:SetHeight(1)
@@ -2253,8 +2335,8 @@ local function PopulateLootSummary()
         sepTex:SetColorTexture(0.3, 0.3, 0.3, 0.6)
         ns.lootSummary.rows[idx] = sepRow
     end
-    sepRow:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, yOff)
-    sepRow:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", 0, yOff)
+    sepRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+    sepRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
     sepRow:Show()
     yOff = yOff - 6
 
@@ -2266,11 +2348,11 @@ local function PopulateLootSummary()
             idx = idx + 1
             local row = ns.lootSummary.rows[idx]
             if not row then
-                row = CreateLootSummaryRow(ns.lootSummary)
+                row = CreateLootSummaryRow(container)
                 ns.lootSummary.rows[idx] = row
             end
-            row:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, yOff)
-            row:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", 0, yOff)
+            row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+            row:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
 
             -- Item name (use alltime or reset data)
             local ref = ai or ri
@@ -2311,7 +2393,7 @@ local function PopulateLootSummary()
         idx = idx + 1
         local sepRow2 = ns.lootSummary.rows[idx]
         if not sepRow2 then
-            sepRow2 = CreateFrame("Frame", nil, ns.lootSummary)
+            sepRow2 = CreateFrame("Frame", nil, container)
             sepRow2:SetHeight(6)
             local sepTex2 = sepRow2:CreateTexture(nil, "ARTWORK")
             sepTex2:SetHeight(1)
@@ -2320,19 +2402,19 @@ local function PopulateLootSummary()
             sepTex2:SetColorTexture(0.3, 0.3, 0.3, 0.6)
             ns.lootSummary.rows[idx] = sepRow2
         end
-        sepRow2:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, yOff)
-        sepRow2:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", 0, yOff)
+        sepRow2:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+        sepRow2:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
         sepRow2:Show()
         yOff = yOff - 6
 
         idx = idx + 1
         local totalRow = ns.lootSummary.rows[idx]
         if not totalRow then
-            totalRow = CreateLootSummaryRow(ns.lootSummary)
+            totalRow = CreateLootSummaryRow(container)
             ns.lootSummary.rows[idx] = totalRow
         end
-        totalRow:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, yOff)
-        totalRow:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", 0, yOff)
+        totalRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+        totalRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
         totalRow.item:SetText("|cffffd700Value:|r")
         totalRow.resetCount:SetText("")
         totalRow.resetValue:SetText(resetTotal > 0 and ("|cffffd700" .. ns.FormatGoldPositive(resetTotal) .. "|r") or "")
@@ -2342,27 +2424,122 @@ local function PopulateLootSummary()
         yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
     end
 
+    -- Per-beast breakdown (only if toggle is on)
+    if ns.lootSummaryShowBreakdown and (globalPerBeastReset or globalPerBeast) then
+        local perResetData = globalPerBeastReset or {}
+        local perAllTimeData = globalPerBeast or {}
+
+        for _, lure in ipairs(LURES) do
+            local resetBl = perResetData[lure.name]
+            local allTimeBl = perAllTimeData[lure.name]
+            local hasReset = resetBl and next(resetBl)
+            local hasAllTime = allTimeBl and next(allTimeBl)
+            if hasReset or hasAllTime then
+                yOff = yOff - 4
+                idx = idx + 1
+                local beastSep = ns.lootSummary.rows[idx]
+                if not beastSep then
+                    beastSep = CreateFrame("Frame", nil, container)
+                    beastSep:SetHeight(6)
+                    local bst = beastSep:CreateTexture(nil, "ARTWORK")
+                    bst:SetHeight(1)
+                    bst:SetPoint("LEFT", beastSep, "LEFT", 8, 0)
+                    bst:SetPoint("RIGHT", beastSep, "RIGHT", -8, 0)
+                    bst:SetColorTexture(0.82, 0.71, 0.35, 0.2)
+                    ns.lootSummary.rows[idx] = beastSep
+                end
+                beastSep:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+                beastSep:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
+                beastSep:Show()
+                yOff = yOff - 6
+
+                idx = idx + 1
+                local beastHeader = ns.lootSummary.rows[idx]
+                if not beastHeader then
+                    beastHeader = CreateLootSummaryRow(container)
+                    ns.lootSummary.rows[idx] = beastHeader
+                end
+                beastHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+                beastHeader:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
+                beastHeader.item:SetText(lure.color .. lure.name .. "|r")
+                beastHeader.resetCount:SetText("")
+                beastHeader.resetValue:SetText("")
+                beastHeader.alltimeCount:SetText("")
+                beastHeader.alltimeValue:SetText("")
+                beastHeader:Show()
+                yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
+
+                local allIDs = {}
+                local idSet = {}
+                for id in pairs(allTimeBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+                for id in pairs(resetBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+                table.sort(allIDs, function(a, b)
+                    return (C_Item.GetItemNameByID(a) or "") < (C_Item.GetItemNameByID(b) or "")
+                end)
+
+                for _, id in ipairs(allIDs) do
+                    local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+                    local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
+                    if quality and quality > 0 then
+                        name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
+                    end
+                    local r, g, b = 0.9, 0.9, 0.9
+                    local itemQuality = select(3, C_Item.GetItemInfo(id))
+                    if itemQuality then
+                        local color = ITEM_QUALITY_COLORS[itemQuality]
+                        if color then r, g, b = color.r, color.g, color.b end
+                    end
+                    local rc = resetBl and resetBl[id]
+                    local ac = allTimeBl and allTimeBl[id]
+
+                    idx = idx + 1
+                    local beastRow = ns.lootSummary.rows[idx]
+                    if not beastRow then
+                        beastRow = CreateLootSummaryRow(container)
+                        ns.lootSummary.rows[idx] = beastRow
+                    end
+                    beastRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+                    beastRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
+                    beastRow.item:SetText("  " .. name)
+                    beastRow.item:SetTextColor(r, g, b)
+                    beastRow.resetCount:SetText(rc and ("x" .. rc) or "|cff666666—|r")
+                    beastRow.resetCount:SetTextColor(rc and 0.9 or 0.4, rc and 0.9 or 0.4, rc and 0.9 or 0.4)
+                    beastRow.resetValue:SetText("")
+                    beastRow.alltimeCount:SetText(ac and ("x" .. ac) or "")
+                    beastRow.alltimeCount:SetTextColor(0.9, 0.9, 0.9)
+                    beastRow.alltimeValue:SetText("")
+                    beastRow:Show()
+                    yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
+                end
+            end
+        end
+    end
+
     -- Hide unused rows
     for i = idx + 1, #ns.lootSummary.rows do
         ns.lootSummary.rows[i]:Hide()
     end
 
-    local totalH = math.abs(yOff) + 8
-    ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, totalH)
+    local contentH = math.abs(yOff) + 8
+    lootSumChild:SetHeight(contentH)
+    local windowH = math.min(contentH + lsHeaderHeight + 4, LOOT_SUMMARY_MAX_HEIGHT)
+    ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, windowH)
 
-    -- Position column group borders
-    local borderTop = -24
-    local borderH = totalH - 30
+    -- Position column group borders (inside scroll child)
+    local borderTop = 0
+    local borderH = contentH - 4
     resetBorder:ClearAllPoints()
-    resetBorder:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", LS_RESET_X - 4, borderTop)
+    resetBorder:SetPoint("TOPLEFT", container, "TOPLEFT", LS_RESET_X - 4, borderTop)
     resetBorder:SetSize(LS_GROUP_WIDTH + 6, borderH)
     resetBorder:Show()
 
     alltimeBorder:ClearAllPoints()
-    alltimeBorder:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", LS_ALLTIME_X - 4, borderTop)
+    alltimeBorder:SetPoint("TOPLEFT", container, "TOPLEFT", LS_ALLTIME_X - 4, borderTop)
     alltimeBorder:SetSize(LS_GROUP_WIDTH + 6, borderH)
     alltimeBorder:Show()
 end
+
+ns._populateLootSummary = PopulateLootSummary
 
 function ns.ToggleLootSummary()
     if ns.lootSummary:IsShown() then
@@ -2563,32 +2740,32 @@ function ns.UpdateUI()
 
     -- Update global goblin button (desaturated when loot tracking is off)
     local lootTrackingOn = MajesticBeastTrackerDB.settings.lootTracking ~= false
-    globalGoblinIcon:SetDesaturated(not lootTrackingOn)
-    globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
-    globalGoblinBtn:ClearAllPoints()
-    globalGoblinBtn:SetPoint("RIGHT", coinBtn, "LEFT", -2, 0)
-    globalGoblinBtn:Show()
+    ns.globalGoblinIcon:SetDesaturated(not lootTrackingOn)
+    ns.globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
+    ns.globalGoblinBtn:ClearAllPoints()
+    ns.globalGoblinBtn:SetPoint("RIGHT", coinBtn, "LEFT", -2, 0)
+    ns.globalGoblinBtn:Show()
 
     -- Dynamic button chain: globalGoblin ← auctionator ← warbank (right to left)
-    local lastBtn = globalGoblinBtn
+    local lastBtn = ns.globalGoblinBtn
 
     -- Auctionator button: show only when Auctionator is loaded
     if C_AddOns.IsAddOnLoaded("Auctionator") then
-        auctionatorBtn:ClearAllPoints()
-        auctionatorBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
-        auctionatorBtn:Show()
-        lastBtn = auctionatorBtn
+        ns.auctionatorBtn:ClearAllPoints()
+        ns.auctionatorBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
+        ns.auctionatorBtn:Show()
+        lastBtn = ns.auctionatorBtn
     else
-        auctionatorBtn:Hide()
+        ns.auctionatorBtn:Hide()
     end
 
     -- Warband bank deposit button: show only when bank open + setting enabled
     if ns.isBankOpen and MajesticBeastTrackerDB.settings.warbankDeposit then
-        warbankBtn:ClearAllPoints()
-        warbankBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
-        warbankBtn:Show()
+        ns.warbankBtn:ClearAllPoints()
+        ns.warbankBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
+        ns.warbankBtn:Show()
     else
-        warbankBtn:Hide()
+        ns.warbankBtn:Hide()
     end
 
     for i, lure in ipairs(LURES) do
@@ -2982,6 +3159,7 @@ function ns.UpdateUI()
                 local capturedKey = key
                 local capturedData = charData
                 goblin:SetScript("OnEnter", function(self)
+                    self.icon:SetVertexColor(C_TOOLBAR_ICON_HOVER[1], C_TOOLBAR_ICON_HOVER[2], C_TOOLBAR_ICON_HOVER[3], 1)
                     GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
                     GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
                     local charLoot = ns.GetCharLoot(capturedData)
@@ -2994,6 +3172,10 @@ function ns.UpdateUI()
                     GameTooltip:AddLine(" ")
                     GameTooltip:AddLine("Click to edit loot", 0.5, 0.8, 1)
                     GameTooltip:Show()
+                end)
+                goblin:SetScript("OnLeave", function(self)
+                    self.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+                    GameTooltip:Hide()
                 end)
                 goblin:Show()
             end
