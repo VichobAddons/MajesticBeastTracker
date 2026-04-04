@@ -772,6 +772,10 @@ local function PopulateLootEditor(anchor, charKey)
     else
         ns.lootEditor:SetPoint("TOPLEFT", ns.frame, "TOPRIGHT", 4, 0)
     end
+    -- Hide loot summary when editor opens (same space)
+    if ns.lootSummary and ns.lootSummary:IsShown() then
+        ns.lootSummary:Hide()
+    end
     ns.lootEditor:Show()
 
     -- Show syncing overlay when loot sync is active
@@ -1235,6 +1239,10 @@ function ns.ToggleLootSummary()
     if ns.lootSummary:IsShown() then
         ns.lootSummary:Hide()
     else
+        -- Hide loot editor when summary opens (same space)
+        if ns.lootEditor and ns.lootEditor:IsShown() then
+            ns.lootEditor:Hide()
+        end
         PopulateLootSummary()
         RepositionLootSummary()
         ns.lootSummary:Show()
