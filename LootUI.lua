@@ -639,6 +639,7 @@ lsBreakdownBtn:SetScript("OnClick", function()
     lsBreakdownBtn.icon:SetAlpha(ns.lootSummaryShowBreakdown and 1.0 or 0.4)
     if ns.lootSummary:IsShown() and ns._populateLootSummary then
         ns._populateLootSummary()
+        lootSumScroll:SetVerticalScroll(0)
     end
 end)
 
