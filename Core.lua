@@ -285,8 +285,23 @@ local function RecordLoot(beastName, diffs)
         charData.loot = { thisReset = {}, allTime = {}, resetTime = GetServerTime() }
     end
 
-    -- Reset thisReset if daily reset has passed
+    -- Reset thisReset if daily reset has passed — archive to history first
     if charData.loot.resetTime and charData.loot.resetTime < GetLastDailyReset() then
+        -- Archive previous day's loot to history
+        if charData.loot.thisReset and next(charData.loot.thisReset) then
+            if not charData.loot.history then charData.loot.history = {} end
+            local entry = {
+                date = date("%Y-%m-%d", charData.loot.resetTime),
+                items = charData.loot.thisReset,
+                perBeast = charData.loot.perBeastReset,
+                prices = charData.loot.prices,
+            }
+            table.insert(charData.loot.history, 1, entry)  -- newest first
+            -- Keep max 14 days
+            while #charData.loot.history > 14 do
+                table.remove(charData.loot.history)
+            end
+        end
         charData.loot.thisReset = {}
         charData.loot.perBeastReset = {}
         charData.loot.resetTime = GetServerTime()
@@ -323,8 +338,18 @@ ns.RecordLoot = RecordLoot
 function ns.GetCharLoot(charData)
     if not charData or not charData.loot then return nil end
     local loot = charData.loot
-    -- Auto-reset thisReset if daily reset has passed
+    -- Auto-reset thisReset if daily reset has passed — archive to history first
     if loot.resetTime and loot.resetTime < GetLastDailyReset() then
+        if loot.thisReset and next(loot.thisReset) then
+            if not loot.history then loot.history = {} end
+            table.insert(loot.history, 1, {
+                date = date("%Y-%m-%d", loot.resetTime),
+                items = loot.thisReset,
+                perBeast = loot.perBeastReset,
+                prices = loot.prices,
+            })
+            while #loot.history > 14 do table.remove(loot.history) end
+        end
         loot.thisReset = {}
         loot.perBeastReset = {}
         loot.prices = {}

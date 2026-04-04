@@ -553,6 +553,65 @@ leDecreaseBtn:SetScript("OnClick", function()
     leDecreaseBtn.icon:SetAlpha(ns.lootEditorAllowDecrease and 1.0 or 0.4)
 end)
 
+-- History toggle (toolbar)
+local leHistoryBtn = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_History",
+    function(self)
+        GameTooltip:AddLine("Loot History", 1, 1, 1)
+        GameTooltip:AddLine("View daily loot history", 0.5, 0.8, 1, true)
+    end,
+    nil, nil)
+leHistoryBtn:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+leHistoryBtn:SetPoint("RIGHT", leDecreaseBtn, "LEFT", -2, 0)
+leHistoryBtn.icon:SetTexCoord(0, 1, 0, 1)
+ns.lootEditorHistoryMode = false
+ns.lootEditorHistoryPage = 0  -- 0 = current, 1 = yesterday, etc
+leHistoryBtn:SetScript("OnClick", function()
+    ns.lootEditorHistoryMode = not ns.lootEditorHistoryMode
+    leHistoryBtn.icon:SetAlpha(ns.lootEditorHistoryMode and 1.0 or 0.4)
+    if ns.lootEditorHistoryMode then
+        ns.lootEditorHistoryPage = 1  -- start at yesterday
+        -- Hide edit controls in history mode
+        leDecreaseBtn:Hide()
+    else
+        ns.lootEditorHistoryPage = 0
+        leDecreaseBtn:Show()
+    end
+    if ns.lootEditor:IsShown() and ns.lootEditor.charKey then
+        ns._repopulateLootEditor()
+    end
+end)
+
+-- History pagination controls (left of history button)
+local lePageLeft = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_ChevronLeft", "Previous Day", nil, nil)
+lePageLeft:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+lePageLeft:SetPoint("RIGHT", leHistoryBtn, "LEFT", 0, 0)
+lePageLeft.icon:SetTexCoord(0, 1, 0, 1)
+lePageLeft:Hide()
+lePageLeft:SetScript("OnClick", function()
+    if not ns.lootEditor.charKey then return end
+    local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+    local maxPage = charData and charData.loot and charData.loot.history and #charData.loot.history or 0
+    if ns.lootEditorHistoryPage < maxPage then
+        ns.lootEditorHistoryPage = ns.lootEditorHistoryPage + 1
+        ns._repopulateLootEditor()
+    end
+end)
+
+local lePageRight = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_ChevronRight", "Next Day", nil, nil)
+lePageRight:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+lePageRight:SetPoint("RIGHT", lePageLeft, "LEFT", 0, 0)
+lePageRight.icon:SetTexCoord(0, 1, 0, 1)
+lePageRight:Hide()
+lePageRight:SetScript("OnClick", function()
+    if ns.lootEditorHistoryPage > 1 then
+        ns.lootEditorHistoryPage = ns.lootEditorHistoryPage - 1
+        ns._repopulateLootEditor()
+    end
+end)
+
 -- Syncing overlay
 local syncOverlay = CreateFrame("Frame", nil, ns.lootEditor)
 syncOverlay:SetAllPoints()
@@ -597,8 +656,31 @@ local function PopulateLootEditor(anchor, charKey)
         charData.loot = { thisReset = {}, allTime = {}, resetTime = GetServerTime() }
     end
     local loot = ns.GetCharLoot(charData)
+    local isHistory = ns.lootEditorHistoryMode and ns.lootEditorHistoryPage > 0
+    local historyEntry = nil
+    local historyLoot = nil
 
-    ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " - Edit Loot")
+    if isHistory then
+        local history = charData.loot and charData.loot.history
+        if history and history[ns.lootEditorHistoryPage] then
+            historyEntry = history[ns.lootEditorHistoryPage]
+            historyLoot = historyEntry.items or {}
+        else
+            isHistory = false
+        end
+    end
+
+    -- Show/hide pagination controls
+    if ns.lootEditorHistoryMode then
+        lePageLeft:Show()
+        lePageRight:Show()
+        local histDate = historyEntry and historyEntry.date or "—"
+        ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " — " .. histDate)
+    else
+        lePageLeft:Hide()
+        lePageRight:Hide()
+        ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " - Edit Loot")
+    end
 
     local sortedItems = BuildSortedLootList()
 
@@ -616,13 +698,14 @@ local function PopulateLootEditor(anchor, charKey)
         local hdrReset = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         hdrReset:SetFont(hdrReset:GetFont(), 9)
         hdrReset:SetPoint("LEFT", hdr, "LEFT", LE_RESET_X, 0)
-        hdrReset:SetText("|cffffd700Reset|r")
+        hdr._resetLabel = hdrReset
         local hdrAllTime = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         hdrAllTime:SetFont(hdrAllTime:GetFont(), 9)
         hdrAllTime:SetPoint("LEFT", hdr, "LEFT", LE_ALLTIME_X, 0)
         hdrAllTime:SetText("|cffffd700All Time|r")
         ns.lootEditor._header = hdr
     end
+    ns.lootEditor._header._resetLabel:SetText(isHistory and "|cffffd700Day|r" or "|cffffd700Reset|r")
     ns.lootEditor._header:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 0, yOff)
     ns.lootEditor._header:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", 0, yOff)
     ns.lootEditor._header:Show()
@@ -729,12 +812,27 @@ local function PopulateLootEditor(anchor, charKey)
         row.nameText:SetText(itemName)
         row.nameText:SetTextColor(0.9, 0.9, 0.9)
 
-        local resetCount = loot.thisReset[itemID] or 0
-        local allCount = loot.allTime[itemID] or 0
-        row.countLabel:SetText("|cffffd700" .. resetCount .. "|r")
-        row.allTimeLabel:SetText(tostring(allCount))
-        row.editBox:Hide()
-        row.countBtn:Show()
+        if isHistory then
+            -- History mode: read-only, show history day count
+            local histCount = historyLoot[itemID] or 0
+            local allCount = loot.allTime[itemID] or 0
+            row.countLabel:SetText(histCount > 0 and ("|cffffd700" .. histCount .. "|r") or "|cff666666—|r")
+            row.allTimeLabel:SetText(tostring(allCount))
+            row.editBox:Hide()
+            row.countBtn:Show()
+            row.minusBtn:Hide()
+            row.plusBtn:Hide()
+        else
+            -- Normal edit mode
+            local resetCount = loot.thisReset[itemID] or 0
+            local allCount = loot.allTime[itemID] or 0
+            row.countLabel:SetText("|cffffd700" .. resetCount .. "|r")
+            row.allTimeLabel:SetText(tostring(allCount))
+            row.editBox:Hide()
+            row.countBtn:Show()
+            row.minusBtn:Show()
+            row.plusBtn:Show()
+        end
 
         -- Item tooltip on hover
         local capturedID = itemID
@@ -866,6 +964,13 @@ ns.ShowLootEditor = function(anchor, charKey)
     end
     if allCached then
         PopulateLootEditor(anchor, charKey)
+    end
+end
+
+-- Forward reference for history pagination
+ns._repopulateLootEditor = function()
+    if ns.lootEditor:IsShown() and ns.lootEditor.charKey then
+        PopulateLootEditor(ns.lootEditor, ns.lootEditor.charKey)
     end
 end
 
