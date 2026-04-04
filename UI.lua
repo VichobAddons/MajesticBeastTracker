@@ -5,6 +5,7 @@
 
 local addonName, ns = ...
 local LURES = ns.LURES
+local WEEKLIES = ns.SKINNING_WEEKLIES
 
 -- Constants
 ns.CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
