@@ -1,5 +1,31 @@
 # Majestic Beast Tracker
 
+## [v1.7.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.7.0) (2026-04-04)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v1.7.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Toolbar redesign, loot summary window, gold UI theme, custom Tabler icons
+
+### Toolbar (NEW)
+- **Dedicated toolbar row** — All action buttons moved to a separate toolbar at the top of the tracker
+- **Custom Tabler icons** — All toolbar buttons now use custom gold-themed icons (Close, Auto-Hide, Reagents, TSM Coins, Loot Summary, Warbank Deposit, Auctionator Shopping List)
+- **Consistent hover effects** — Gold icons brighten on hover, close button turns red
+- **Horizontal spacing** — Clean icon layout with proper padding between buttons
+
+### Loot Summary Window (NEW)
+- **Separate loot window** — Click the loot summary button to open a dedicated loot summary window instead of a tooltip
+- **3-column layout** — Item name, Reset count+value, and All Time count+value in clearly separated columns
+- **Column borders** — Gold-bordered groups for Reset and All Time sections
+- **Smart positioning** — Window opens on the left side if the tracker is near the right edge of the screen
+- **Movable** — Drag the summary window to reposition
+- **Disable Hover Tooltip** — New setting to disable the hover tooltip on the loot summary button (Loot Tracking section)
+
+### UI Theme
+- **Gold color scheme** — All borders, separators, title text, and accent colors changed from blue to gold (matching WoW's standard UI theme)
+- **Consistent theming** — Toolbar icons, column borders, loot summary window all use the same gold palette
+
+### Warband Bank
+- **Taint warning** — Added note in Warband Bank settings about potential bag interaction issues after depositing
+
 ## [v1.6.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.6.0) (2026-03-27)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.5.1...v1.6.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

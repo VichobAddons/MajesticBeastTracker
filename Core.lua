@@ -170,6 +170,7 @@ end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_LOGOUT")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
 f:RegisterEvent("LOOT_CLOSED")
@@ -596,6 +597,127 @@ local function TestProfessionStatsAPIs()
 end
 ns.TestProfessionStatsAPIs = TestProfessionStatsAPIs
 
+-- Route Timer: tracks total time across character switches
+local function EnsureTimer()
+    if not MajesticBeastTrackerDB then return false end
+    if not MajesticBeastTrackerDB.timer then
+        MajesticBeastTrackerDB.timer = { running = false, accumulated = 0, sessionStart = nil }
+    end
+    return true
+end
+
+function ns.StartTimer()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running then return end -- already running
+    t.running = true
+    t.sessionStart = GetServerTime()
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        print("|cff3FC7EB[MBT]|r Route timer started.")
+    end
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.StopTimer()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if not t.running then return end -- already stopped
+    if t.sessionStart then
+        t.accumulated = t.accumulated + (GetServerTime() - t.sessionStart)
+        t.sessionStart = nil
+    end
+    t.running = false
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        print("|cff3FC7EB[MBT]|r Route timer stopped: " .. ns.FormatTimerElapsed())
+    end
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.ResetTimer()
+    if not MajesticBeastTrackerDB then return end
+    MajesticBeastTrackerDB.timer = { running = false, accumulated = 0, sessionStart = nil }
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.GetTimerElapsed()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    local total = t.accumulated or 0
+    if t.running and t.sessionStart then
+        total = total + (GetServerTime() - t.sessionStart)
+    end
+    return total
+end
+
+function ns.FormatTimerElapsed()
+    local elapsed = ns.GetTimerElapsed()
+    local h = math.floor(elapsed / 3600)
+    local m = math.floor((elapsed % 3600) / 60)
+    local s = elapsed % 60
+    if h > 0 then
+        return string.format("%dh %02dm %02ds", h, m, s)
+    else
+        return string.format("%dm %02ds", m, s)
+    end
+end
+
+function ns.IsTimerRunning()
+    if not EnsureTimer() then return end
+    return MajesticBeastTrackerDB.timer.running
+end
+
+-- Pause timer on logout (save accumulated time)
+function ns.PauseTimerForLogout()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running and t.sessionStart then
+        t.accumulated = t.accumulated + (GetServerTime() - t.sessionStart)
+        t.sessionStart = nil
+        -- Keep running=true so it resumes on next login
+    end
+end
+
+-- Resume timer on login (if it was running)
+function ns.ResumeTimerOnLogin()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running then
+        t.sessionStart = GetServerTime()
+    end
+end
+
+-- Check if all route beasts are done for all visible characters
+function ns.IsRouteComplete()
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.settings then return false end
+    local settings = MajesticBeastTrackerDB.settings
+    local routeSkip = settings.routeSkip or {}
+    local hiddenChars = settings.hiddenChars or {}
+    local harandarMinLvl = settings.routeHarandarMinLevel or 80
+
+    for key, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if not hiddenChars[key] and charData.hasSkinning then
+            for i, lure in ipairs(LURES) do
+                -- Skip globally skipped beasts
+                local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+                local isSkipped = routeSkip[lure.name] or settings[skipKey]
+                if not isSkipped then
+                    -- Skip Harandar level check
+                    if lure.name == "Harandar" and charData.level and charData.level < harandarMinLvl then
+                        isSkipped = true
+                    end
+                end
+                if not isSkipped and ns.CanSeeLure(charData, i) then
+                    local ts = charData.lures and charData.lures[lure.name]
+                    if not ts or IsLureReady(ts) then
+                        return false -- this char still has work to do
+                    end
+                end
+            end
+        end
+    end
+    return true
+end
+
 -- Namespace exports for UI.lua
 ns.IsLureReady = IsLureReady
 ns.GetLureTimeRemaining = GetLureTimeRemaining
@@ -760,6 +882,15 @@ local function RecordLureKill(index)
     charData.hasSkinning = true
     local lure = LURES[index]
     print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r beast killed! Cooldown tracked.")
+    -- Auto-stop timer if all characters are done
+    C_Timer.After(2, function()
+        if ns.IsTimerRunning() and ns.IsRouteComplete() then
+            ns.StopTimer()
+            if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                print("|cff3FC7EB[MBT]|r All characters done! Timer stopped: " .. ns.FormatTimerElapsed())
+            end
+        end
+    end)
 end
 
 -- Sync kill status from quest flags (authoritative source)
@@ -1586,6 +1717,9 @@ f:SetScript("OnEvent", function(_, event, ...)
             if ns.UpdateUI then ns.UpdateUI() end
         end
         return
+    elseif event == "PLAYER_LOGOUT" then
+        ns.PauseTimerForLogout()
+        return
     elseif event == "PLAYER_LOGIN" then
         charKey = GetCharKey()
         EnsureChar(charKey)
@@ -1594,6 +1728,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         MajesticBeastTrackerDB.chars[charKey].level = UnitLevel("player")
         DetectSkinningAndTalent()
         SyncKillsFromQuests()
+        ns.ResumeTimerOnLogin()
         C_Timer.After(5, function()
             DetectSkinningAndTalent()
             SyncKillsFromQuests()
