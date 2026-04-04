@@ -1235,7 +1235,7 @@ local function PopulateLootSummary()
                 end
                 beastHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
                 beastHeader:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
-                beastHeader.item:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+                beastHeader.item:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
                 beastHeader.item:SetWidth(dynWidth - 16)
                 -- Localized header: "Zone - NPC Name"
                 local zoneName = lure.name
