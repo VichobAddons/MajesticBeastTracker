@@ -1862,7 +1862,36 @@ function ns.UpdateUI()
                     GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
                     local charLoot = ns.GetCharLoot(capturedData)
                     if charLoot then
-                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices, charLoot.perBeast, charLoot.perBeastReset)
+                        local hasTSM = TSM_API ~= nil
+                        -- Reset summary
+                        local resetCount, resetValue = 0, 0
+                        if charLoot.thisReset then
+                            for id, count in pairs(charLoot.thisReset) do
+                                resetCount = resetCount + count
+                                if hasTSM then
+                                    local price = charLoot.prices and charLoot.prices[id] or ns.GetTSMPrice(id)
+                                    if price then resetValue = resetValue + price * count end
+                                end
+                            end
+                        end
+                        -- All time summary
+                        local allCount, allValue = 0, 0
+                        if charLoot.allTime then
+                            for id, count in pairs(charLoot.allTime) do
+                                allCount = allCount + count
+                                if hasTSM then
+                                    local price = charLoot.prices and charLoot.prices[id] or ns.GetTSMPrice(id)
+                                    if price then allValue = allValue + price * count end
+                                end
+                            end
+                        end
+                        -- Display compact lines
+                        local resetText = "Reset: " .. resetCount .. " items"
+                        if hasTSM and resetValue > 0 then resetText = resetText .. " — " .. ns.FormatGoldPositive(resetValue) end
+                        local allText = "All Time: " .. allCount .. " items"
+                        if hasTSM and allValue > 0 then allText = allText .. " — " .. ns.FormatGoldPositive(allValue) end
+                        GameTooltip:AddLine(resetText, 0.9, 0.9, 0.9)
+                        GameTooltip:AddLine(allText, 0.7, 0.7, 0.7)
                     end
                     if not hasLoot then
                         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
