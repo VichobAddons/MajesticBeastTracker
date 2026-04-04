@@ -369,6 +369,7 @@ local function ShowDropdown(anchor, items)
     dd:ClearAllPoints()
     dd:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
     dd:Show()
+end
 
 -- Expose to other files via ns
 ns.gearPopup = gearPopup

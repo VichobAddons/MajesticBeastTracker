@@ -271,6 +271,8 @@ local TOOLBAR_ICON_SIZE = 16
 local TOOLBAR_BTN_PADDING = 3
 local C_TOOLBAR_ICON = { 0.82, 0.71, 0.35 }  -- gold/amber default
 local C_TOOLBAR_ICON_HOVER = { 1.0, 0.88, 0.44 }  -- brighter gold on hover
+ns.C_TOOLBAR_ICON = C_TOOLBAR_ICON
+ns.C_TOOLBAR_ICON_HOVER = C_TOOLBAR_ICON_HOVER
 local function CreateToolbarButton(parent, texture, tooltipTitle, tooltipDesc, onClick)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT)
@@ -1248,8 +1250,6 @@ function ns.HideAllRows()
         end
         if row.goblinBtn then row.goblinBtn:Hide() end
     end
-end
-
 end
 
 ------------------------------------------------------
