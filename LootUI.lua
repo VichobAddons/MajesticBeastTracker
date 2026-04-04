@@ -315,17 +315,18 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     -- Footer
     idx = idx + 1
     local footerRow = lootTooltip.rows[idx]
-    if not footerRow then
-        footerRow = CreateFrame("Frame", nil, lootTooltip)
-        footerRow:SetHeight(LT_ROW_HEIGHT)
-        footerRow.text = footerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        footerRow.text:SetFont(footerRow.text:GetFont(), 9)
-        footerRow.text:SetPoint("LEFT", footerRow, "LEFT", 8, 0)
+    if not footerRow or not footerRow.item then
+        footerRow = CreateLootTooltipRow(lootTooltip)
         lootTooltip.rows[idx] = footerRow
     end
     footerRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff - 2)
     footerRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff - 2)
-    footerRow.text:SetText("|cff888888Click to edit loot|r")
+    footerRow.item:SetText("|cff888888Click to edit loot|r")
+    footerRow.item:SetTextColor(0.5, 0.5, 0.5)
+    footerRow.resetCount:SetText("")
+    footerRow.resetValue:SetText("")
+    footerRow.alltimeCount:SetText("")
+    footerRow.alltimeValue:SetText("")
     footerRow:Show()
     yOff = yOff - LT_ROW_HEIGHT - 2
 
