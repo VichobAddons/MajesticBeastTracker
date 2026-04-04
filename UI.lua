@@ -304,6 +304,7 @@ local function CreateToolbarButton(parent, texture, tooltipTitle, tooltipDesc, o
     btn:SetScript("OnLeave", function()
         icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
         GameTooltip:Hide()
+        if ns.HideLootTooltip then ns.HideLootTooltip() end
     end)
     if onClick then btn:SetScript("OnClick", onClick) end
     return btn
@@ -411,12 +412,12 @@ local globalGoblinBtn = CreateToolbarButton(toolbar,
             GameTooltip:AddLine("Loot Summary", 0.82, 0.71, 0.35)
             GameTooltip:AddLine("Click to open", 0.5, 0.5, 0.5)
         else
-            GameTooltip:AddLine("Loot Summary (All Characters)", 0.82, 0.71, 0.35)
-            GameTooltip:AddLine("Click to open in separate window", 0.5, 0.5, 0.5)
-            local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
+            local resetLoot, allTimeLoot, globalPrices = ns.GetGlobalLoot()
             if resetLoot or allTimeLoot then
-                ns.AddLootTooltipColumns(resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset)
+                ns.ShowLootTooltip(self, "Loot Summary (All Characters)", resetLoot, allTimeLoot, globalPrices)
+                return  -- ShowLootTooltip handles display, skip GameTooltip:Show
             else
+                GameTooltip:AddLine("Loot Summary", 0.82, 0.71, 0.35)
                 GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
             end
         end

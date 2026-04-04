@@ -1215,6 +1215,24 @@ local function PopulateLootSummary()
 
     -- Per-beast breakdown (only if toggle is on)
     if ns.lootSummaryShowBreakdown and (globalPerBeastReset or globalPerBeast) then
+        -- Divider between summary and breakdown
+        yOff = yOff - 2
+        idx = idx + 1
+        local divRow = ns.lootSummary.rows[idx]
+        if not divRow or not divRow.item then
+            divRow = CreateLootSummaryRow(container)
+            ns.lootSummary.rows[idx] = divRow
+        end
+        divRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
+        divRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
+        divRow.item:SetText("|cff555555" .. string.rep("—", 60) .. "|r")
+        divRow.item:SetWidth(dynWidth)
+        divRow.resetCount:SetText("")
+        divRow.resetValue:SetText("")
+        divRow.alltimeCount:SetText("")
+        divRow.alltimeValue:SetText("")
+        divRow:Show()
+        yOff = yOff - 10
         local perResetData = globalPerBeastReset or {}
         local perAllTimeData = globalPerBeast or {}
 
@@ -1266,7 +1284,9 @@ local function PopulateLootSummary()
                 beastHeader.alltimeCount:SetText("")
                 beastHeader.alltimeValue:SetText("")
                 beastHeader:Show()
-                yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
+                yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT - 2
+                -- Reset font for item rows back to small after header
+                -- (header uses 11pt, items use default 9pt from CreateLootSummaryRow)
 
                 local allIDs = {}
                 local idSet = {}
@@ -1299,6 +1319,7 @@ local function PopulateLootSummary()
                     end
                     beastRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
                     beastRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
+                    beastRow.item:SetFont(beastRow.item:GetFont(), 9)
                     beastRow.item:SetText(name)
                     beastRow.item:SetTextColor(r, g, b)
                     beastRow.item:SetWidth(maxNameW)
