@@ -15,4 +15,5 @@ Core.lua
 Templates.xml
 UI.lua
 LootUI.lua
+GearPopup.lua
 Settings.lua
