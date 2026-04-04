@@ -533,6 +533,25 @@ lootClose:SetScript("OnLeave", function(self)
     GameTooltip:Hide()
 end)
 
+-- Allow Decrease toggle (toolbar)
+ns.lootEditorAllowDecrease = false
+local leDecreaseBtn = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_Close",
+    function(self)
+        local state = ns.lootEditorAllowDecrease
+        GameTooltip:AddLine(state and "Disable Decrease" or "Enable Decrease", 1, 1, 1)
+        GameTooltip:AddLine("Allow minus button to reduce loot counts", 0.5, 0.8, 1, true)
+    end,
+    nil, nil)
+leDecreaseBtn:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+leDecreaseBtn:SetPoint("RIGHT", lootClose, "LEFT", -2, 0)
+leDecreaseBtn.icon:SetTexCoord(0, 1, 0, 1)
+leDecreaseBtn.icon:SetAlpha(0.4)
+leDecreaseBtn:SetScript("OnClick", function()
+    ns.lootEditorAllowDecrease = not ns.lootEditorAllowDecrease
+    leDecreaseBtn.icon:SetAlpha(ns.lootEditorAllowDecrease and 1.0 or 0.4)
+end)
+
 -- Syncing overlay
 local syncOverlay = CreateFrame("Frame", nil, ns.lootEditor)
 syncOverlay:SetAllPoints()
@@ -772,6 +791,7 @@ local function PopulateLootEditor(anchor, charKey)
         end)
 
         row.minusBtn:SetScript("OnClick", function()
+            if not ns.lootEditorAllowDecrease then return end
             local cl = ns.GetCharLoot(charData)
             if cl.thisReset[capturedID] and cl.thisReset[capturedID] > 0 then
                 cl.thisReset[capturedID] = cl.thisReset[capturedID] - 1
