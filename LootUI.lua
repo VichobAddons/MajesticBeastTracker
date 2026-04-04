@@ -959,25 +959,61 @@ lsBreakdownBtn:SetScript("OnClick", function()
     end
 end)
 
--- Scroll frame for content
+-- Custom scroll frame (no UIPanelScrollFrameTemplate — avoids rendering glitches)
 local lsHeaderHeight = LS_TOOLBAR_HEIGHT + 4
-local lootSumScroll = CreateFrame("ScrollFrame", nil, ns.lootSummary, "UIPanelScrollFrameTemplate")
+local LS_SCROLL_SPEED = LOOT_SUMMARY_ROW_HEIGHT * 3
+
+local lootSumScroll = CreateFrame("ScrollFrame", nil, ns.lootSummary)
 lootSumScroll:SetPoint("TOPLEFT", ns.lootSummary, "TOPLEFT", 0, -lsHeaderHeight)
-lootSumScroll:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -20, 4)
+lootSumScroll:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -8, 4)
 
 local lootSumChild = CreateFrame("Frame", nil, lootSumScroll)
-lootSumChild:SetWidth(LOOT_SUMMARY_WIDTH - 24)
+lootSumChild:SetWidth(LOOT_SUMMARY_WIDTH - 16)
 lootSumScroll:SetScrollChild(lootSumChild)
 
--- Enable mousewheel scrolling
-lootSumScroll:EnableMouseWheel(true)
-lootSumScroll:SetScript("OnMouseWheel", function(self, delta)
-    local current = self:GetVerticalScroll()
-    local maxScroll = self:GetVerticalScrollRange()
-    local step = LOOT_SUMMARY_ROW_HEIGHT * 3
-    local newScroll = math.max(0, math.min(current - (delta * step), maxScroll))
-    self:SetVerticalScroll(newScroll)
+-- Vertical scrollbar (custom slider)
+local lsScrollbar = CreateFrame("Slider", nil, ns.lootSummary, "UISliderTemplate")
+lsScrollbar:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", -2, -lsHeaderHeight)
+lsScrollbar:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -2, 4)
+lsScrollbar:SetWidth(6)
+lsScrollbar:SetMinMaxValues(0, 1)
+lsScrollbar:SetValue(0)
+lsScrollbar:SetValueStep(1)
+lsScrollbar:SetOrientation("VERTICAL")
+lsScrollbar:SetObeyStepOnDrag(true)
+lsScrollbar.thumb = lsScrollbar:GetThumbTexture()
+lsScrollbar.thumb:SetPoint("CENTER")
+lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.15)
+lsScrollbar.thumb:SetWidth(6)
+if lsScrollbar.NineSlice then lsScrollbar.NineSlice:Hide() end
+lsScrollbar:SetScript("OnValueChanged", function(_, value)
+    lootSumScroll:SetVerticalScroll(value)
 end)
+lsScrollbar:SetScript("OnEnter", function() lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.25) end)
+lsScrollbar:SetScript("OnLeave", function() lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.15) end)
+
+local function UpdateLootSumScrollbar()
+    local viewH = lootSumScroll:GetHeight()
+    local contentH = lootSumChild:GetHeight()
+    if contentH > viewH then
+        lsScrollbar:SetMinMaxValues(0, contentH - viewH)
+        lsScrollbar:SetValueStep(LS_SCROLL_SPEED)
+        local ratio = viewH / contentH
+        lsScrollbar.thumb:SetHeight(math.max(viewH * ratio, 20))
+        lsScrollbar:Show()
+    else
+        lootSumScroll:SetVerticalScroll(0)
+        lsScrollbar:SetValue(0)
+        lsScrollbar:Hide()
+    end
+end
+
+lootSumScroll:EnableMouseWheel(true)
+lootSumScroll:SetScript("OnMouseWheel", function(_, delta)
+    lsScrollbar:SetValue(lsScrollbar:GetValue() - delta * LS_SCROLL_SPEED)
+end)
+lootSumScroll:SetScript("OnSizeChanged", UpdateLootSumScrollbar)
+lootSumChild:SetScript("OnSizeChanged", UpdateLootSumScrollbar)
 
 -- Column group borders (inside scroll child, resized dynamically)
 
