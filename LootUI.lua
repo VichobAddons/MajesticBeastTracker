@@ -147,41 +147,30 @@ function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeas
     local allTimeByKey = {}
     for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
 
-    -- Headers with divider
+    -- Headers: Item name left, "Reset" and "All Time" right
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("This Reset", "All Time", 1, 0.84, 0, 1, 0.84, 0)
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
+    GameTooltip:AddDoubleLine(" ", "Reset          All Time", 1, 1, 1, 1, 0.84, 0)
+    GameTooltip:AddLine("|cff444444" .. string.rep("—", 50) .. "|r")
 
-    -- Rows: use allTime item list as base (always complete), show reset count on left
+    -- Rows: one item per line, reset count+value and alltime count+value on right
     for _, key in ipairs(allNames) do
         local ri = resetByKey[key]
         local ai = allTimeByKey[key]
-        if ai then
-            local leftText
-            local lr, lg, lb
-            if ri then
-                leftText = ri.name .. " x" .. ri.count .. ri.priceText
-                lr, lg, lb = ri.r, ri.g, ri.b
-            else
-                leftText = ai.name .. " |cff666666—|r"
-                lr, lg, lb = 0.4, 0.4, 0.4
-            end
-            local rightText = ai.name .. " x" .. ai.count .. ai.priceText
-            local rr, rg, rb = ai.r, ai.g, ai.b
-            GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
-        elseif ri then
-            -- Item in reset but not alltime (shouldn't happen, but handle)
-            local leftText = ri.name .. " x" .. ri.count .. ri.priceText
-            GameTooltip:AddDoubleLine(leftText, " ", ri.r, ri.g, ri.b, 0.5, 0.5, 0.5)
+        local ref = ai or ri
+        if ref then
+            local resetStr = ri and ("x" .. ri.count .. (ri.priceText ~= "" and " " .. ri.priceText or "")) or "|cff666666—|r"
+            local allTimeStr = ai and ("x" .. ai.count .. (ai.priceText ~= "" and " " .. ai.priceText or "")) or ""
+            local rightText = string.format("%-14s %s", resetStr, allTimeStr)
+            GameTooltip:AddDoubleLine(ref.name, rightText, ref.r, ref.g, ref.b, 0.9, 0.9, 0.9)
         end
     end
 
     -- Value totals
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
+    GameTooltip:AddLine("|cff444444" .. string.rep("—", 50) .. "|r")
     if hasTSM then
-        local leftVal = resetTotal > 0 and ("Value: " .. ns.FormatGoldPositive(resetTotal)) or " "
-        local rightVal = allTimeTotal > 0 and ("Value: " .. ns.FormatGoldPositive(allTimeTotal)) or " "
-        GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
+        local resetVal = resetTotal > 0 and ns.FormatGoldPositive(resetTotal) or ""
+        local allTimeVal = allTimeTotal > 0 and ns.FormatGoldPositive(allTimeTotal) or ""
+        GameTooltip:AddDoubleLine("Value:", string.format("%-14s %s", resetVal, allTimeVal), 1, 0.84, 0, 1, 0.84, 0)
     end
 
     -- Per-beast breakdown moved to Loot Summary window
