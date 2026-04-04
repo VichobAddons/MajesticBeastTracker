@@ -969,21 +969,24 @@ end
 
 ns._populateLootSummary = PopulateLootSummary
 
+local function RepositionLootSummary()
+    ns.lootSummary:ClearAllPoints()
+    local frameRight = ns.frame:GetRight() or 0
+    local screenWidth = GetScreenWidth()
+    if frameRight + LOOT_SUMMARY_WIDTH + 8 > screenWidth then
+        ns.lootSummary:SetPoint("TOPRIGHT", ns.frame, "TOPLEFT", -4, 0)
+    else
+        ns.lootSummary:SetPoint("TOPLEFT", ns.frame, "TOPRIGHT", 4, 0)
+    end
+end
+ns.RepositionLootSummary = RepositionLootSummary
+
 function ns.ToggleLootSummary()
     if ns.lootSummary:IsShown() then
         ns.lootSummary:Hide()
     else
         PopulateLootSummary()
-        ns.lootSummary:ClearAllPoints()
-        -- Open on the side with more space
-        local frameRight = ns.frame:GetRight() or 0
-        local screenWidth = GetScreenWidth()
-        if frameRight + LOOT_SUMMARY_WIDTH + 8 > screenWidth then
-            -- Not enough room on right — open on left
-            ns.lootSummary:SetPoint("TOPRIGHT", ns.frame, "TOPLEFT", -4, 0)
-        else
-            ns.lootSummary:SetPoint("TOPLEFT", ns.frame, "TOPRIGHT", 4, 0)
-        end
+        RepositionLootSummary()
         ns.lootSummary:Show()
     end
 end

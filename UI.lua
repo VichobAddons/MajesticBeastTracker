@@ -139,6 +139,10 @@ frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local point, _, relPoint, x, y = self:GetPoint()
     MajesticBeastTrackerDB.settings.framePosition = { point, "UIParent", relPoint, x, y }
+    -- Reposition loot summary if open
+    if ns.lootSummary and ns.lootSummary:IsShown() and ns.RepositionLootSummary then
+        ns.RepositionLootSummary()
+    end
 end)
 
 -- Autohide: fade in/out on hover
