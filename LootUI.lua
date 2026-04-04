@@ -1237,7 +1237,30 @@ local function PopulateLootSummary()
                 beastHeader:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
                 beastHeader:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
                 beastHeader.item:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-                beastHeader.item:SetText(lure.color .. lure.name .. "|r")
+                -- Localized header: "Zone - NPC Name"
+                local zoneName = lure.name
+                if lure.waypoint and lure.waypoint.map then
+                    local mapInfo = C_Map.GetMapInfo(lure.waypoint.map)
+                    if mapInfo and mapInfo.name then zoneName = mapInfo.name end
+                end
+                local npcName = ""
+                if lure.npcID then
+                    -- Create hidden tooltip to scan NPC name
+                    if not ns._npcTooltip then
+                        ns._npcTooltip = CreateFrame("GameTooltip", "MBT_NPCTooltip", nil, "GameTooltipTemplate")
+                        ns._npcTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+                    end
+                    ns._npcTooltip:SetHyperlink("unit:Creature-0-0-0-0-" .. lure.npcID .. "-0")
+                    local line1 = _G["MBT_NPCTooltipTextLeft1"]
+                    if line1 then
+                        local text = line1:GetText()
+                        if text and text ~= "" then npcName = text end
+                    end
+                    ns._npcTooltip:ClearLines()
+                end
+                local headerText = zoneName
+                if npcName ~= "" then headerText = headerText .. " — " .. npcName end
+                beastHeader.item:SetText(lure.color .. headerText .. "|r")
                 beastHeader.resetCount:SetText("")
                 beastHeader.resetValue:SetText("")
                 beastHeader.alltimeCount:SetText("")
