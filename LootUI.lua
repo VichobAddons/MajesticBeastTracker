@@ -974,6 +974,24 @@ local function PopulateLootSummary()
     local allTimeByKey = {}
     for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
 
+    -- Measure widest item name for dynamic column width
+    local measureFS = lootSumTitle
+    local maxNameW = LS_COL_ITEM
+    for _, key in ipairs(allNames) do
+        local ref = allTimeByKey[key] or resetByKey[key]
+        if ref then
+            measureFS:SetText(ref.name)
+            local w = measureFS:GetStringWidth()
+            if w and w > maxNameW then maxNameW = w end
+        end
+    end
+    measureFS:SetText("Loot Summary")
+    maxNameW = math.min(maxNameW + 8, 250)
+
+    local dynResetX = 8 + maxNameW + LS_COL_GAP
+    local dynAlltimeX = dynResetX + LS_COL_COUNT + LS_COL_VALUE + LS_COL_GAP
+    local dynWidth = 8 + maxNameW + LS_COL_GAP + (LS_COL_COUNT + LS_COL_VALUE) * 2 + LS_COL_GAP + 32
+
     local idx = 0
     local yOff = -2
 
@@ -987,9 +1005,14 @@ local function PopulateLootSummary()
     headerRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
     headerRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
     headerRow.item:SetText("")
+    headerRow.item:SetWidth(maxNameW)
     headerRow.resetCount:SetText("|cffffd700Reset|r")
+    headerRow.resetCount:ClearAllPoints()
+    headerRow.resetCount:SetPoint("LEFT", headerRow, "LEFT", dynResetX, 0)
     headerRow.resetValue:SetText("")
     headerRow.alltimeCount:SetText("|cffffd700All Time|r")
+    headerRow.alltimeCount:ClearAllPoints()
+    headerRow.alltimeCount:SetPoint("LEFT", headerRow, "LEFT", dynAlltimeX, 0)
     headerRow.alltimeValue:SetText("")
     headerRow:Show()
     yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
@@ -1030,8 +1053,13 @@ local function PopulateLootSummary()
             local ref = ai or ri
             row.item:SetText(ref.name)
             row.item:SetTextColor(ref.r, ref.g, ref.b)
+            row.item:SetWidth(maxNameW)
 
             -- This Reset: count + value
+            row.resetCount:ClearAllPoints()
+            row.resetCount:SetPoint("LEFT", row, "LEFT", dynResetX, 0)
+            row.resetValue:ClearAllPoints()
+            row.resetValue:SetPoint("LEFT", row, "LEFT", dynResetX + LS_COL_COUNT, 0)
             if ri then
                 row.resetCount:SetText("x" .. ri.count)
                 row.resetCount:SetTextColor(0.9, 0.9, 0.9)
@@ -1044,6 +1072,10 @@ local function PopulateLootSummary()
             end
 
             -- All Time: count + value
+            row.alltimeCount:ClearAllPoints()
+            row.alltimeCount:SetPoint("LEFT", row, "LEFT", dynAlltimeX, 0)
+            row.alltimeValue:ClearAllPoints()
+            row.alltimeValue:SetPoint("LEFT", row, "LEFT", dynAlltimeX + LS_COL_COUNT, 0)
             if ai then
                 row.alltimeCount:SetText("x" .. ai.count)
                 row.alltimeCount:SetTextColor(0.9, 0.9, 0.9)
@@ -1194,8 +1226,10 @@ local function PopulateLootSummary()
 
     local contentH = math.abs(yOff) + 8
     lootSumChild:SetHeight(contentH)
+    lootSumChild:SetWidth(dynWidth - 24)
     local windowH = math.min(contentH + lsHeaderHeight + 4, LOOT_SUMMARY_MAX_HEIGHT)
-    ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, windowH)
+    ns.lootSummary:SetSize(dynWidth, windowH)
+    ns.lootSummary._dynWidth = dynWidth
 
 end
 
@@ -1203,9 +1237,10 @@ ns._populateLootSummary = PopulateLootSummary
 
 local function RepositionLootSummary()
     ns.lootSummary:ClearAllPoints()
+    local w = ns.lootSummary._dynWidth or LOOT_SUMMARY_WIDTH
     local frameRight = ns.frame:GetRight() or 0
     local screenWidth = GetScreenWidth()
-    if frameRight + LOOT_SUMMARY_WIDTH + 8 > screenWidth then
+    if frameRight + w + 8 > screenWidth then
         ns.lootSummary:SetPoint("TOPRIGHT", ns.frame, "TOPLEFT", -4, 0)
     else
         ns.lootSummary:SetPoint("TOPLEFT", ns.frame, "TOPRIGHT", 4, 0)
