@@ -536,7 +536,7 @@ end)
 -- Allow Decrease toggle (toolbar)
 ns.lootEditorAllowDecrease = false
 local leDecreaseBtn = CreateToolbarButton(leToolbar,
-    MEDIA_PATH .. "Icon_Close",
+    MEDIA_PATH .. "Icon_Lock",
     function(self)
         local state = ns.lootEditorAllowDecrease
         GameTooltip:AddLine(state and "Lock All Time" or "Unlock All Time", 1, 1, 1)
