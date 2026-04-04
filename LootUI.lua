@@ -203,6 +203,26 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
 
     lootTTTitle:SetText("|cffD1B559" .. title .. "|r")
+
+    -- Measure widest item name for dynamic column width
+    local measureFS = lootTTTitle  -- reuse for measuring
+    local maxNameWidth = LT_COL_ITEM  -- minimum
+    for _, key in ipairs(allNames) do
+        local ref = allTimeByKey[key] or resetByKey[key]
+        if ref then
+            measureFS:SetText(ref.name)
+            local w = measureFS:GetStringWidth()
+            if w and w > maxNameWidth then maxNameWidth = w end
+        end
+    end
+    measureFS:SetText("|cffD1B559" .. title .. "|r")  -- restore title
+    maxNameWidth = math.min(maxNameWidth + 8, 250)  -- cap + padding
+
+    -- Dynamic offsets based on name width
+    local dynResetX = 8 + maxNameWidth + LT_COL_GAP
+    local dynAlltimeX = dynResetX + LT_COL_COUNT + LT_COL_VALUE + LT_COL_GAP
+    local dynWidth = 8 + maxNameWidth + LT_COL_GAP + (LT_COL_COUNT + LT_COL_VALUE) * 2 + LT_COL_GAP + 12
+
     local idx = 0
     local yOff = -20
 
@@ -216,9 +236,14 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     headerRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff)
     headerRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
     headerRow.item:SetText("")
+    headerRow.item:SetWidth(maxNameWidth)
     headerRow.resetCount:SetText("|cffffd700Reset|r")
+    headerRow.resetCount:ClearAllPoints()
+    headerRow.resetCount:SetPoint("LEFT", headerRow, "LEFT", dynResetX, 0)
     headerRow.resetValue:SetText("")
     headerRow.alltimeCount:SetText("|cffffd700All Time|r")
+    headerRow.alltimeCount:ClearAllPoints()
+    headerRow.alltimeCount:SetPoint("LEFT", headerRow, "LEFT", dynAlltimeX, 0)
     headerRow.alltimeValue:SetText("")
     headerRow:Show()
     yOff = yOff - LT_ROW_HEIGHT
@@ -239,11 +264,20 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
             row:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
             row.item:SetText(ref.name)
             row.item:SetTextColor(ref.r, ref.g, ref.b)
+            row.item:SetWidth(maxNameWidth)
+            row.resetCount:ClearAllPoints()
+            row.resetCount:SetPoint("LEFT", row, "LEFT", dynResetX, 0)
             row.resetCount:SetText(ri and ("x" .. ri.count) or "|cff666666—|r")
             row.resetCount:SetTextColor(ri and 0.9 or 0.4, ri and 0.9 or 0.4, ri and 0.9 or 0.4)
+            row.resetValue:ClearAllPoints()
+            row.resetValue:SetPoint("LEFT", row, "LEFT", dynResetX + LT_COL_COUNT, 0)
             row.resetValue:SetText(ri and ri.priceText ~= "" and ri.priceText or "")
+            row.alltimeCount:ClearAllPoints()
+            row.alltimeCount:SetPoint("LEFT", row, "LEFT", dynAlltimeX, 0)
             row.alltimeCount:SetText(ai and ("x" .. ai.count) or "")
             row.alltimeCount:SetTextColor(0.9, 0.9, 0.9)
+            row.alltimeValue:ClearAllPoints()
+            row.alltimeValue:SetPoint("LEFT", row, "LEFT", dynAlltimeX + LT_COL_COUNT, 0)
             row.alltimeValue:SetText(ai and ai.priceText ~= "" and ai.priceText or "")
             row:Show()
             yOff = yOff - LT_ROW_HEIGHT
@@ -261,9 +295,18 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
         totalRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff)
         totalRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
         totalRow.item:SetText("|cffffd700Value:|r")
+        totalRow.item:SetWidth(maxNameWidth)
+        totalRow.resetCount:ClearAllPoints()
+        totalRow.resetCount:SetPoint("LEFT", totalRow, "LEFT", dynResetX, 0)
         totalRow.resetCount:SetText("")
+        totalRow.resetValue:ClearAllPoints()
+        totalRow.resetValue:SetPoint("LEFT", totalRow, "LEFT", dynResetX + LT_COL_COUNT, 0)
         totalRow.resetValue:SetText(resetTotal > 0 and ("|cffffd700" .. ns.FormatGoldPositive(resetTotal) .. "|r") or "")
+        totalRow.alltimeCount:ClearAllPoints()
+        totalRow.alltimeCount:SetPoint("LEFT", totalRow, "LEFT", dynAlltimeX, 0)
         totalRow.alltimeCount:SetText("")
+        totalRow.alltimeValue:ClearAllPoints()
+        totalRow.alltimeValue:SetPoint("LEFT", totalRow, "LEFT", dynAlltimeX + LT_COL_COUNT, 0)
         totalRow.alltimeValue:SetText(allTimeTotal > 0 and ("|cffffd700" .. ns.FormatGoldPositive(allTimeTotal) .. "|r") or "")
         totalRow:Show()
         yOff = yOff - LT_ROW_HEIGHT
@@ -291,7 +334,7 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
         lootTooltip.rows[i]:Hide()
     end
 
-    lootTooltip:SetSize(LT_WIDTH, math.abs(yOff) + 6)
+    lootTooltip:SetSize(dynWidth, math.abs(yOff) + 6)
     lootTooltip:ClearAllPoints()
     lootTooltip:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
     lootTooltip:Show()
