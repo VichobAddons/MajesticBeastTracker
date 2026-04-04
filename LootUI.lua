@@ -487,18 +487,54 @@ ns.lootEditor:Hide()
 ns.lootEditor.rows = {}
 ns.lootEditor.charKey = nil
 
--- Title
-local lootTitle = ns.lootEditor:CreateFontString(nil, "OVERLAY")
-lootTitle:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-lootTitle:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 8, -8)
+local LOOT_ROW_HEIGHT = 22
+local LOOT_EDITOR_WIDTH = 320
+local LE_TOOLBAR_HEIGHT = 20
+
+-- Loot Editor toolbar
+local leToolbar = CreateFrame("Frame", nil, ns.lootEditor)
+leToolbar:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 4, -4)
+leToolbar:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", -4, -4)
+leToolbar:SetHeight(LE_TOOLBAR_HEIGHT)
+local leToolbarBg = leToolbar:CreateTexture(nil, "BACKGROUND")
+leToolbarBg:SetAllPoints()
+leToolbarBg:SetColorTexture(0, 0, 0, 0.4)
+local leToolbarSep = leToolbar:CreateTexture(nil, "ARTWORK")
+leToolbarSep:SetHeight(1)
+leToolbarSep:SetPoint("BOTTOMLEFT", leToolbar, "BOTTOMLEFT")
+leToolbarSep:SetPoint("BOTTOMRIGHT", leToolbar, "BOTTOMRIGHT")
+leToolbarSep:SetColorTexture(ns.C_BORDER_RGB[1], ns.C_BORDER_RGB[2], ns.C_BORDER_RGB[3], 0.3)
+
+-- Title in toolbar
+local lootTitle = leToolbar:CreateFontString(nil, "OVERLAY")
+lootTitle:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+lootTitle:SetPoint("LEFT", leToolbar, "LEFT", 4, 0)
 lootTitle:SetTextColor(0.82, 0.71, 0.35)
 ns.lootEditor.title = lootTitle
+
+-- Close button (toolbar)
+local lootClose = CreateToolbarButton(leToolbar,
+    MEDIA_PATH .. "Icon_Close", "Close", nil,
+    function() ns.lootEditor:Hide() end)
+lootClose:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
+lootClose:SetPoint("RIGHT", leToolbar, "RIGHT", -2, 0)
+lootClose.icon:SetTexCoord(0, 1, 0, 1)
+lootClose:SetScript("OnEnter", function(self)
+    self.icon:SetVertexColor(1, 0.3, 0.3, 1)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    GameTooltip:AddLine("Close", 1, 1, 1)
+    GameTooltip:Show()
+end)
+lootClose:SetScript("OnLeave", function(self)
+    self.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+    GameTooltip:Hide()
+end)
 
 -- Syncing overlay
 local syncOverlay = CreateFrame("Frame", nil, ns.lootEditor)
 syncOverlay:SetAllPoints()
 syncOverlay:SetFrameLevel(ns.lootEditor:GetFrameLevel() + 10)
-syncOverlay:EnableMouse(true) -- block clicks through
+syncOverlay:EnableMouse(true)
 syncOverlay:Hide()
 local syncBg = syncOverlay:CreateTexture(nil, "BACKGROUND")
 syncBg:SetAllPoints()
@@ -506,24 +542,8 @@ syncBg:SetColorTexture(0, 0, 0, 0.7)
 local syncText = syncOverlay:CreateFontString(nil, "OVERLAY")
 syncText:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
 syncText:SetPoint("CENTER", 0, 0)
-syncText:SetText("|cff59c7eaLoot sync in progress...|r")
+syncText:SetText("|cffD1B559Loot sync in progress...|r")
 ns.lootEditor.syncOverlay = syncOverlay
-
--- Close button
-local lootClose = CreateFrame("Button", nil, ns.lootEditor)
-lootClose:SetSize(16, 16)
-lootClose:SetPoint("TOPRIGHT", -4, -4)
-local lootCloseTex = lootClose:CreateFontString(nil, "OVERLAY")
-lootCloseTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-lootCloseTex:SetAllPoints()
-lootCloseTex:SetText("|cffff4444×|r")
-local lootCloseHl = lootClose:CreateTexture(nil, "HIGHLIGHT")
-lootCloseHl:SetAllPoints()
-lootCloseHl:SetColorTexture(1, 0.3, 0.3, 0.15)
-lootClose:SetScript("OnClick", function() ns.lootEditor:Hide() end)
-
-local LOOT_ROW_HEIGHT = 22
-local LOOT_EDITOR_WIDTH = 320
 
 -- Build sorted list of all tracked item IDs (sorted by name, then quality tier)
 local function BuildSortedLootList()
@@ -559,7 +579,7 @@ local function PopulateLootEditor(anchor, charKey)
 
     local sortedItems = BuildSortedLootList()
 
-    local yOff = -24
+    local yOff = -(LE_TOOLBAR_HEIGHT + 8)
     for idx, entry in ipairs(sortedItems) do
         local itemID = entry.id
         local row = ns.lootEditor.rows[idx]
