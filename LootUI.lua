@@ -791,15 +791,18 @@ local function PopulateLootEditor(anchor, charKey)
         end)
 
         row.minusBtn:SetScript("OnClick", function()
-            if not ns.lootEditorAllowDecrease then return end
             local cl = ns.GetCharLoot(charData)
+            -- Reset: always decreasable
             if cl.thisReset[capturedID] and cl.thisReset[capturedID] > 0 then
                 cl.thisReset[capturedID] = cl.thisReset[capturedID] - 1
                 if cl.thisReset[capturedID] <= 0 then cl.thisReset[capturedID] = nil end
             end
-            if cl.allTime[capturedID] and cl.allTime[capturedID] > 0 then
-                cl.allTime[capturedID] = cl.allTime[capturedID] - 1
-                if cl.allTime[capturedID] <= 0 then cl.allTime[capturedID] = nil end
+            -- All Time: only when unlocked
+            if ns.lootEditorAllowDecrease then
+                if cl.allTime[capturedID] and cl.allTime[capturedID] > 0 then
+                    cl.allTime[capturedID] = cl.allTime[capturedID] - 1
+                    if cl.allTime[capturedID] <= 0 then cl.allTime[capturedID] = nil end
+                end
             end
             RefreshRow()
         end)
