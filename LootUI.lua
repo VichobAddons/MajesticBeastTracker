@@ -744,7 +744,14 @@ local function PopulateLootEditor(anchor, charKey)
 
     ns.lootEditor:SetSize(LOOT_EDITOR_WIDTH, math.abs(yOff) + 8)
     ns.lootEditor:ClearAllPoints()
-    ns.lootEditor:SetPoint("TOPLEFT", ns.lootEditor._anchor or anchor, "TOPRIGHT", 4, 0)
+    -- Anchor to main frame side (same logic as loot summary)
+    local frameRight = ns.frame:GetRight() or 0
+    local screenWidth = GetScreenWidth()
+    if frameRight + LOOT_EDITOR_WIDTH + 8 > screenWidth then
+        ns.lootEditor:SetPoint("TOPRIGHT", ns.frame, "TOPLEFT", -4, 0)
+    else
+        ns.lootEditor:SetPoint("TOPLEFT", ns.frame, "TOPRIGHT", 4, 0)
+    end
     ns.lootEditor:Show()
 
     -- Show syncing overlay when loot sync is active
