@@ -124,9 +124,185 @@ local function BuildItemList(lootTable, savedPrices)
     return items, totalValue
 end
 
--- Helper: add two-column loot display (This Reset | All Time) to tooltip
+------------------------------------------------------
+-- Loot Tooltip (custom frame, 3-column layout)
+------------------------------------------------------
+local LT_COL_ITEM = 130
+local LT_COL_COUNT = 45
+local LT_COL_VALUE = 65
+local LT_COL_GAP = 4
+local LT_RESET_X = 8 + LT_COL_ITEM + LT_COL_GAP
+local LT_ALLTIME_X = LT_RESET_X + LT_COL_COUNT + LT_COL_VALUE + LT_COL_GAP
+local LT_WIDTH = 8 + LT_COL_ITEM + LT_COL_GAP + (LT_COL_COUNT + LT_COL_VALUE) * 2 + LT_COL_GAP + 12
+local LT_ROW_HEIGHT = 14
+
+local lootTooltip = CreateFrame("Frame", "MBT_LootTooltip", UIParent, "BackdropTemplate")
+lootTooltip:SetFrameStrata("TOOLTIP")
+lootTooltip:SetClampedToScreen(true)
+lootTooltip:SetBackdrop(ns.BACKDROP)
+lootTooltip:SetBackdropColor(0, 0, 0, 0.95)
+lootTooltip:SetBackdropBorderColor(unpack(ns.C_BORDER_RGB))
+lootTooltip:EnableMouse(false)
+lootTooltip:Hide()
+lootTooltip.rows = {}
+
+local lootTTTitle = lootTooltip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+lootTTTitle:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 8, -6)
+
+local function CreateLootTooltipRow(parent)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(LT_ROW_HEIGHT)
+    row.item = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.item:SetFont(row.item:GetFont(), 9)
+    row.item:SetPoint("LEFT", row, "LEFT", 8, 0)
+    row.item:SetWidth(LT_COL_ITEM)
+    row.item:SetJustifyH("LEFT")
+    row.item:SetWordWrap(false)
+    row.resetCount = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.resetCount:SetFont(row.resetCount:GetFont(), 9)
+    row.resetCount:SetPoint("LEFT", row, "LEFT", LT_RESET_X, 0)
+    row.resetCount:SetWidth(LT_COL_COUNT)
+    row.resetCount:SetJustifyH("LEFT")
+    row.resetValue = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.resetValue:SetFont(row.resetValue:GetFont(), 9)
+    row.resetValue:SetPoint("LEFT", row, "LEFT", LT_RESET_X + LT_COL_COUNT, 0)
+    row.resetValue:SetWidth(LT_COL_VALUE)
+    row.resetValue:SetJustifyH("LEFT")
+    row.alltimeCount = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.alltimeCount:SetFont(row.alltimeCount:GetFont(), 9)
+    row.alltimeCount:SetPoint("LEFT", row, "LEFT", LT_ALLTIME_X, 0)
+    row.alltimeCount:SetWidth(LT_COL_COUNT)
+    row.alltimeCount:SetJustifyH("LEFT")
+    row.alltimeValue = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.alltimeValue:SetFont(row.alltimeValue:GetFont(), 9)
+    row.alltimeValue:SetPoint("LEFT", row, "LEFT", LT_ALLTIME_X + LT_COL_COUNT, 0)
+    row.alltimeValue:SetWidth(LT_COL_VALUE)
+    row.alltimeValue:SetJustifyH("LEFT")
+    return row
+end
+
+function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices)
+    local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
+    local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
+    local hasTSM = TSM_API ~= nil
+
+    -- Collect unique keys
+    local allNames = {}
+    local nameSet = {}
+    for _, item in ipairs(resetItems) do
+        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
+    end
+    for _, item in ipairs(allTimeItems) do
+        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
+    end
+    table.sort(allNames)
+
+    local resetByKey = {}
+    for _, item in ipairs(resetItems) do resetByKey[item.sortKey] = item end
+    local allTimeByKey = {}
+    for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
+
+    lootTTTitle:SetText("|cffD1B559" .. title .. "|r")
+    local idx = 0
+    local yOff = -20
+
+    -- Header
+    idx = idx + 1
+    local headerRow = lootTooltip.rows[idx]
+    if not headerRow then
+        headerRow = CreateLootTooltipRow(lootTooltip)
+        lootTooltip.rows[idx] = headerRow
+    end
+    headerRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff)
+    headerRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
+    headerRow.item:SetText("")
+    headerRow.resetCount:SetText("|cffffd700Reset|r")
+    headerRow.resetValue:SetText("")
+    headerRow.alltimeCount:SetText("|cffffd700All Time|r")
+    headerRow.alltimeValue:SetText("")
+    headerRow:Show()
+    yOff = yOff - LT_ROW_HEIGHT
+
+    -- Item rows
+    for _, key in ipairs(allNames) do
+        local ri = resetByKey[key]
+        local ai = allTimeByKey[key]
+        local ref = ai or ri
+        if ref then
+            idx = idx + 1
+            local row = lootTooltip.rows[idx]
+            if not row then
+                row = CreateLootTooltipRow(lootTooltip)
+                lootTooltip.rows[idx] = row
+            end
+            row:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff)
+            row:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
+            row.item:SetText(ref.name)
+            row.item:SetTextColor(ref.r, ref.g, ref.b)
+            row.resetCount:SetText(ri and ("x" .. ri.count) or "|cff666666—|r")
+            row.resetCount:SetTextColor(ri and 0.9 or 0.4, ri and 0.9 or 0.4, ri and 0.9 or 0.4)
+            row.resetValue:SetText(ri and ri.priceText ~= "" and ri.priceText or "")
+            row.alltimeCount:SetText(ai and ("x" .. ai.count) or "")
+            row.alltimeCount:SetTextColor(0.9, 0.9, 0.9)
+            row.alltimeValue:SetText(ai and ai.priceText ~= "" and ai.priceText or "")
+            row:Show()
+            yOff = yOff - LT_ROW_HEIGHT
+        end
+    end
+
+    -- Value total
+    if hasTSM and (resetTotal > 0 or allTimeTotal > 0) then
+        idx = idx + 1
+        local totalRow = lootTooltip.rows[idx]
+        if not totalRow then
+            totalRow = CreateLootTooltipRow(lootTooltip)
+            lootTooltip.rows[idx] = totalRow
+        end
+        totalRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff)
+        totalRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff)
+        totalRow.item:SetText("|cffffd700Value:|r")
+        totalRow.resetCount:SetText("")
+        totalRow.resetValue:SetText(resetTotal > 0 and ("|cffffd700" .. ns.FormatGoldPositive(resetTotal) .. "|r") or "")
+        totalRow.alltimeCount:SetText("")
+        totalRow.alltimeValue:SetText(allTimeTotal > 0 and ("|cffffd700" .. ns.FormatGoldPositive(allTimeTotal) .. "|r") or "")
+        totalRow:Show()
+        yOff = yOff - LT_ROW_HEIGHT
+    end
+
+    -- Footer
+    idx = idx + 1
+    local footerRow = lootTooltip.rows[idx]
+    if not footerRow then
+        footerRow = CreateFrame("Frame", nil, lootTooltip)
+        footerRow:SetHeight(LT_ROW_HEIGHT)
+        footerRow.text = footerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        footerRow.text:SetFont(footerRow.text:GetFont(), 9)
+        footerRow.text:SetPoint("LEFT", footerRow, "LEFT", 8, 0)
+        lootTooltip.rows[idx] = footerRow
+    end
+    footerRow:SetPoint("TOPLEFT", lootTooltip, "TOPLEFT", 0, yOff - 2)
+    footerRow:SetPoint("TOPRIGHT", lootTooltip, "TOPRIGHT", 0, yOff - 2)
+    footerRow.text:SetText("|cff888888Click to edit loot|r")
+    footerRow:Show()
+    yOff = yOff - LT_ROW_HEIGHT - 2
+
+    -- Hide unused rows
+    for i = idx + 1, #lootTooltip.rows do
+        lootTooltip.rows[i]:Hide()
+    end
+
+    lootTooltip:SetSize(LT_WIDTH, math.abs(yOff) + 6)
+    lootTooltip:ClearAllPoints()
+    lootTooltip:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
+    lootTooltip:Show()
+end
+
+function ns.HideLootTooltip()
+    lootTooltip:Hide()
+end
+
+-- Legacy tooltip function (used by global goblin hover)
 -- Reusable component: format a single loot column (item + count + value)
--- Returns formatted string for one item in one column
 local function FormatLootEntry(item)
     if not item then return "|cff666666—|r" end
     local text = "x" .. item.count

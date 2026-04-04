@@ -1858,21 +1858,22 @@ function ns.UpdateUI()
                 local capturedData = charData
                 goblin:SetScript("OnEnter", function(self)
                     self.icon:SetVertexColor(C_TOOLBAR_ICON_HOVER[1], C_TOOLBAR_ICON_HOVER[2], C_TOOLBAR_ICON_HOVER[3], 1)
-                    GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
-                    GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
                     local charLoot = ns.GetCharLoot(capturedData)
-                    if charLoot then
-                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices)
-                    end
-                    if not hasLoot then
+                    if charLoot and hasLoot then
+                        ns.ShowLootTooltip(self, ns.GetDemoName(capturedKey) .. " - Loot",
+                            charLoot.thisReset, charLoot.allTime, charLoot.prices)
+                    else
+                        GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
+                        GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
                         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
+                        GameTooltip:AddLine(" ")
+                        GameTooltip:AddLine("Click to edit loot", 0.5, 0.8, 1)
+                        GameTooltip:Show()
                     end
-                    GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Click to edit loot", 0.5, 0.8, 1)
-                    GameTooltip:Show()
                 end)
                 goblin:SetScript("OnLeave", function(self)
                     self.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+                    ns.HideLootTooltip()
                     GameTooltip:Hide()
                 end)
                 goblin:Show()
