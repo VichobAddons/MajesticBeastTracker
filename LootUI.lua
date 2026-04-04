@@ -229,7 +229,7 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     -- Header
     idx = idx + 1
     local headerRow = lootTooltip.rows[idx]
-    if not headerRow then
+    if not headerRow or not headerRow.item then
         headerRow = CreateLootTooltipRow(lootTooltip)
         lootTooltip.rows[idx] = headerRow
     end
@@ -256,7 +256,7 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
         if ref then
             idx = idx + 1
             local row = lootTooltip.rows[idx]
-            if not row then
+            if not row or not row.item then
                 row = CreateLootTooltipRow(lootTooltip)
                 lootTooltip.rows[idx] = row
             end
@@ -288,7 +288,7 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     if hasTSM and (resetTotal > 0 or allTimeTotal > 0) then
         idx = idx + 1
         local totalRow = lootTooltip.rows[idx]
-        if not totalRow then
+        if not totalRow or not totalRow.item then
             totalRow = CreateLootTooltipRow(lootTooltip)
             lootTooltip.rows[idx] = totalRow
         end
@@ -336,7 +336,9 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
 
     lootTooltip:SetSize(dynWidth, math.abs(yOff) + 6)
     lootTooltip:ClearAllPoints()
-    lootTooltip:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
+    -- Position near anchor but ensure visibility above everything
+    lootTooltip:SetPoint("BOTTOMLEFT", anchor, "TOPRIGHT", 4, 0)
+    lootTooltip:SetFrameLevel(100)
     lootTooltip:Show()
 end
 
