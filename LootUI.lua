@@ -1125,23 +1125,7 @@ local function PopulateLootSummary()
     headerRow:Show()
     yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
 
-    -- Separator
-    idx = idx + 1
-    local sepRow = ns.lootSummary.rows[idx]
-    if not sepRow then
-        sepRow = CreateFrame("Frame", nil, container)
-        sepRow:SetHeight(6)
-        local sepTex = sepRow:CreateTexture(nil, "ARTWORK")
-        sepTex:SetHeight(1)
-        sepTex:SetPoint("LEFT", sepRow, "LEFT", 8, 0)
-        sepTex:SetPoint("RIGHT", sepRow, "RIGHT", -8, 0)
-        sepTex:SetColorTexture(0.3, 0.3, 0.3, 0.6)
-        ns.lootSummary.rows[idx] = sepRow
-    end
-    sepRow:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
-    sepRow:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
-    sepRow:Show()
-    yOff = yOff - 6
+    yOff = yOff - 2
 
     -- Item rows — one row per item, 3 columns
     for _, key in ipairs(allNames) do
@@ -1201,23 +1185,7 @@ local function PopulateLootSummary()
 
     -- Value totals
     if hasTSM and (resetTotal > 0 or allTimeTotal > 0) then
-        -- Separator before total
-        idx = idx + 1
-        local sepRow2 = ns.lootSummary.rows[idx]
-        if not sepRow2 then
-            sepRow2 = CreateFrame("Frame", nil, container)
-            sepRow2:SetHeight(6)
-            local sepTex2 = sepRow2:CreateTexture(nil, "ARTWORK")
-            sepTex2:SetHeight(1)
-            sepTex2:SetPoint("LEFT", sepRow2, "LEFT", 8, 0)
-            sepTex2:SetPoint("RIGHT", sepRow2, "RIGHT", -8, 0)
-            sepTex2:SetColorTexture(0.3, 0.3, 0.3, 0.6)
-            ns.lootSummary.rows[idx] = sepRow2
-        end
-        sepRow2:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
-        sepRow2:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
-        sepRow2:Show()
-        yOff = yOff - 6
+        yOff = yOff - 4
 
         idx = idx + 1
         local totalRow = ns.lootSummary.rows[idx]
@@ -1256,23 +1224,8 @@ local function PopulateLootSummary()
             local hasReset = resetBl and next(resetBl)
             local hasAllTime = allTimeBl and next(allTimeBl)
             if hasReset or hasAllTime then
-                yOff = yOff - 4
-                idx = idx + 1
-                local beastSep = ns.lootSummary.rows[idx]
-                if not beastSep then
-                    beastSep = CreateFrame("Frame", nil, container)
-                    beastSep:SetHeight(6)
-                    local bst = beastSep:CreateTexture(nil, "ARTWORK")
-                    bst:SetHeight(1)
-                    bst:SetPoint("LEFT", beastSep, "LEFT", 8, 0)
-                    bst:SetPoint("RIGHT", beastSep, "RIGHT", -8, 0)
-                    bst:SetColorTexture(0.82, 0.71, 0.35, 0.2)
-                    ns.lootSummary.rows[idx] = beastSep
-                end
-                beastSep:SetPoint("TOPLEFT", container, "TOPLEFT", 0, yOff)
-                beastSep:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, yOff)
-                beastSep:Show()
-                yOff = yOff - 6
+                -- Space before beast header (no separator frame to avoid scroll rendering glitch)
+                yOff = yOff - 8
 
                 idx = idx + 1
                 local beastHeader = ns.lootSummary.rows[idx]
