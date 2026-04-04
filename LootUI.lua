@@ -969,6 +969,16 @@ local lootSumChild = CreateFrame("Frame", nil, lootSumScroll)
 lootSumChild:SetWidth(LOOT_SUMMARY_WIDTH - 24)
 lootSumScroll:SetScrollChild(lootSumChild)
 
+-- Enable mousewheel scrolling
+lootSumScroll:EnableMouseWheel(true)
+lootSumScroll:SetScript("OnMouseWheel", function(self, delta)
+    local current = self:GetVerticalScroll()
+    local maxScroll = self:GetVerticalScrollRange()
+    local step = LOOT_SUMMARY_ROW_HEIGHT * 3
+    local newScroll = math.max(0, math.min(current - (delta * step), maxScroll))
+    self:SetVerticalScroll(newScroll)
+end)
+
 -- Column group borders (inside scroll child, resized dynamically)
 
 
