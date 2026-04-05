@@ -57,6 +57,16 @@ for i, cons in ipairs(CONSUMABLES) do
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     btn.icon = icon
 
+    -- Cooldown sweep overlay (for spells with charges)
+    local cdHolder = CreateFrame("Frame", nil, btn)
+    cdHolder:SetAllPoints()
+    local cd = CreateFrame("Cooldown", nil, cdHolder, "CooldownFrameTemplate")
+    cd:SetSize(CONS_ICON_SIZE / 0.7, CONS_ICON_SIZE / 0.7)
+    cd:SetScale(0.7)
+    cd:SetPoint("CENTER")
+    cd:SetDrawEdge(true)
+    btn.cooldown = cd
+
     -- Golden border glow (shown when item in bags but buff inactive)
     -- Four edge textures around the icon
     local glowSize = 2
@@ -132,8 +142,8 @@ for i, cons in ipairs(CONSUMABLES) do
             self:SetAttribute("type", nil)
             return
         end
-        -- Block if buff still has >20% duration left (skip for stackable buffs like Root Crab)
-        if not cons.stackable then
+        -- Block if buff still has >20% duration left (skip for stackable buffs and spells)
+        if not cons.stackable and not cons.isSpell then
             local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
             if not buffInfo and cons.itemName ~= cons.buffName then
                 buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
@@ -224,33 +234,68 @@ function ns.RefreshConsumableLabels()
                 end
             end
 
-        -- Spell type: show cooldown instead of buff/item count
+        -- Spell type: show charges + cooldown (all inside pcall to handle secret values)
         elseif cons.isSpell then
             if not meetsLevel then
                 consumableLabels[i]:SetText("Lv" .. cons.minLevel)
                 consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
                 consumableButtons[i].glow:Hide()
             else
-                local cdRemaining = 0
-                local ok, result = pcall(function()
-                    local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
-                    if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
-                        return (cdInfo.startTime + cdInfo.duration) - GetTime()
+                local ok, labelText, lr, lg, lb, showGlow, cdStart, cdDur = pcall(function()
+                    local curCharges, maxCharges, cdRemaining = 0, 1, 0
+                    local cdStartTime, cdDuration = 0, 0
+                    local chargeInfo = C_Spell.GetSpellCharges(cons.spellID)
+                    if chargeInfo then
+                        curCharges = chargeInfo.currentCharges or 0
+                        maxCharges = chargeInfo.maxCharges or 1
+                        if curCharges < maxCharges and chargeInfo.cooldownStartTime and chargeInfo.cooldownDuration and chargeInfo.cooldownDuration > 0 then
+                            cdRemaining = (chargeInfo.cooldownStartTime + chargeInfo.cooldownDuration) - GetTime()
+                            cdStartTime = chargeInfo.cooldownStartTime
+                            cdDuration = chargeInfo.cooldownDuration
+                            if cdRemaining < 0 then cdRemaining = 0 end
+                        end
+                    else
+                        local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
+                        if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
+                            cdRemaining = (cdInfo.startTime + cdInfo.duration) - GetTime()
+                            cdStartTime = cdInfo.startTime
+                            cdDuration = cdInfo.duration
+                            if cdRemaining < 0 then cdRemaining = 0 end
+                        end
+                        maxCharges = 1
+                        curCharges = cdRemaining > 0 and 0 or 1
                     end
-                    return 0
+                    local function fmtCd(rem, prefix)
+                        if rem <= 0 then return "" end
+                        if rem >= 3600 then return prefix .. math.ceil(rem / 3600) .. "h" end
+                        if rem >= 60 then return prefix .. math.ceil(rem / 60) .. "m" end
+                        return prefix .. math.floor(rem) .. "s"
+                    end
+                    if curCharges > 0 then
+                        if curCharges >= maxCharges then
+                            return curCharges .. "/" .. maxCharges, 0.2, 0.9, 0.4, true, 0, 0
+                        else
+                            return curCharges .. "/" .. maxCharges .. fmtCd(cdRemaining, " "), 0.9, 0.8, 0.2, true, 0, 0
+                        end
+                    else
+                        return "0/" .. maxCharges, 0.9, 0.3, 0.3, false, cdStartTime, cdDuration
+                    end
                 end)
-                if ok and result and result > 0 then cdRemaining = result end
-                if cdRemaining > 0 then
-                    local cdText = cdRemaining >= 3600 and (math.ceil(cdRemaining / 3600) .. "h")
-                        or cdRemaining >= 60 and (math.ceil(cdRemaining / 60) .. "m")
-                        or (math.floor(cdRemaining) .. "s")
-                    consumableLabels[i]:SetText(cdText)
-                    consumableLabels[i]:SetTextColor(0.9, 0.3, 0.3)
-                    consumableButtons[i].glow:Hide()
+                if ok and labelText then
+                    consumableLabels[i]:SetText(labelText)
+                    consumableLabels[i]:SetTextColor(lr, lg, lb)
+                    if showGlow then consumableButtons[i].glow:Show() else consumableButtons[i].glow:Hide() end
+                    -- Cooldown sweep on icon
+                    if cdStart and cdDur and cdDur > 0 then
+                        consumableButtons[i].cooldown:SetCooldown(cdStart, cdDur)
+                    else
+                        consumableButtons[i].cooldown:Clear()
+                    end
                 else
-                    consumableLabels[i]:SetText("Ready")
-                    consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
-                    consumableButtons[i].glow:Show()
+                    consumableLabels[i]:SetText("?")
+                    consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
+                    consumableButtons[i].glow:Hide()
+                    consumableButtons[i].cooldown:Clear()
                 end
             end
         else
