@@ -310,18 +310,41 @@ local function InitSettings()
     local cbAHFill = Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")
     cbAHFill:AddShownPredicate(isReagentsExpanded)
 
-    -- Per-consumable stock targets
+    --------------------------------------------------------
+    -- Expandable: Consumables
+    --------------------------------------------------------
+    local _, isConsExpanded = createExpandableSection(layout, "Consumables")
+
+    -- Per-consumable show/hide toggles + stock sliders
     if type(MajesticBeastTrackerDB.settings.consumableStock) ~= "table" then
         MajesticBeastTrackerDB.settings.consumableStock = {}
     end
+
+    -- Default visibility: Tea and Crab off, others on
+    local CONS_DEFAULTS = {
+        [242299] = false,  -- Sanguithorn Tea
+        [238367] = false,  -- Root Crab
+        [241317] = true,   -- Haranir Phial of Perception
+    }
+
     for _, cons in ipairs(CONSUMABLES) do
+        -- Show/hide toggle
+        local showKey = "consShow_" .. cons.itemID
+        if MajesticBeastTrackerDB.settings[showKey] == nil then
+            MajesticBeastTrackerDB.settings[showKey] = CONS_DEFAULTS[cons.itemID] ~= nil and CONS_DEFAULTS[cons.itemID] or true
+        end
+        local sShow = Settings.RegisterAddOnSetting(category, "MBT_" .. showKey, showKey,
+            MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show " .. cons.name,
+            CONS_DEFAULTS[cons.itemID] ~= nil and CONS_DEFAULTS[cons.itemID] or true)
+        local cbShow = Settings.CreateCheckbox(category, sShow, "Show " .. cons.name .. " in the consumable tracking bar.")
+        sShow:SetValueChangedCallback(function() ns.UpdateUI() end)
+        cbShow:AddShownPredicate(isConsExpanded)
+
+        -- Stock slider
         local flatKey = "consStock_" .. cons.itemID
         if MajesticBeastTrackerDB.settings[flatKey] == nil then
             MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
         end
-    end
-    for _, cons in ipairs(CONSUMABLES) do
-        local flatKey = "consStock_" .. cons.itemID
         local ok, err = pcall(function()
             local sStock = Settings.RegisterAddOnSetting(category,
                 "MBT_" .. flatKey, flatKey,
@@ -336,7 +359,7 @@ local function InitSettings()
             sStock:SetValueChangedCallback(function(setting, val)
                 MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
             end)
-            slStock:AddShownPredicate(isReagentsExpanded)
+            slStock:AddShownPredicate(isConsExpanded)
         end)
         if not ok then
             print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))

@@ -271,6 +271,13 @@ toolbarSep:SetPoint("BOTTOMLEFT", toolbar, "BOTTOMLEFT", 0, 0)
 toolbarSep:SetPoint("BOTTOMRIGHT", toolbar, "BOTTOMRIGHT", 0, 0)
 toolbarSep:SetColorTexture(0.82, 0.71, 0.35, 0.3)
 
+-- Toolbar title (left side)
+local toolbarTitle = toolbar:CreateFontString(nil, "OVERLAY")
+toolbarTitle:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+toolbarTitle:SetPoint("LEFT", toolbar, "LEFT", 4, 0)
+toolbarTitle:SetTextColor(0.6, 0.6, 0.6)
+toolbarTitle:SetText("|cffD1B559MBT|r")  -- version set after GetMBTVersion is defined below
+
 -- Helper: create a toolbar icon button
 local TOOLBAR_ICON_SIZE = 16
 local TOOLBAR_BTN_PADDING = 3
@@ -351,24 +358,7 @@ autoHideBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
 autoHideBtn.icon:SetTexCoord(0, 1, 0, 1)
 local autoHideIcon = autoHideBtn.icon
 
--- Title (branding, fills empty space left of lure icons)
-local titleFrame = CreateFrame("Frame", nil, frame)
-titleFrame:SetAllPoints()
-titleFrame:SetFrameLevel(frame:GetFrameLevel() + 20)
-titleFrame:EnableMouse(false)
-
-local title = titleFrame:CreateFontString(nil, "OVERLAY")
-title:SetFont(STANDARD_TEXT_FONT, 20, "OUTLINE")
-title:SetText("|cffD1B559Majestic|r\n|cffD1B559Beast|r\n|cffD1B559Tracker|r")
-title:SetJustifyH("CENTER")
-title:SetJustifyV("TOP")
-title:SetSpacing(0)
-title:SetAlpha(0.6)
-
-local verLabel = titleFrame:CreateFontString(nil, "OVERLAY")
-verLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-verLabel:SetTextColor(0.5, 0.5, 0.5, 0.6)
-verLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
+-- Title removed — version shown in toolbar ("MBT vX")
 local function GetMBTVersion()
     local devLoaded = C_AddOns.IsAddOnLoaded("MajesticBeastTrackerDev")
     if devLoaded then
@@ -376,12 +366,12 @@ local function GetMBTVersion()
     end
     return C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or "?"
 end
-verLabel:SetText("v" .. GetMBTVersion())
+toolbarTitle:SetText("|cffD1B559Majestic Beast Tracker|r v" .. GetMBTVersion())
 
 -- Lock indicator (shown in toolbar)
 local lockIcon = toolbar:CreateTexture(nil, "OVERLAY")
 lockIcon:SetSize(10, 10)
-lockIcon:SetPoint("LEFT", toolbar, "LEFT", 4, 0)
+lockIcon:SetPoint("LEFT", toolbarTitle, "RIGHT", 4, 0)
 lockIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
 lockIcon:SetVertexColor(0.6, 0.6, 0.6)
 lockIcon:Hide()
@@ -738,9 +728,10 @@ end
 local CONS_ICON_SIZE = 20
 local CONS_SPACING = 4
 local CONS_PAD = 6
-local CONS_ITEM_WIDTH = CONS_ICON_SIZE + CONS_SPACING + 46
+local CONS_LABEL_HEIGHT = 12
+local CONS_ITEM_WIDTH = CONS_ICON_SIZE + CONS_SPACING + 8
 local CONS_BOX_WIDTH = #CONSUMABLES * CONS_ITEM_WIDTH + CONS_PAD * 2
-local CONS_BOX_HEIGHT = ICON_SIZE + 12
+local CONS_BOX_HEIGHT = CONS_ICON_SIZE + CONS_LABEL_HEIGHT + 10
 
 local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
@@ -1885,6 +1876,7 @@ function ns.UpdateUI()
     -- Update consumable status
     ns.RefreshConsumableLabels()
     local playerLevel = UnitLevel("player")
+    local visibleConsIdx = 0
     for i, cons in ipairs(CONSUMABLES) do
         local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
         consumableIcons[i].icon:SetDesaturated(not meetsLevel)
@@ -1894,21 +1886,34 @@ function ns.UpdateUI()
         local tex = C_Item.GetItemIconByID(cons.itemID)
         if tex then consumableIcons[i].icon:SetTexture(tex) end
 
-        -- Position button in consumable box
+        -- Position button in consumable box (respect show/hide setting)
         if not InCombatLockdown() then
             local btn = consumableButtons[i]
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", consumableBox, "TOPLEFT",
-                CONS_PAD + (i - 1) * CONS_ITEM_WIDTH, -(CONS_BOX_HEIGHT - CONS_ICON_SIZE) / 2)
-            consumableLabels[i]:ClearAllPoints()
-            consumableLabels[i]:SetPoint("LEFT", btn, "RIGHT", 2, 0)
-            if frame:IsShown() then
+            local showKey = "consShow_" .. cons.itemID
+            local isVisible = MajesticBeastTrackerDB.settings[showKey] ~= false
+            if isVisible and frame:IsShown() then
+                btn:ClearAllPoints()
+                btn:SetPoint("TOPLEFT", consumableBox, "TOPLEFT",
+                    CONS_PAD + visibleConsIdx * CONS_ITEM_WIDTH, -CONS_PAD)
+                consumableLabels[i]:ClearAllPoints()
+                consumableLabels[i]:SetPoint("TOP", btn, "BOTTOM", 0, -1)
+                consumableLabels[i]:SetJustifyH("CENTER")
                 btn:Show()
-                consumableBox:Show()
+                consumableLabels[i]:Show()
+                visibleConsIdx = visibleConsIdx + 1
             else
                 btn:Hide()
-                consumableBox:Hide()
+                consumableLabels[i]:Hide()
             end
+        end
+    end
+
+    -- Hide consumable box if no visible consumables
+    if not InCombatLockdown() then
+        if visibleConsIdx > 0 and frame:IsShown() then
+            consumableBox:Show()
+        else
+            consumableBox:Hide()
         end
     end
 
@@ -1939,16 +1944,7 @@ function ns.UpdateUI()
     if not InCombatLockdown() then
         frame:SetSize(w, h)
 
-        -- Position title branding (adapt to available space)
-        title:ClearAllPoints()
-        if showReagents then
-            title:SetFont(STANDARD_TEXT_FONT, 20, "OUTLINE")
-            title:SetText("|cffD1B559Majestic|r\n|cffD1B559Beast|r\n|cffD1B559Tracker|r")
-        else
-            title:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-            title:SetText("|cffD1B559Majestic Beast|r\n|cffD1B559Tracker|r")
-        end
-        title:SetPoint("TOP", frame, "TOPLEFT", PAD + 4 + NAME_COL_WIDTH / 2, contentTop - 2)
+        -- Title moved to toolbar (MBT vX)
 
         -- Position consumable box below divider
         consumableBox:ClearAllPoints()
