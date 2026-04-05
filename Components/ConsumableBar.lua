@@ -199,9 +199,16 @@ function ns.RefreshConsumableLabels()
             else
                 local remaining, isActive = ns.GetToolEnchantRemaining()
                 if isActive and remaining > 0 then
-                    local timeText = remaining >= 3600 and (math.floor(remaining / 3600) .. "h " .. math.floor((remaining % 3600) / 60) .. "m")
-                        or remaining >= 60 and (math.ceil(remaining / 60) .. "m")
-                        or (math.floor(remaining) .. "s")
+                    local timeText
+                    if remaining >= 3600 then
+                        local h = math.floor(remaining / 3600)
+                        local m = math.floor((remaining % 3600) / 60)
+                        timeText = m > 0 and (h .. "h " .. m .. "m") or (h .. "h")
+                    elseif remaining >= 60 then
+                        timeText = math.ceil(remaining / 60) .. "m"
+                    else
+                        timeText = math.floor(remaining) .. "s"
+                    end
                     if count > 0 then timeText = timeText .. " " .. count .. "x" end
                     consumableLabels[i]:SetText(timeText)
                     consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)

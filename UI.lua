@@ -14,6 +14,7 @@ ns.CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
 local ICON_SIZE = 26
 local COL_WIDTH = 62
 local NAME_COL_WIDTH = 150
+local BASE_NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
 local TOOLBAR_HEIGHT = 22
 local TITLE_HEIGHT = 22
@@ -1678,6 +1679,17 @@ function ns.UpdateUI()
     -- Update consumable status
     ns.RefreshConsumableLabels()
     local playerLevel = UnitLevel("player")
+
+    -- Count visible consumables first for even spacing
+    local totalVisibleCons = 0
+    for _, cons in ipairs(CONSUMABLES) do
+        local showKey = "consShow_" .. (cons.itemID or cons.spellID)
+        if MajesticBeastTrackerDB.settings[showKey] ~= false then
+            totalVisibleCons = totalVisibleCons + 1
+        end
+    end
+    local consSpacing = totalVisibleCons > 0 and (BASE_NAME_COL_WIDTH / totalVisibleCons) or ns.CONS_ITEM_WIDTH
+
     local visibleConsIdx = 0
     for i, cons in ipairs(CONSUMABLES) do
         local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
@@ -1702,8 +1714,9 @@ function ns.UpdateUI()
             local isVisible = MajesticBeastTrackerDB.settings[showKey] ~= false
             if isVisible and frame:IsShown() then
                 btn:ClearAllPoints()
+                local xOffset = visibleConsIdx * consSpacing + (consSpacing - ns.CONS_ICON_SIZE) / 2
                 btn:SetPoint("TOPLEFT", ns.consumableBox, "TOPLEFT",
-                    ns.CONS_PAD + visibleConsIdx * ns.CONS_ITEM_WIDTH, -ns.CONS_PAD)
+                    xOffset, -ns.CONS_PAD)
                 ns.consumableLabels[i]:ClearAllPoints()
                 ns.consumableLabels[i]:SetPoint("TOP", btn, "BOTTOM", 0, -1)
                 ns.consumableLabels[i]:SetJustifyH("CENTER")
@@ -1717,13 +1730,15 @@ function ns.UpdateUI()
         end
     end
 
-    -- Resize and show/hide consumable box based on visible count
+    -- Resize consumable box and adapt NAME_COL_WIDTH dynamically
+    local consWidth = ns.CONS_PAD * 2 + visibleConsIdx * ns.CONS_ITEM_WIDTH
+    NAME_COL_WIDTH = math.max(BASE_NAME_COL_WIDTH, consWidth)
     if not InCombatLockdown() then
         if visibleConsIdx > 0 and frame:IsShown() then
-            local consWidth = ns.CONS_PAD * 2 + visibleConsIdx * ns.CONS_ITEM_WIDTH
-            ns.consumableBox:SetWidth(math.max(consWidth, NAME_COL_WIDTH))
+            ns.consumableBox:SetWidth(NAME_COL_WIDTH)
             ns.consumableBox:Show()
         else
+            NAME_COL_WIDTH = BASE_NAME_COL_WIDTH
             ns.consumableBox:Hide()
         end
     end

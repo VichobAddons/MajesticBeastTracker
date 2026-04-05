@@ -340,7 +340,8 @@ local function InitSettings()
         sShow:SetValueChangedCallback(function() ns.UpdateUI() end)
         cbShow:AddShownPredicate(isConsExpanded)
 
-        -- Stock slider
+        -- Stock slider (skip for spells — no item to stock)
+        if not cons.isSpell then
         local flatKey = "consStock_" .. (cons.itemID or cons.spellID)
         if MajesticBeastTrackerDB.settings[flatKey] == nil then
             MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
@@ -364,6 +365,7 @@ local function InitSettings()
         if not ok then
             print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
         end
+        end -- if not cons.isSpell
     end
 
     --------------------------------------------------------
