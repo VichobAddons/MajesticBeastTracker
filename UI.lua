@@ -1482,18 +1482,23 @@ function ns.UpdateUI()
         local box = lureBoxes[i]
         if not showLureBorders or lureToCol[i] == -1 then
             box:Hide()
-        elseif showReagents and lure.reagents and #lure.reagents > 0 then
-            -- Position border box around reagent icons + lure icon
+        else
             local boxPad = 3
             local colX = PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH
             local boxTop = contentTop - 2 + boxPad
-            local boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
+            local boxBottom
+            if showReagents and lure.reagents and #lure.reagents > 0 then
+                -- Full height: reagents + lure icon
+                boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
+            else
+                -- No reagents: match cons+travel height
+                local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
+                boxBottom = contentTop - 2 - consTravelH + boxPad
+            end
             box:ClearAllPoints()
             box:SetPoint("TOPLEFT", frame, "TOPLEFT", colX - boxPad, boxTop)
             box:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", colX + COL_WIDTH + boxPad, boxBottom)
             box:Show()
-        else
-            box:Hide()
         end
     end
 
