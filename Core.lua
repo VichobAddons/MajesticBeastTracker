@@ -302,8 +302,8 @@ local function RecordLoot(beastName, diffs)
                 prices = charData.loot.prices,
             }
             table.insert(charData.loot.history, 1, entry)  -- newest first
-            -- Keep max 14 days
-            while #charData.loot.history > 14 do
+            -- Keep max 90 days
+            while #charData.loot.history > 90 do
                 table.remove(charData.loot.history)
             end
         end
@@ -353,7 +353,7 @@ function ns.GetCharLoot(charData)
                 perBeast = loot.perBeastReset,
                 prices = loot.prices,
             })
-            while #loot.history > 14 do table.remove(loot.history) end
+            while #loot.history > 90 do table.remove(loot.history) end
         end
         loot.thisReset = {}
         loot.perBeastReset = {}

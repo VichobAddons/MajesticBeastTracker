@@ -217,8 +217,8 @@ function ns.CreateCalendarPicker(parent, onDateSelected)
                     btn.sel:Hide()
                 end
 
-                -- Only clickable if has data
-                if hasData then
+                -- Clickable if has data OR is today (to return to current reset)
+                if hasData or dateStr == today then
                     btn:SetScript("OnClick", function()
                         selectedDate = dateStr
                         if onDateSelected then onDateSelected(dateStr) end

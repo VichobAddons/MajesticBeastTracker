@@ -17,6 +17,7 @@ local NAME_COL_WIDTH = 150
 local BASE_NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
 local TOOLBAR_HEIGHT = 22
+local BOTTOM_BAR_HEIGHT = 20
 local TITLE_HEIGHT = 4  -- reduced after title moved to toolbar
 local ZONE_LABEL_HEIGHT = 10
 local ICON_ROW_HEIGHT = ICON_SIZE + 6 + ZONE_LABEL_HEIGHT
@@ -197,9 +198,28 @@ frame:SetScript("OnHide", function()
     if ns.lootEditor then ns.lootEditor:Hide() end
 end)
 
--- Logout button (left of close button)
-local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
-logoutBtn:SetHeight(16)
+------------------------------------------------------
+-- Bottom Bar (timer + logout)
+------------------------------------------------------
+local bottomBar = CreateFrame("Frame", nil, frame)
+bottomBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 4, 4)
+bottomBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+bottomBar:SetHeight(BOTTOM_BAR_HEIGHT)
+bottomBar:SetFrameLevel(frame:GetFrameLevel() + 25)
+
+local bottomBarBg = bottomBar:CreateTexture(nil, "BACKGROUND")
+bottomBarBg:SetAllPoints()
+bottomBarBg:SetColorTexture(0, 0, 0, 0.4)
+
+local bottomBarSep = bottomBar:CreateTexture(nil, "ARTWORK")
+bottomBarSep:SetHeight(1)
+bottomBarSep:SetPoint("TOPLEFT", bottomBar, "TOPLEFT", 0, 0)
+bottomBarSep:SetPoint("TOPRIGHT", bottomBar, "TOPRIGHT", 0, 0)
+bottomBarSep:SetColorTexture(0.82, 0.71, 0.35, 0.3)
+
+-- Logout button (right side of bottom bar)
+local logoutBtn = CreateFrame("Button", nil, bottomBar, "SecureActionButtonTemplate")
+logoutBtn:SetSize(BOTTOM_BAR_HEIGHT, BOTTOM_BAR_HEIGHT)
 logoutBtn:SetAttribute("type", "macro")
 logoutBtn:SetAttribute("macrotext", "/logout")
 logoutBtn:RegisterForClicks("AnyUp", "AnyDown")
@@ -208,7 +228,7 @@ logoutText:SetFont(logoutText:GetFont(), 9)
 logoutText:SetText("|cff999999Logout|r")
 logoutText:SetPoint("CENTER")
 logoutBtn:SetWidth(logoutText:GetStringWidth() + 8)
-logoutBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, 4)
+logoutBtn:SetPoint("RIGHT", bottomBar, "RIGHT", -2, 0)
 logoutBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-MinimizeButton-Highlight")
 logoutBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
@@ -218,16 +238,16 @@ logoutBtn:SetScript("OnEnter", function(self)
 end)
 logoutBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
--- Timer display (bottom-left, clickable)
-local timerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+-- Timer display (left side of bottom bar)
+local timerLabel = bottomBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 timerLabel:SetFont(timerLabel:GetFont(), 9)
-timerLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD + 2, 6)
+timerLabel:SetPoint("LEFT", bottomBar, "LEFT", 6, 0)
 timerLabel:SetTextColor(0.5, 0.5, 0.5)
 timerLabel:Hide()
 
-local timerBtn = CreateFrame("Button", nil, frame)
-timerBtn:SetHeight(14)
-timerBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, 2)
+local timerBtn = CreateFrame("Button", nil, bottomBar)
+timerBtn:SetHeight(BOTTOM_BAR_HEIGHT)
+timerBtn:SetPoint("LEFT", bottomBar, "LEFT", 2, 0)
 timerBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 timerBtn:SetScript("OnClick", function(_, btn)
     if btn == "RightButton" then
@@ -870,10 +890,11 @@ for i, stat in ipairs(STAT_LABELS) do
 end
 
 -- Total TSM cost label (below stats)
-ns.tsmTotalLabel = frame:CreateFontString(nil, "OVERLAY")
+ns.tsmTotalLabel = bottomBar:CreateFontString(nil, "OVERLAY")
 ns.tsmTotalLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 ns.tsmTotalLabel:SetTextColor(1, 0.84, 0)
-ns.tsmTotalLabel:SetJustifyH("RIGHT")
+ns.tsmTotalLabel:SetJustifyH("CENTER")
+ns.tsmTotalLabel:SetPoint("CENTER", bottomBar, "CENTER", 0, 0)
 ns.tsmTotalLabel:Hide()
 
 -- Weekly knowledge lines for main window (right-aligned, below stats)
@@ -1796,9 +1817,8 @@ function ns.UpdateUI()
     -- Resize
     local n = math.max(#keys, 1)
     local statsExtra = 0  -- stats now shares row with consumable box
-    local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
     local hasTravelBtns = #activeTravelBtns > 0
-    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + statsExtra + tsmTotalExtra + PAD + 4
+    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + statsExtra + BOTTOM_BAR_HEIGHT + PAD + 10
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
@@ -1947,10 +1967,7 @@ function ns.UpdateUI()
             if allPriced and grandTotal > 0 then
                 local goldText = ns.FormatGold(grandTotal)
                 ns.tsmTotalLabel:SetText("Total needed: " .. goldText)
-                ns.tsmTotalLabel:ClearAllPoints()
-                ns.tsmTotalLabel:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, statsY - 12)
                 ns.tsmTotalLabel:Show()
-                statsY = statsY - 12
             else
                 ns.tsmTotalLabel:Hide()
             end

@@ -567,22 +567,8 @@ leHistoryBtn:SetPoint("RIGHT", leDecreaseBtn, "LEFT", -2, 0)
 leHistoryBtn.icon:SetTexCoord(0, 1, 0, 1)
 ns.lootEditorHistoryMode = false
 ns.lootEditorHistoryPage = 0  -- 0 = current, 1 = yesterday, etc
-leHistoryBtn:SetScript("OnClick", function()
-    ns.lootEditorHistoryMode = not ns.lootEditorHistoryMode
-    leHistoryBtn.icon:SetAlpha(ns.lootEditorHistoryMode and 1.0 or 0.4)
-    if ns.lootEditorHistoryMode then
-        ns.lootEditorHistoryPage = 1  -- start at yesterday
-        -- Hide edit controls in history mode
-        leDecreaseBtn:Hide()
-    else
-        ns.lootEditorHistoryPage = 0
-        leDecreaseBtn:Show()
-    end
-    if ns.lootEditor:IsShown() and ns.lootEditor.charKey then
-        ns._repopulateLootEditor()
-    end
-end)
-
+local leCalendar  -- forward declaration, assigned after chevrons
+local lePageLeft  -- forward declaration, used in lePageRight OnClick
 -- History pagination controls (left of history button)
 -- ChevronRight (>) = newer day (lower page number)
 local lePageRight = CreateToolbarButton(leToolbar,
@@ -595,11 +581,27 @@ lePageRight:SetScript("OnClick", function()
     if ns.lootEditorHistoryPage > 1 then
         ns.lootEditorHistoryPage = ns.lootEditorHistoryPage - 1
         ns._repopulateLootEditor()
+        -- Sync calendar selection
+        if ns.lootEditor.charKey then
+            local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+            local entry = charData and charData.loot and charData.loot.history and charData.loot.history[ns.lootEditorHistoryPage]
+            if entry then leCalendar:SetSelectedDate(entry.date) end
+        end
+    elseif ns.lootEditorHistoryPage == 1 then
+        -- Return to current reset data
+        ns.lootEditorHistoryMode = false
+        ns.lootEditorHistoryPage = 0
+        leHistoryBtn.icon:SetAlpha(0.4)
+        leDecreaseBtn:Show()
+        lePageLeft:Hide()
+        lePageRight:Hide()
+        leCalendar:Hide()
+        ns._repopulateLootEditor()
     end
 end)
 
 -- ChevronLeft (<) = older day (higher page number)
-local lePageLeft = CreateToolbarButton(leToolbar,
+lePageLeft = CreateToolbarButton(leToolbar,
     MEDIA_PATH .. "Icon_ChevronLeft", "Older", nil, nil)
 lePageLeft:SetSize(LE_TOOLBAR_HEIGHT, LE_TOOLBAR_HEIGHT)
 lePageLeft:SetPoint("RIGHT", lePageRight, "LEFT", 0, 0)
@@ -612,6 +614,105 @@ lePageLeft:SetScript("OnClick", function()
     if ns.lootEditorHistoryPage < maxPage then
         ns.lootEditorHistoryPage = ns.lootEditorHistoryPage + 1
         ns._repopulateLootEditor()
+        -- Sync calendar selection
+        local entry = charData and charData.loot and charData.loot.history and charData.loot.history[ns.lootEditorHistoryPage]
+        if entry then leCalendar:SetSelectedDate(entry.date) end
+    end
+end)
+
+-- Calendar picker for editor history date selection
+leCalendar = ns.CreateCalendarPicker(ns.lootEditor, function(dateStr)
+    local resetDate = ns.GetResetDate()
+    if dateStr == resetDate then
+        -- Today = back to current reset data
+        ns.lootEditorHistoryMode = false
+        ns.lootEditorHistoryPage = 0
+        leHistoryBtn.icon:SetAlpha(0.4)
+        leDecreaseBtn:Show()
+        lePageLeft:Hide()
+        lePageRight:Hide()
+        ns._repopulateLootEditor()
+        leCalendar:Hide()
+        return
+    end
+    -- Find which history page matches this date for this character
+    if not ns.lootEditor.charKey then return end
+    local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+    if charData and charData.loot and charData.loot.history then
+        for page, entry in ipairs(charData.loot.history) do
+            if entry.date == dateStr then
+                ns.lootEditorHistoryPage = page
+                ns._repopulateLootEditor()
+                return
+            end
+        end
+    end
+    -- No data for this date
+    ns.lootEditor.title:SetText(ns.GetDemoName(ns.lootEditor.charKey) .. " — No data")
+end)
+
+-- Position calendar relative to editor
+local function RepositionLeCalendar()
+    leCalendar:ClearAllPoints()
+    local frameCenter = ns.frame:GetCenter() or 0
+    local editorCenter = ns.lootEditor:GetCenter() or 0
+    if editorCenter < frameCenter then
+        leCalendar:SetPoint("TOPRIGHT", ns.lootEditor, "TOPLEFT", -4, 0)
+    else
+        leCalendar:SetPoint("TOPLEFT", ns.lootEditor, "TOPRIGHT", 4, 0)
+    end
+end
+leCalendar:SetScript("OnShow", RepositionLeCalendar)
+
+-- Update calendar highlights from this character's history
+local function UpdateLeCalendarHighlights()
+    local dates = {}
+    if ns.lootEditor.charKey then
+        local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+        if charData and charData.loot and charData.loot.history then
+            for _, entry in ipairs(charData.loot.history) do
+                dates[entry.date] = true
+            end
+        end
+    end
+    -- Also highlight current reset day if there's data
+    local resetDate = ns.GetResetDate()
+    if ns.lootEditor.charKey then
+        local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+        if charData and charData.loot and charData.loot.thisReset and next(charData.loot.thisReset) then
+            dates[resetDate] = true
+        end
+    end
+    leCalendar:SetHighlightDates(dates)
+end
+
+-- Show calendar when clicking history button
+leHistoryBtn:SetScript("OnClick", function()
+    ns.lootEditorHistoryMode = not ns.lootEditorHistoryMode
+    leHistoryBtn.icon:SetAlpha(ns.lootEditorHistoryMode and 1.0 or 0.4)
+    if ns.lootEditorHistoryMode then
+        ns.lootEditorHistoryPage = 1
+        leDecreaseBtn:Hide()
+        lePageLeft:Show()
+        lePageRight:Show()
+        UpdateLeCalendarHighlights()
+        -- Select the history page's date in the calendar
+        if ns.lootEditor.charKey then
+            local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+            if charData and charData.loot and charData.loot.history and charData.loot.history[1] then
+                leCalendar:SetSelectedDate(charData.loot.history[1].date)
+            end
+        end
+        leCalendar:Show()
+    else
+        ns.lootEditorHistoryPage = 0
+        leDecreaseBtn:Show()
+        lePageLeft:Hide()
+        lePageRight:Hide()
+        leCalendar:Hide()
+    end
+    if ns.lootEditor:IsShown() and ns.lootEditor.charKey then
+        ns._repopulateLootEditor()
     end
 end)
 
@@ -623,6 +724,7 @@ ns.lootEditor:SetScript("OnHide", function()
     leDecreaseBtn:Show()
     lePageLeft:Hide()
     lePageRight:Hide()
+    leCalendar:Hide()
 end)
 
 -- Syncing overlay
@@ -1037,7 +1139,7 @@ lsToolbarSep:SetColorTexture(ns.C_BORDER_RGB[1], ns.C_BORDER_RGB[2], ns.C_BORDER
 
 local lootSumTitle = lsToolbar:CreateFontString(nil, "OVERLAY")
 lootSumTitle:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-lootSumTitle:SetPoint("LEFT", lsToolbar, "LEFT", 4, 0)
+lootSumTitle:SetPoint("LEFT", lsToolbar, "LEFT", 4, 0)  -- re-anchored after lsExportBtn creation
 lootSumTitle:SetTextColor(0.82, 0.71, 0.35)
 lootSumTitle:SetText("Loot Summary")
 
@@ -1102,8 +1204,12 @@ local lsExportBtn = CreateToolbarButton(lsToolbar,
     end,
     nil, nil)
 lsExportBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
-lsExportBtn:SetPoint("RIGHT", lsHistoryBtn, "LEFT", -2, 0)
+lsExportBtn:SetPoint("LEFT", lsToolbar, "LEFT", 2, 0)
+
 lsExportBtn.icon:SetTexCoord(0, 1, 0, 1)
+-- Re-anchor title to the right of export button
+lootSumTitle:ClearAllPoints()
+lootSumTitle:SetPoint("LEFT", lsExportBtn, "RIGHT", 2, 0)
 lsExportBtn:SetScript("OnClick", function()
     ns.EnsureDB()
     local LURES = ns.LURES
@@ -1276,21 +1382,48 @@ lsHistoryBtn:SetScript("OnClick", function()
 end)
 
 -- Pagination (chevrons + date in title)
+local lsPageLeft  -- forward declaration, used in lsPageRight OnClick
+local UpdateExportAnchor  -- forward declaration, defined after chevrons
 local lsPageRight = CreateToolbarButton(lsToolbar,
     MEDIA_PATH .. "Icon_ChevronRight", "Newer", nil, nil)
 lsPageRight:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsPageRight:SetPoint("RIGHT", lsHistoryBtn, "LEFT", 0, 0)
 lsPageRight.icon:SetTexCoord(0, 1, 0, 1)
 lsPageRight:Hide()
+-- Helper: find history date for a given page across all characters
+local function GetGlobalHistoryDate(page)
+    ns.EnsureDB()
+    for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if charData.loot and charData.loot.history and charData.loot.history[page] then
+            return charData.loot.history[page].date
+        end
+    end
+    return nil
+end
+
 lsPageRight:SetScript("OnClick", function()
     if ns.lootSummaryHistoryPage > 1 then
         ns.lootSummaryHistoryPage = ns.lootSummaryHistoryPage - 1
         if ns._populateLootSummary then ns._populateLootSummary() end
         if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+        -- Sync calendar selection
+        local d = GetGlobalHistoryDate(ns.lootSummaryHistoryPage)
+        if d and ns.lsCalendar then ns.lsCalendar:SetSelectedDate(d) end
+    elseif ns.lootSummaryHistoryPage == 1 then
+        -- Return to current reset data
+        ns.lootSummaryHistoryMode = false
+        ns.lootSummaryHistoryPage = 0
+        lsHistoryBtn.icon:SetAlpha(0.4)
+        lsPageLeft:Hide()
+        lsPageRight:Hide()
+        UpdateExportAnchor()
+        ns.lsCalendar:Hide()
+        if ns._populateLootSummary then ns._populateLootSummary() end
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
     end
 end)
 
-local lsPageLeft = CreateToolbarButton(lsToolbar,
+lsPageLeft = CreateToolbarButton(lsToolbar,
     MEDIA_PATH .. "Icon_ChevronLeft", "Older", nil, nil)
 lsPageLeft:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsPageLeft:SetPoint("RIGHT", lsPageRight, "LEFT", 0, 0)
@@ -1309,8 +1442,14 @@ lsPageLeft:SetScript("OnClick", function()
         ns.lootSummaryHistoryPage = ns.lootSummaryHistoryPage + 1
         if ns._populateLootSummary then ns._populateLootSummary() end
         if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+        -- Sync calendar selection
+        local d = GetGlobalHistoryDate(ns.lootSummaryHistoryPage)
+        if d and ns.lsCalendar then ns.lsCalendar:SetSelectedDate(d) end
     end
 end)
+
+-- Export is now left-anchored, no dynamic re-anchoring needed
+UpdateExportAnchor = function() end
 
 -- Calendar picker for history date selection
 ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
@@ -1322,6 +1461,7 @@ ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
         lsHistoryBtn.icon:SetAlpha(0.4)
         lsPageLeft:Hide()
         lsPageRight:Hide()
+        UpdateExportAnchor()
         if ns._populateLootSummary then ns._populateLootSummary() end
         if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
         ns.lsCalendar:Hide()
@@ -1336,7 +1476,6 @@ ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
                     ns.lootSummaryHistoryPage = page
                     if ns._populateLootSummary then ns._populateLootSummary() end
                     if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
-                    ns.lsCalendar:Hide()
                     return
                 end
             end
@@ -1345,7 +1484,6 @@ ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
     -- No data for this date
     ns.lootSummaryHistoryPage = 0
     lootSumTitle:SetText("History — No data for " .. dateStr)
-    ns.lsCalendar:Hide()
 end)
 -- Position calendar: same side as loot summary relative to main frame (always outward)
 local function RepositionCalendar()
@@ -1385,14 +1523,20 @@ lsHistoryBtn:SetScript("OnClick", function()
     ns.lootSummaryHistoryMode = not ns.lootSummaryHistoryMode
     lsHistoryBtn.icon:SetAlpha(ns.lootSummaryHistoryMode and 1.0 or 0.4)
     if ns.lootSummaryHistoryMode then
+        ns.lootSummaryHistoryPage = 1
         lsPageLeft:Show()
         lsPageRight:Show()
+        UpdateExportAnchor()
         UpdateCalendarHighlights()
+        -- Select the first history date in the calendar
+        local d = GetGlobalHistoryDate(1)
+        if d then ns.lsCalendar:SetSelectedDate(d) end
         ns.lsCalendar:Show()
     else
         ns.lootSummaryHistoryPage = 0
         lsPageLeft:Hide()
         lsPageRight:Hide()
+        UpdateExportAnchor()
         ns.lsCalendar:Hide()
         -- Return to current reset data
         if ns._populateLootSummary then ns._populateLootSummary() end
@@ -1407,6 +1551,7 @@ ns.lootSummary:SetScript("OnHide", function()
     lsHistoryBtn.icon:SetAlpha(0.4)
     lsPageLeft:Hide()
     lsPageRight:Hide()
+    UpdateExportAnchor()
     ns.lsCalendar:Hide()
 end)
 
@@ -1427,7 +1572,7 @@ local lsScrollbar = CreateFrame("Slider", nil, ns.lootSummary, "UISliderTemplate
 ns._lootSumScrollbar = lsScrollbar
 lsScrollbar:SetPoint("TOPRIGHT", ns.lootSummary, "TOPRIGHT", -2, -lsHeaderHeight)
 lsScrollbar:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -2, 4)
-lsScrollbar:SetWidth(6)
+lsScrollbar:SetWidth(8)
 lsScrollbar:SetMinMaxValues(0, 1)
 lsScrollbar:SetValue(0)
 lsScrollbar:SetValueStep(1)
@@ -1435,14 +1580,14 @@ lsScrollbar:SetOrientation("VERTICAL")
 lsScrollbar:SetObeyStepOnDrag(true)
 lsScrollbar.thumb = lsScrollbar:GetThumbTexture()
 lsScrollbar.thumb:SetPoint("CENTER")
-lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.15)
-lsScrollbar.thumb:SetWidth(6)
+lsScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.4)
+lsScrollbar.thumb:SetWidth(8)
 if lsScrollbar.NineSlice then lsScrollbar.NineSlice:Hide() end
 lsScrollbar:SetScript("OnValueChanged", function(_, value)
     lootSumScroll:SetVerticalScroll(value)
 end)
-lsScrollbar:SetScript("OnEnter", function() lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.25) end)
-lsScrollbar:SetScript("OnLeave", function() lsScrollbar.thumb:SetColorTexture(1, 1, 1, 0.15) end)
+lsScrollbar:SetScript("OnEnter", function() lsScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.7) end)
+lsScrollbar:SetScript("OnLeave", function() lsScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.4) end)
 
 local function UpdateLootSumScrollbar()
     local viewH = lootSumScroll:GetHeight()
@@ -1543,6 +1688,7 @@ local function PopulateLootSummary()
         -- Show/hide pagination
         lsPageLeft:Show()
         lsPageRight:Show()
+        UpdateExportAnchor()
         lootSumTitle:SetText("History — " .. (histDate or "No data"))
         if not next(resetLoot) then
             for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
@@ -1554,6 +1700,7 @@ local function PopulateLootSummary()
         resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
         lsPageLeft:Hide()
         lsPageRight:Hide()
+        UpdateExportAnchor()
         if not resetLoot and not allTimeLoot then
             for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
             lootSumTitle:SetText("Loot Summary — No data yet")

@@ -1,27 +1,69 @@
 # Majestic Beast Tracker
 
-## [v1.7.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.7.0) (2026-04-04)
-[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v1.7.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+## [v2.0.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.0) (2026-04-05)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v2.0.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 
-- Toolbar redesign, loot summary window, gold UI theme, custom Tabler icons
+- Major overhaul: architecture refactor, gold UI theme, loot history with calendar, CSV export, consumable tracker expansion, and loot editor redesign
+
+### Architecture Refactor
+- **File split** — UI.lua split into UI, LootUI, GearPopup, Settings, CalendarPicker, and Components/ConsumableBar for maintainability
+- **Component extraction** — ConsumableBar is now a standalone reusable component
 
 ### Toolbar (NEW)
 - **Dedicated toolbar row** — All action buttons moved to a separate toolbar at the top of the tracker
-- **Custom Tabler icons** — All toolbar buttons now use custom gold-themed icons (Close, Auto-Hide, Reagents, TSM Coins, Loot Summary, Warbank Deposit, Auctionator Shopping List)
+- **Custom Tabler icons** — Gold-themed icons for Close, Auto-Hide, Reagents, TSM Coins, Loot Summary, Warbank Deposit, Auctionator Shopping List
+- **Title in toolbar** — "Majestic Beast Tracker vX" displayed in the toolbar
 - **Consistent hover effects** — Gold icons brighten on hover, close button turns red
-- **Horizontal spacing** — Clean icon layout with proper padding between buttons
 
 ### Loot Summary Window (NEW)
 - **Separate loot window** — Click the loot summary button to open a dedicated loot summary window instead of a tooltip
 - **3-column layout** — Item name, Reset count+value, and All Time count+value in clearly separated columns
-- **Column borders** — Gold-bordered groups for Reset and All Time sections
-- **Smart positioning** — Window opens on the left side if the tracker is near the right edge of the screen
-- **Movable** — Drag the summary window to reposition
-- **Disable Hover Tooltip** — New setting to disable the hover tooltip on the loot summary button (Loot Tracking section)
+- **Beast breakdown toggle** — Expand to see loot grouped by beast with localized headers (Zone — NPC Name via tooltip scan)
+- **Custom scroll** — Custom mousewheel scroll handler replacing UIPanelScrollFrameTemplate (fixes rendering glitch)
+- **Dynamic item name width** — Adapts to longest item name for locale support
+- **Smart positioning** — Window opens on the left side if the tracker is near the right edge of the screen, auto-repositions when dragging the main frame
+- **Custom loot tooltip** — Replaces GameTooltip for per-char and global hover with proper 3-column layout
+
+### Loot History (NEW)
+- **90-day archive** — Daily loot is archived on reset and stored for 90 days (covers a full patch cycle)
+- **Per-character history** — Browse historical loot data per character with pagination
+- **Global summary history** — View combined loot history across all characters
+- **Calendar picker** — Reusable CalendarPicker component with data dots on days that have loot data
+- **Server reset awareness** — Calendar dates align with server daily reset cycle, not local midnight
+
+### CSV Export (NEW)
+- **Export button** — Click in the loot summary toolbar to export loot data
+- **Per-character flat data** — Item ID, quality, beast, date in analytics-ready format
+- **Beast breakdown** — Grouped by beast with reset date headers
+- **Gold values** — Includes TSM gold values to avoid overflow
+- **Scrollable window** — View and copy export data from a scrollable text popup
+
+### Loot Editor Redesign
+- **3-column layout** — Separate Reset (editable) and All Time (readonly) columns
+- **Toolbar** — Title bar with close button and lock toggle
+- **Lock toggle** — Lock/Unlock All Time values with Lock/LockOpen icon states
+- **Minus control** — Minus button disabled by default, toggle in toolbar to enable; always allows reset decrease
+
+### Consumable Bar (Enhanced)
+- **Razorstone tracker** — Tooltip scan for remaining tool enchant duration
+- **Sharpen Your Knife tracker** — Spell cooldown tracking with secret value pcall wrapping
+- **Show/hide per item** — Settings toggle for each consumable (Tea/Crab default OFF)
+- **Moved to header area** — Consumables and travel buttons relocated from bottom to the old title space
+- **Even spacing** — Dynamic NAME_COL_WIDTH based on visible consumable count
+- **TravelBox** — Travel buttons in their own gold-bordered box below consumable box
+- **Dynamic header height** — Adapts to max of lure icons vs consumable+travel boxes
 
 ### UI Theme
-- **Gold color scheme** — All borders, separators, title text, and accent colors changed from blue to gold (matching WoW's standard UI theme)
-- **Consistent theming** — Toolbar icons, column borders, loot summary window all use the same gold palette
+- **Gold color scheme** — All borders, separators, title text, and accent colors changed from blue to gold
+- **Border toggles** — Separate settings for Lure+Reagents and Travel+Consumables borders
+- **All borders 0.7 alpha** — Consistent transparency across all border elements
+- **Lure borders** — Always visible when toggled on, match consumable+travel height when reagents are off
+- **Lure icon centering** — Centered vertically relative to consumable+travel area
+
+### Window Management
+- **Autohide sync** — Auto-hide state synced across all MBT windows (main, loot summary, editor, calendar)
+- **OnHide cascading** — Closing the main window cascades to all sub-windows
+- **Smart positioning** — All windows auto-reposition on drag, calendar follows loot summary
 
 ### Warband Bank
 - **Taint warning** — Added note in Warband Bank settings about potential bag interaction issues after depositing
