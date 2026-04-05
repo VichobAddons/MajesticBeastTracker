@@ -487,6 +487,7 @@ ns.lootEditor:SetBackdropColor(0, 0, 0, 0.97)
 ns.lootEditor:SetBackdropBorderColor(unpack(ns.C_BORDER_RGB))
 ns.lootEditor:EnableMouse(true)
 ns.lootEditor:Hide()
+-- OnHide set later after toolbar buttons are created (see below)
 ns.lootEditor.rows = {}
 ns.lootEditor.charKey = nil
 
@@ -612,6 +613,16 @@ lePageLeft:SetScript("OnClick", function()
         ns.lootEditorHistoryPage = ns.lootEditorHistoryPage + 1
         ns._repopulateLootEditor()
     end
+end)
+
+-- Reset history state when editor closes
+ns.lootEditor:SetScript("OnHide", function()
+    ns.lootEditorHistoryMode = false
+    ns.lootEditorHistoryPage = 0
+    leHistoryBtn.icon:SetAlpha(0.4)
+    leDecreaseBtn:Show()
+    lePageLeft:Hide()
+    lePageRight:Hide()
 end)
 
 -- Syncing overlay
@@ -1069,6 +1080,80 @@ lsBreakdownBtn:SetScript("OnClick", function()
     end
 end)
 
+-- History toggle (toolbar)
+ns.lootSummaryHistoryMode = false
+ns.lootSummaryHistoryPage = 0
+local lsHistoryBtn = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_History",
+    function(self)
+        GameTooltip:AddLine("Loot History", 1, 1, 1)
+        GameTooltip:AddLine("View daily loot history for all characters", 0.5, 0.8, 1, true)
+    end,
+    nil, nil)
+lsHistoryBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsHistoryBtn:SetPoint("RIGHT", lsBreakdownBtn, "LEFT", -2, 0)
+lsHistoryBtn.icon:SetTexCoord(0, 1, 0, 1)
+lsHistoryBtn.icon:SetAlpha(0.4)
+lsHistoryBtn:SetScript("OnClick", function()
+    ns.lootSummaryHistoryMode = not ns.lootSummaryHistoryMode
+    lsHistoryBtn.icon:SetAlpha(ns.lootSummaryHistoryMode and 1.0 or 0.4)
+    if ns.lootSummaryHistoryMode then
+        ns.lootSummaryHistoryPage = 1
+    else
+        ns.lootSummaryHistoryPage = 0
+    end
+    if ns.lootSummary:IsShown() and ns._populateLootSummary then
+        ns._populateLootSummary()
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+    end
+end)
+
+-- Pagination (chevrons + date in title)
+local lsPageRight = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_ChevronRight", "Newer", nil, nil)
+lsPageRight:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsPageRight:SetPoint("RIGHT", lsHistoryBtn, "LEFT", 0, 0)
+lsPageRight.icon:SetTexCoord(0, 1, 0, 1)
+lsPageRight:Hide()
+lsPageRight:SetScript("OnClick", function()
+    if ns.lootSummaryHistoryPage > 1 then
+        ns.lootSummaryHistoryPage = ns.lootSummaryHistoryPage - 1
+        if ns._populateLootSummary then ns._populateLootSummary() end
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+    end
+end)
+
+local lsPageLeft = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_ChevronLeft", "Older", nil, nil)
+lsPageLeft:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsPageLeft:SetPoint("RIGHT", lsPageRight, "LEFT", 0, 0)
+lsPageLeft.icon:SetTexCoord(0, 1, 0, 1)
+lsPageLeft:Hide()
+lsPageLeft:SetScript("OnClick", function()
+    -- Find max history across all characters
+    local maxPage = 0
+    ns.EnsureDB()
+    for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if charData.loot and charData.loot.history then
+            maxPage = math.max(maxPage, #charData.loot.history)
+        end
+    end
+    if ns.lootSummaryHistoryPage < maxPage then
+        ns.lootSummaryHistoryPage = ns.lootSummaryHistoryPage + 1
+        if ns._populateLootSummary then ns._populateLootSummary() end
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+    end
+end)
+
+-- Reset history on hide
+ns.lootSummary:SetScript("OnHide", function()
+    ns.lootSummaryHistoryMode = false
+    ns.lootSummaryHistoryPage = 0
+    lsHistoryBtn.icon:SetAlpha(0.4)
+    lsPageLeft:Hide()
+    lsPageRight:Hide()
+end)
+
 -- Custom scroll frame (no UIPanelScrollFrameTemplate — avoids rendering glitches)
 local lsHeaderHeight = LS_TOOLBAR_HEIGHT + 4
 local LS_SCROLL_SPEED = LOOT_SUMMARY_ROW_HEIGHT * 3
@@ -1163,15 +1248,65 @@ end
 
 local function PopulateLootSummary()
     local container = lootSumChild
-    local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
-    if not resetLoot and not allTimeLoot then
-        for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
-        lootSumTitle:SetText("Loot Summary — No data yet")
-        ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, 40)
-        return
+    local isHistory = ns.lootSummaryHistoryMode and ns.lootSummaryHistoryPage > 0
+    local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset
+
+    if isHistory then
+        -- Aggregate history from all characters for the given page
+        resetLoot = {}
+        globalPrices = {}
+        globalPerBeastReset = {}
+        local histDate = nil
+        ns.EnsureDB()
+        for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+            if charData.loot and charData.loot.history then
+                local entry = charData.loot.history[ns.lootSummaryHistoryPage]
+                if entry then
+                    if not histDate then histDate = entry.date end
+                    for id, count in pairs(entry.items or {}) do
+                        resetLoot[id] = (resetLoot[id] or 0) + count
+                    end
+                    if entry.prices then
+                        for id, price in pairs(entry.prices) do
+                            if not globalPrices[id] then globalPrices[id] = price end
+                        end
+                    end
+                    if entry.perBeast then
+                        for beastName, items in pairs(entry.perBeast) do
+                            if not globalPerBeastReset[beastName] then globalPerBeastReset[beastName] = {} end
+                            for id, count in pairs(items) do
+                                globalPerBeastReset[beastName][id] = (globalPerBeastReset[beastName][id] or 0) + count
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        -- All time still from live data
+        _, allTimeLoot, _, globalPerBeast = ns.GetGlobalLoot()
+        -- Show/hide pagination
+        lsPageLeft:Show()
+        lsPageRight:Show()
+        lootSumTitle:SetText("History — " .. (histDate or "No data"))
+        if not next(resetLoot) then
+            for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
+            lootSumTitle:SetText("History — No data for this day")
+            ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, 40)
+            return
+        end
+    else
+        resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
+        lsPageLeft:Hide()
+        lsPageRight:Hide()
+        if not resetLoot and not allTimeLoot then
+            for _, row in ipairs(ns.lootSummary.rows) do row:Hide() end
+            lootSumTitle:SetText("Loot Summary — No data yet")
+            ns.lootSummary:SetSize(LOOT_SUMMARY_WIDTH, 40)
+            return
+        end
+        lootSumTitle:SetText("Loot Summary")
     end
 
-    lootSumTitle:SetText("Loot Summary")
     local hasTSM = TSM_API ~= nil
 
     local resetItems, resetTotal = BuildItemList(resetLoot, globalPrices)
