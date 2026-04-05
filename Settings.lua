@@ -466,6 +466,18 @@ local function InitSettings()
     end)
     sl4:AddShownPredicate(isDisplayExpanded)
 
+    local sBorderLure = Settings.RegisterAddOnSetting(category, "MBT_showLureBorders", "showLureBorders",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Borders — Lure + Reagents", true)
+    local cbBorderLure = Settings.CreateCheckbox(category, sBorderLure, "Show gold borders around lure and reagent icon columns.")
+    sBorderLure:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbBorderLure:AddShownPredicate(isDisplayExpanded)
+
+    local sBorderCons = Settings.RegisterAddOnSetting(category, "MBT_showConsBorders", "showConsBorders",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Borders — Travel + Consumables", true)
+    local cbBorderCons = Settings.CreateCheckbox(category, sBorderCons, "Show gold borders around the travel and consumable boxes.")
+    sBorderCons:SetValueChangedCallback(function() ns.UpdateUI() end)
+    cbBorderCons:AddShownPredicate(isDisplayExpanded)
+
     --------------------------------------------------------
     -- Expandable: Data Management
     --------------------------------------------------------

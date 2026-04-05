@@ -21,7 +21,7 @@ local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
 consumableBox:SetBackdrop(BACKDROP)
 consumableBox:SetBackdropColor(0, 0, 0, 0.9)
-consumableBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+consumableBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
 consumableBox:SetFrameStrata("MEDIUM")
 consumableBox:SetFrameLevel(201)
 local consumableIcons = {}

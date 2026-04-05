@@ -705,7 +705,7 @@ for i = 1, #LURES do
     local box = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     box:SetBackdrop(LURE_BOX_BACKDROP)
     box:SetBackdropColor(0, 0, 0, 0.7)
-    box:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.6)
+    box:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
     box:SetFrameLevel(frame:GetFrameLevel() + 1)
     -- Make sure icons render on top of the box
     headerIcons[i]:SetFrameLevel(box:GetFrameLevel() + 2)
@@ -762,7 +762,7 @@ local travelBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 travelBox:SetSize(NAME_COL_WIDTH, TRAVEL_ICON_SIZE + 8)
 travelBox:SetBackdrop(BACKDROP)
 travelBox:SetBackdropColor(0, 0, 0, 0.9)
-travelBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+travelBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
 travelBox:SetFrameStrata("MEDIUM")
 travelBox:SetFrameLevel(201)
 ns.travelBox = travelBox
@@ -1477,9 +1477,10 @@ function ns.UpdateUI()
     end
 
     -- Update lure column boxes
+    local showLureBorders = MajesticBeastTrackerDB.settings.showLureBorders ~= false
     for i, lure in ipairs(LURES) do
         local box = lureBoxes[i]
-        if lureToCol[i] == -1 then
+        if not showLureBorders or lureToCol[i] == -1 then
             box:Hide()
         elseif showReagents and lure.reagents and #lure.reagents > 0 then
             -- Position border box around reagent icons + lure icon
@@ -1760,9 +1761,15 @@ function ns.UpdateUI()
     -- Resize consumable box and adapt NAME_COL_WIDTH dynamically
     local consWidth = totalVisibleCons * consSpacing
     NAME_COL_WIDTH = math.max(BASE_NAME_COL_WIDTH, consWidth)
+    local showConsBorders = MajesticBeastTrackerDB.settings.showConsBorders ~= false
     if not InCombatLockdown() then
         if visibleConsIdx > 0 and frame:IsShown() then
             ns.consumableBox:SetWidth(NAME_COL_WIDTH)
+            ns.consumableBox:SetBackdrop(showConsBorders and BACKDROP or nil)
+            if showConsBorders then
+                ns.consumableBox:SetBackdropColor(0, 0, 0, 0.9)
+                ns.consumableBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
+            end
             ns.consumableBox:Show()
         else
             NAME_COL_WIDTH = BASE_NAME_COL_WIDTH
@@ -1833,6 +1840,11 @@ function ns.UpdateUI()
             end
         end
         if numTravel > 0 and frame:IsShown() then
+            ns.travelBox:SetBackdrop(showConsBorders and BACKDROP or nil)
+            if showConsBorders then
+                ns.travelBox:SetBackdropColor(0, 0, 0, 0.9)
+                ns.travelBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
+            end
             ns.travelBox:Show()
         else
             ns.travelBox:Hide()
