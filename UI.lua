@@ -41,10 +41,13 @@ ns.CONSUMABLE_ITEMS = CONSUMABLES
 -- Travel items (shown at bottom of frame)
 local TRAVEL_ITEMS = {
     { itemID = 6948, name = "Hearthstone" },
+    { itemID = 140192, name = "Dalaran Hearthstone", isToy = true },
     { itemID = 253629, name = "Personal Key to the Arcantina", isToy = true },
 }
 -- Wormhole Generator: conditional on Engineering profession + item in bags
 local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas", spellID = 1229928, requiresEngineering = true, isToy = true }
+-- Mage Teleport: Silvermoon City (conditional on class)
+local MAGE_TELEPORT = { spellID = 1259190, name = "Teleport: Silvermoon City", isSpell = true, requiresClass = "MAGE" }
 local TRAVEL_ICON_SIZE = 22
 local TRAVEL_SPACING = 3
 local TRAVEL_ROW_HEIGHT = TRAVEL_ICON_SIZE + 8
@@ -793,7 +796,10 @@ local function CreateTravelButton(index, itemInfo)
     btn:RegisterForClicks("AnyUp", "AnyDown")
     btn:Hide()
 
-    if itemInfo.isToy then
+    if itemInfo.isSpell then
+        btn:SetAttribute("type", "spell")
+        btn:SetAttribute("spell", itemInfo.spellID)
+    elseif itemInfo.isToy then
         btn:SetAttribute("type", "toy")
         btn:SetAttribute("toy", itemInfo.itemID)
     else
@@ -847,7 +853,9 @@ local function CreateTravelButton(index, itemInfo)
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-        if itemInfo.isToy then
+        if itemInfo.isSpell then
+            GameTooltip:SetSpellByID(itemInfo.spellID)
+        elseif itemInfo.isToy then
             GameTooltip:SetToyByItemID(itemInfo.itemID)
         else
             GameTooltip:SetItemByID(itemInfo.itemID)
@@ -866,8 +874,9 @@ end
 for i, item in ipairs(TRAVEL_ITEMS) do
     travelButtons[i] = CreateTravelButton(i, item)
 end
--- Wormhole button (created but shown conditionally)
+-- Conditional travel buttons (created but shown based on class/profession)
 local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
+local mageTeleportBtn = CreateTravelButton(#TRAVEL_ITEMS + 2, MAGE_TELEPORT)
 
 ------------------------------------------------------
 -- Stats display (Skill, Perception, Finesse, Deftness)
@@ -1808,10 +1817,15 @@ function ns.UpdateUI()
     for _, btn in ipairs(travelButtons) do
         activeTravelBtns[#activeTravelBtns + 1] = btn
     end
-    -- Wormhole: show only if player has Engineering + item in bags
+    -- Wormhole: show only if player has Engineering + toy known
     local showWormhole = ns.HasEngineering() and PlayerHasToy(WORMHOLE_ITEM.itemID)
     if showWormhole then
         activeTravelBtns[#activeTravelBtns + 1] = wormholeBtn
+    end
+    -- Mage Teleport: show only for Mage class
+    local _, playerClass = UnitClass("player")
+    if playerClass == "MAGE" then
+        activeTravelBtns[#activeTravelBtns + 1] = mageTeleportBtn
     end
 
     -- Resize
@@ -1836,6 +1850,7 @@ function ns.UpdateUI()
         -- Hide all first
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
+        mageTeleportBtn:Hide()
 
         -- Show + position active ones (below consumable box in header area)
         -- Position travel box below consumable box (anchored to it)
@@ -1847,18 +1862,32 @@ function ns.UpdateUI()
 
         local travelSpacing = numTravel > 0 and math.max(NAME_COL_WIDTH / numTravel, TRAVEL_ICON_SIZE + TRAVEL_SPACING) or 0
         for idx, btn in ipairs(activeTravelBtns) do
-            local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
-            if tex then btn.icon:SetTexture(tex) end
+            if btn.itemInfo.isSpell then
+                local spellInfo = C_Spell.GetSpellInfo(btn.itemInfo.spellID)
+                if spellInfo and spellInfo.iconID then btn.icon:SetTexture(spellInfo.iconID) end
+            else
+                local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
+                if tex then btn.icon:SetTexture(tex) end
+            end
             btn:ClearAllPoints()
             btn:SetParent(ns.travelBox)
             local xOff = (idx - 1) * travelSpacing + (travelSpacing - TRAVEL_ICON_SIZE) / 2
             btn:SetPoint("TOPLEFT", ns.travelBox, "TOPLEFT", xOff, -4)
             -- Update cooldown sweep
-            local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
-            if start and duration and duration > 0 then
-                btn.cooldown:SetCooldown(start, duration)
+            if btn.itemInfo.isSpell then
+                local cdInfo = C_Spell.GetSpellCooldown(btn.itemInfo.spellID)
+                if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
+                    btn.cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration)
+                else
+                    btn.cooldown:Clear()
+                end
             else
-                btn.cooldown:Clear()
+                local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
+                if start and duration and duration > 0 then
+                    btn.cooldown:SetCooldown(start, duration)
+                else
+                    btn.cooldown:Clear()
+                end
             end
             if frame:IsShown() then
                 btn:Show()
@@ -2234,6 +2263,7 @@ function ns.HideFrame()
         ns.consumableBox:Hide()
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
+        mageTeleportBtn:Hide()
     end
 end
 
