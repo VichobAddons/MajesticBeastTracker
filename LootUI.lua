@@ -1145,47 +1145,66 @@ lsExportBtn:SetScript("OnClick", function()
     end
 
     local hasTSM = TSM_API ~= nil
-    local csv = "Majestic Beast Tracker - Loot Export\nDate," .. resetDateStr .. "\n\n"
-    csv = csv .. "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
+    local csv = "Date,Character,Beast,Item ID,Item,Quality,Reset Count,All Time Count,Unit Price (gold),Reset Value (gold),All Time Value (gold)\n"
 
-    -- Helper to format one item row
-    local function addItemRow(id, rc, ac)
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-        local rv, av = 0, 0
+    -- Helper: get quality tier for an item
+    local function getQuality(id)
+        local q = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
+        return q and q > 0 and q or 0
+    end
+
+    -- Helper: format one CSV row
+    local function addRow(dateStr, charName, beast, id, rc, ac, prices)
+        local name = (C_Item.GetItemNameByID(id) or ("Item " .. id)):gsub(",", ";")
+        local quality = getQuality(id)
+        local unitPrice = 0
         if hasTSM then
-            local price = globalPrices and globalPrices[id] or ns.GetTSMPrice(id)
-            if price then
-                rv = math.floor(rc * (price / 10000) + 0.5)
-                av = math.floor(ac * (price / 10000) + 0.5)
-            end
+            local price = prices and prices[id] or ns.GetTSMPrice(id)
+            if price then unitPrice = math.floor(price / 10000 + 0.5) end
         end
-        csv = csv .. string.format("%s,%d,%d,%d,%d\n", name:gsub(",", ";"), rc, rv, ac, av)
+        local rv = rc * unitPrice
+        local av = ac * unitPrice
+        csv = csv .. string.format("%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d\n",
+            dateStr, charName, beast, id, name, quality, rc, ac, unitPrice, rv, av)
     end
 
-    -- Summary rows
-    local allIDs = {}
-    local idSet = {}
-    for id in pairs(allTimeLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-    for id in pairs(resetLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-    for _, id in ipairs(allIDs) do
-        addItemRow(id, resetLoot and resetLoot[id] or 0, allTimeLoot and allTimeLoot[id] or 0)
-    end
+    -- Per-character export
+    for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if charData.loot then
+            local loot = ns.GetCharLoot(charData)
+            if loot then
+                local charName = charKey:gsub(",", ";")
+                local prices = loot.prices or {}
 
-    -- Beast breakdown
-    local perReset = globalPerBeastReset or {}
-    local perAll = globalPerBeast or {}
-    for _, lure in ipairs(LURES) do
-        local resetBl = perReset[lure.name]
-        local allTimeBl = perAll[lure.name]
-        if (resetBl and next(resetBl)) or (allTimeBl and next(allTimeBl)) then
-            csv = csv .. "\n" .. lure.name .. "\n"
-            csv = csv .. "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
-            local beastIDs = {}
-            local beastSet = {}
-            for id in pairs(allTimeBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
-            for id in pairs(resetBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
-            for _, id in ipairs(beastIDs) do
-                addItemRow(id, resetBl and resetBl[id] or 0, allTimeBl and allTimeBl[id] or 0)
+                -- Summary: all items for this character
+                local allIDs = {}
+                local idSet = {}
+                for id in pairs(loot.allTime or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+                for id in pairs(loot.thisReset or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+                table.sort(allIDs)
+                for _, id in ipairs(allIDs) do
+                    local rc = loot.thisReset and loot.thisReset[id] or 0
+                    local ac = loot.allTime and loot.allTime[id] or 0
+                    addRow(resetDateStr, charName, "All", id, rc, ac, prices)
+                end
+
+                -- Per-beast breakdown
+                for _, lure in ipairs(LURES) do
+                    local resetBl = loot.perBeastReset and loot.perBeastReset[lure.name]
+                    local allBl = loot.perBeast and loot.perBeast[lure.name]
+                    if (resetBl and next(resetBl)) or (allBl and next(allBl)) then
+                        local beastIDs = {}
+                        local beastSet = {}
+                        for id in pairs(allBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
+                        for id in pairs(resetBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
+                        table.sort(beastIDs)
+                        for _, id in ipairs(beastIDs) do
+                            local rc = resetBl and resetBl[id] or 0
+                            local ac = allBl and allBl[id] or 0
+                            addRow(resetDateStr, charName, lure.name, id, rc, ac, prices)
+                        end
+                    end
+                end
             end
         end
     end
@@ -1226,7 +1245,7 @@ lsExportBtn:SetScript("OnClick", function()
         local editBox = CreateFrame("EditBox", nil, scroll)
         editBox:SetMultiLine(true)
         editBox:SetAutoFocus(false)
-        editBox:SetFont("Fonts\\FRIZQT__.TTF", 10)
+        editBox:SetFontObject("GameFontHighlightSmall")
         editBox:SetWidth(460)
         editBox:SetTextColor(0.9, 0.9, 0.9)
         editBox:SetScript("OnEscapePressed", function() ef:Hide() end)
