@@ -17,7 +17,7 @@ local NAME_COL_WIDTH = 150
 local BASE_NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
 local TOOLBAR_HEIGHT = 22
-local TITLE_HEIGHT = 22
+local TITLE_HEIGHT = 4  -- reduced after title moved to toolbar
 local ZONE_LABEL_HEIGHT = 10
 local ICON_ROW_HEIGHT = ICON_SIZE + 6 + ZONE_LABEL_HEIGHT
 local REAGENT_ICON_SIZE = 20
@@ -705,8 +705,7 @@ for i = 1, #LURES do
     local box = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     box:SetBackdrop(LURE_BOX_BACKDROP)
     box:SetBackdropColor(0, 0, 0, 0.7)
-    local r, g, b = unpack(LURES[i].colorRGB)
-    box:SetBackdropBorderColor(r, g, b, 0.6)
+    box:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.6)
     box:SetFrameLevel(frame:GetFrameLevel() + 1)
     -- Make sure icons render on top of the box
     headerIcons[i]:SetFrameLevel(box:GetFrameLevel() + 2)
