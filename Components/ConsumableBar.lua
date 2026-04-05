@@ -232,11 +232,14 @@ function ns.RefreshConsumableLabels()
                 consumableButtons[i].glow:Hide()
             else
                 local cdRemaining = 0
-                local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
-                if cdInfo and cdInfo.startTime and cdInfo.duration and cdInfo.duration > 0 then
-                    cdRemaining = (cdInfo.startTime + cdInfo.duration) - GetTime()
-                    if cdRemaining < 0 then cdRemaining = 0 end
-                end
+                local ok, result = pcall(function()
+                    local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
+                    if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
+                        return (cdInfo.startTime + cdInfo.duration) - GetTime()
+                    end
+                    return 0
+                end)
+                if ok and result and result > 0 then cdRemaining = result end
                 if cdRemaining > 0 then
                     local cdText = cdRemaining >= 3600 and (math.ceil(cdRemaining / 3600) .. "h")
                         or cdRemaining >= 60 and (math.ceil(cdRemaining / 60) .. "m")
