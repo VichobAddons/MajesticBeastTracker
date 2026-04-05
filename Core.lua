@@ -208,6 +208,23 @@ local function FormatTimeLeft(seconds)
     end
 end
 
+-- Save per-character lure bag counts to SavedVariables
+local function SaveLureBagCounts()
+    ns.EnsureDB()
+    local key = GetCharKey()
+    local charData = MajesticBeastTrackerDB.chars[key]
+    if not charData then return end
+    local counts = {}
+    for _, lure in ipairs(LURES) do
+        local count = C_Item.GetItemCount(lure.itemID, false, false, false, false)  -- bags only, no bank
+        if count > 0 then
+            counts[lure.name] = math.min(count, 1)  -- cap at 1 (only 1 useful per day)
+        end
+    end
+    charData.lureBags = counts
+end
+ns.SaveLureBagCounts = SaveLureBagCounts
+
 local DEMO_TIME_OFFSET = 8 * 3600  -- 8 hours back in demo mode
 
 local function GetLastDailyReset()
@@ -1557,7 +1574,7 @@ function ns.GetMissingReagents()
         if isSkipped then
             -- do nothing, skip this lure entirely
         elseif lure.reagents then
-            -- Count characters that still need this lure today
+            -- Count characters that still need this lure crafted today
             local numLeft = 0
             for charKey, cData in pairs(MajesticBeastTrackerDB.chars) do
                 if not hiddenChars[charKey] and ns.CanSeeLure(cData, i) then
@@ -1566,7 +1583,11 @@ function ns.GetMissingReagents()
                     if not skipForLevel then
                         local ts = cData.lures[lure.name]
                         if not ts or ns.IsLureReady(ts) then
-                            numLeft = numLeft + 1
+                            -- Character needs this lure, but check if they already have one in bags
+                            local hasBagged = cData.lureBags and cData.lureBags[lure.name]
+                            if not hasBagged then
+                                numLeft = numLeft + 1
+                            end
                         end
                     end
                 end
@@ -1773,6 +1794,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         -- Quest flags already set by the time bag updates resolve
         SyncKillsFromQuests(true)
         RefreshWeeklies()
+        SaveLureBagCounts()
         -- Finalize pending loot after timeout (kill → regular loot → skinning → done)
         if pendingLootBeast and (GetTime() - pendingLootTime) > 15 then
             FinalizePendingLoot()
@@ -1818,6 +1840,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         C_Timer.After(5, function()
             DetectSkinningAndTalent()
             SyncKillsFromQuests()
+            SaveLureBagCounts()
             if ns.UpdateUI then ns.UpdateUI() end
         end)
         C_Timer.NewTicker(60, function()

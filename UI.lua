@@ -1685,7 +1685,11 @@ function ns.UpdateUI()
                     if not skipForLevel then
                         local ts = cData.lures[LURES[li].name]
                         if not ts or ns.IsLureReady(ts) then
-                            charsNeedLure[li] = charsNeedLure[li] + 1
+                            -- Don't count if character already has lure in bags
+                            local hasBagged = cData.lureBags and cData.lureBags[LURES[li].name]
+                            if not hasBagged then
+                                charsNeedLure[li] = charsNeedLure[li] + 1
+                            end
                         end
                     end
                 end
