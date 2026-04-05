@@ -1105,7 +1105,7 @@ lsExportBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsExportBtn:SetPoint("RIGHT", lsHistoryBtn, "LEFT", -2, 0)
 lsExportBtn.icon:SetTexCoord(0, 1, 0, 1)
 lsExportBtn:SetScript("OnClick", function()
-    local csv = "Item,Reset Count,Reset Value,All Time Count,All Time Value\n"
+    local csv = "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
     ns.EnsureDB()
     local resetLoot, allTimeLoot, globalPrices
     if ns.lootSummaryHistoryMode and ns.lootSummaryHistoryPage > 0 then
@@ -1142,31 +1142,64 @@ lsExportBtn:SetScript("OnClick", function()
         local rv, av = 0, 0
         if hasTSM then
             local price = globalPrices and globalPrices[id] or ns.GetTSMPrice(id)
-            if price then rv = rc * price; av = ac * price end
+            if price then
+                -- Use gold (divide by 10000) to avoid integer overflow
+                rv = math.floor(rc * (price / 10000) + 0.5)
+                av = math.floor(ac * (price / 10000) + 0.5)
+            end
         end
         csv = csv .. string.format("%s,%d,%d,%d,%d\n", name:gsub(",", ";"), rc, rv, ac, av)
     end
-    -- Show in copy dialog
-    StaticPopupDialogs["MBT_EXPORT_CSV"] = {
-        text = "Copy CSV data (Ctrl+C):",
-        button1 = CLOSE,
-        whileDead = true,
-        hasEditBox = true,
-        editBoxWidth = 400,
-        OnShow = function(dialog)
-            local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
-            editBox:SetText(csv)
-            editBox:SetAutoFocus(true)
-            editBox:HighlightText()
-            editBox:SetScript("OnEscapePressed", function() dialog:Hide() end)
-        end,
-        OnHide = function(dialog)
-            local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
-            editBox:SetScript("OnEscapePressed", nil)
-        end,
-        timeout = 0, hideOnEscape = true,
-    }
-    StaticPopup_Show("MBT_EXPORT_CSV")
+    -- Show in scrollable copy window
+    if not ns._exportFrame then
+        local ef = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        ef:SetSize(500, 300)
+        ef:SetPoint("CENTER")
+        ef:SetFrameStrata("DIALOG")
+        ef:SetBackdrop(ns.BACKDROP)
+        ef:SetBackdropColor(0, 0, 0, 0.95)
+        ef:SetBackdropBorderColor(unpack(ns.C_BORDER_RGB))
+        ef:SetMovable(true)
+        ef:EnableMouse(true)
+        ef:RegisterForDrag("LeftButton")
+        ef:SetScript("OnDragStart", function(s) s:StartMoving() end)
+        ef:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
+        ef:Hide()
+
+        local title = ef:CreateFontString(nil, "OVERLAY")
+        title:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
+        title:SetPoint("TOPLEFT", 8, -8)
+        title:SetText("|cffD1B559Export CSV — Select All (Ctrl+A) then Copy (Ctrl+C)|r")
+
+        local closeBtn = CreateFrame("Button", nil, ef)
+        closeBtn:SetSize(16, 16)
+        closeBtn:SetPoint("TOPRIGHT", -6, -6)
+        local closeTex = closeBtn:CreateFontString(nil, "OVERLAY")
+        closeTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
+        closeTex:SetAllPoints()
+        closeTex:SetText("|cffff4444×|r")
+        closeBtn:SetScript("OnClick", function() ef:Hide() end)
+
+        local scroll = CreateFrame("ScrollFrame", nil, ef, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 8, -28)
+        scroll:SetPoint("BOTTOMRIGHT", -28, 8)
+
+        local editBox = CreateFrame("EditBox", nil, scroll)
+        editBox:SetMultiLine(true)
+        editBox:SetAutoFocus(false)
+        editBox:SetFont("Fonts\\FRIZQT__.TTF", 10)
+        editBox:SetWidth(460)
+        editBox:SetTextColor(0.9, 0.9, 0.9)
+        editBox:SetScript("OnEscapePressed", function() ef:Hide() end)
+        scroll:SetScrollChild(editBox)
+
+        ef.editBox = editBox
+        ns._exportFrame = ef
+    end
+    ns._exportFrame.editBox:SetText(csv)
+    ns._exportFrame:Show()
+    ns._exportFrame.editBox:SetFocus()
+    ns._exportFrame.editBox:HighlightText()
 end)
 lsHistoryBtn.icon:SetTexCoord(0, 1, 0, 1)
 lsHistoryBtn.icon:SetAlpha(0.4)
