@@ -529,25 +529,43 @@ end
 -- Sources: talent perks, per-point bonuses, gear tooltips
 ------------------------------------------------------
 
--- Parse stat bonuses from a perk/path description string
--- Handles: "+5 Perception", "Increases Perception by 60", "Gain 60 Perception", "60 Perception"
+-- Localized stat names from spell IDs (locale-safe)
+local STAT_SPELL_IDS = { Skill = 1265719, Perception = 1265727, Finesse = 1265723, Deftness = 1265730 }
+local L_STAT_NAMES = {}  -- localized name → internal key
+local L_STAT_KEYS = {}   -- internal key → localized name
+for key, spellID in pairs(STAT_SPELL_IDS) do
+    local name = C_Spell.GetSpellName(spellID)
+    if name then
+        L_STAT_NAMES[name] = key
+        L_STAT_KEYS[key] = name
+    else
+        -- Fallback to English if API not ready
+        L_STAT_NAMES[key] = key
+        L_STAT_KEYS[key] = key
+    end
+end
+-- Localized "Midnight Skinning" + Skill name for gear tooltip parsing
+local L_MIDNIGHT_SKINNING = C_Spell.GetSpellName(471014) or "Midnight Skinning"
+local L_SKILL = L_STAT_KEYS.Skill or "Skill"
+
+-- Parse stat bonuses from a perk/path description string (locale-safe)
+-- Handles: "+5 Perception", "Perception increased by 60", "+5 Midnight Skinning Skill"
 local function ParseStatsFromText(text, stats)
     if not text then return end
-    local validStats = { Skill = true, Perception = true, Finesse = true, Deftness = true }
-    -- Pattern 1: "+N Stat" (talents, gear)
-    for amount, stat in text:gmatch("%+(%d+)%s+(%a+)") do
-        if validStats[stat] then
-            stats[stat] = (stats[stat] or 0) + tonumber(amount)
+    for key, localName in pairs(L_STAT_KEYS) do
+        -- Pattern 1: "+N StatName" (talents, gear)
+        for amount in text:gmatch("%+(%d+)%s+" .. localName) do
+            stats[key] = (stats[key] or 0) + tonumber(amount)
+        end
+        -- Pattern 2: "StatName ... by N" (buff tooltips, e.g. "Perception increased by 60")
+        local byAmount = text:match(localName .. "%s+%w+%s+%w+%s+(%d+)")
+        if byAmount then
+            stats[key] = (stats[key] or 0) + tonumber(byAmount)
         end
     end
-    -- Pattern 2: "Stat increased by N" (buff tooltips)
-    for stat, amount in text:gmatch("(%a+)%s+increased%s+by%s+(%d+)") do
-        if validStats[stat] then
-            stats[stat] = (stats[stat] or 0) + tonumber(amount)
-        end
-    end
-    -- "Midnight Skinning Skill" from gear tooltips
-    local skillAmount = text:match("%+(%d+) Midnight Skinning Skill")
+    -- "+N Midnight Skinning Skill" from gear tooltips (locale-safe)
+    local mssPattern = "%+(%d+)%s+" .. L_MIDNIGHT_SKINNING .. "%s+" .. L_SKILL
+    local skillAmount = text:match(mssPattern)
     if skillAmount then
         stats.Skill = (stats.Skill or 0) + tonumber(skillAmount)
     end
@@ -562,13 +580,15 @@ local function GetNodePoints(configID, nodeID)
     return 0
 end
 
--- Parse per-point bonus from path description
+-- Parse per-point bonus from path description (locale-safe)
 -- e.g. "gaining +1 Perception while skinning ... per point"
 local function ParsePerPointBonus(desc)
     if not desc then return nil, nil end
-    local amount, stat = desc:match("%+(%d+)%s+(%a+)%s+.-per point")
-    if amount and (stat == "Skill" or stat == "Perception" or stat == "Finesse" or stat == "Deftness") then
-        return stat, tonumber(amount)
+    for key, localName in pairs(L_STAT_KEYS) do
+        local amount = desc:match("%+(%d+)%s+" .. localName)
+        if amount then
+            return key, tonumber(amount)
+        end
     end
     return nil, nil
 end
