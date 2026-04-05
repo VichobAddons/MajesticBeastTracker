@@ -1040,6 +1040,65 @@ local function PopulateLootEditor(anchor, charKey)
         ns.lootEditor.rows[i]:Hide()
     end
 
+    -- Show active buffs in history mode
+    if not ns.lootEditor.buffsLabel then
+        local bl = ns.lootEditor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        bl:SetFont(bl:GetFont(), 9)
+        bl:SetJustifyH("LEFT")
+        bl:SetTextColor(0.7, 0.7, 0.7)
+        ns.lootEditor.buffsLabel = bl
+    end
+    local buffsLabel = ns.lootEditor.buffsLabel
+    if isHistory and historyEntry and historyEntry.killBuffs then
+        -- Collect all unique buffs across all beasts for this day
+        local allBuffs = {}
+        local seen = {}
+        for _, buffList in pairs(historyEntry.killBuffs) do
+            for _, b in ipairs(buffList) do
+                if not seen[b] then seen[b] = true; allBuffs[#allBuffs + 1] = b end
+            end
+        end
+        if #allBuffs > 0 then
+            yOff = yOff - 4
+            buffsLabel:ClearAllPoints()
+            buffsLabel:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 8, yOff)
+            buffsLabel:SetWidth(LOOT_EDITOR_WIDTH - 16)
+            buffsLabel:SetText("|cffD1B559Buffs:|r " .. table.concat(allBuffs, ", "))
+            buffsLabel:Show()
+            yOff = yOff - 14
+        else
+            buffsLabel:Hide()
+        end
+    elseif not isHistory then
+        -- Show current buffs for today's kills
+        local charData = MajesticBeastTrackerDB.chars[ns.lootEditor.charKey]
+        local killBuffs = charData and charData.loot and charData.loot.killBuffsReset
+        if killBuffs then
+            local allBuffs = {}
+            local seen = {}
+            for _, buffList in pairs(killBuffs) do
+                for _, b in ipairs(buffList) do
+                    if not seen[b] then seen[b] = true; allBuffs[#allBuffs + 1] = b end
+                end
+            end
+            if #allBuffs > 0 then
+                yOff = yOff - 4
+                buffsLabel:ClearAllPoints()
+                buffsLabel:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 8, yOff)
+                buffsLabel:SetWidth(LOOT_EDITOR_WIDTH - 16)
+                buffsLabel:SetText("|cffD1B559Buffs:|r " .. table.concat(allBuffs, ", "))
+                buffsLabel:Show()
+                yOff = yOff - 14
+            else
+                buffsLabel:Hide()
+            end
+        else
+            buffsLabel:Hide()
+        end
+    else
+        buffsLabel:Hide()
+    end
+
     ns.lootEditor:SetSize(LOOT_EDITOR_WIDTH, math.abs(yOff) + 8)
     ns.lootEditor:ClearAllPoints()
     -- Anchor to main frame side (same logic as loot summary)
@@ -1251,7 +1310,7 @@ lsExportBtn:SetScript("OnClick", function()
     end
 
     local hasTSM = TSM_API ~= nil
-    local csv = "Date,Character,Beast,Item ID,Item,Quality,Reset Count,All Time Count,Unit Price (gold),Reset Value (gold),All Time Value (gold)\n"
+    local csv = "Date,Character,Beast,Item ID,Item,Quality,Reset Count,All Time Count,Unit Price (gold),Reset Value (gold),All Time Value (gold),Active Buffs\n"
 
     -- Helper: get quality tier for an item
     local function getQuality(id)
@@ -1260,7 +1319,7 @@ lsExportBtn:SetScript("OnClick", function()
     end
 
     -- Helper: format one CSV row
-    local function addRow(dateStr, charName, beast, id, rc, ac, prices)
+    local function addRow(dateStr, charName, beast, id, rc, ac, prices, buffsStr)
         local name = (C_Item.GetItemNameByID(id) or ("Item " .. id)):gsub(",", ";")
         local quality = getQuality(id)
         local unitPrice = 0
@@ -1270,8 +1329,8 @@ lsExportBtn:SetScript("OnClick", function()
         end
         local rv = rc * unitPrice
         local av = ac * unitPrice
-        csv = csv .. string.format("%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d\n",
-            dateStr, charName, beast, id, name, quality, rc, ac, unitPrice, rv, av)
+        csv = csv .. string.format("%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d,%s\n",
+            dateStr, charName, beast, id, name, quality, rc, ac, unitPrice, rv, av, buffsStr or "")
     end
 
     -- Per-character export
@@ -1295,6 +1354,7 @@ lsExportBtn:SetScript("OnClick", function()
                 end
 
                 -- Per-beast breakdown
+                local killBuffs = loot.killBuffsReset or {}
                 for _, lure in ipairs(LURES) do
                     local resetBl = loot.perBeastReset and loot.perBeastReset[lure.name]
                     local allBl = loot.perBeast and loot.perBeast[lure.name]
@@ -1304,10 +1364,11 @@ lsExportBtn:SetScript("OnClick", function()
                         for id in pairs(allBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
                         for id in pairs(resetBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
                         table.sort(beastIDs)
+                        local buffsStr = killBuffs[lure.name] and table.concat(killBuffs[lure.name], "; ") or ""
                         for _, id in ipairs(beastIDs) do
                             local rc = resetBl and resetBl[id] or 0
                             local ac = allBl and allBl[id] or 0
-                            addRow(resetDateStr, charName, lure.name, id, rc, ac, prices)
+                            addRow(resetDateStr, charName, lure.name, id, rc, ac, prices, buffsStr)
                         end
                     end
                 end

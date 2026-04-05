@@ -168,6 +168,20 @@ ns.GetDemoName = function(realName)
     return demoNameMap[realName]
 end
 
+-- Instance detection: disable addon in dungeons/raids/pvp/arenas (toggleable)
+ns.isInInstance = false
+local function CheckInstance()
+    local inInstance, instanceType = IsInInstance()
+    local rawInInstance = inInstance and instanceType ~= "none"
+    -- Respect user setting (default: enabled)
+    ns.EnsureDB()
+    local settingEnabled = MajesticBeastTrackerDB.settings.disableInInstance ~= false
+    ns.isInInstance = rawInInstance and settingEnabled
+    if ns.isInInstance then
+        if ns.frame and ns.frame:IsShown() then ns.frame:Hide() end
+    end
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_LOGOUT")
@@ -178,6 +192,7 @@ f:RegisterEvent("SKILL_LINES_CHANGED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("BANKFRAME_OPENED")
 f:RegisterEvent("BANKFRAME_CLOSED")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 ------------------------------------------------------
 -- Helpers
@@ -292,6 +307,32 @@ local function DiffSnapshots(before, after)
     return diffs
 end
 
+-- Snapshot active consumable buffs at kill time
+local function SnapshotActiveBuffs()
+    local buffs = {}
+    local consItems = ns.CONSUMABLE_ITEMS
+    if not consItems then return buffs end
+    for _, cons in ipairs(consItems) do
+        local active = false
+        if cons.isToolEnchant then
+            -- Check tool enchant via GetWeaponEnchantInfo or tooltip
+            active = ns.GetToolEnchantRemaining and ns.GetToolEnchantRemaining() and ns.GetToolEnchantRemaining() > 0
+        elseif cons.isSpell then
+            -- Check if spell buff is active (Sharpen Your Knife applies a buff)
+            local buffName = cons.name
+            local aura = C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL")
+            active = aura ~= nil
+        elseif cons.buffName then
+            local aura = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
+            active = aura ~= nil
+        end
+        if active then
+            buffs[#buffs + 1] = cons.name
+        end
+    end
+    return buffs
+end
+
 -- Record loot diffs for a beast into charData
 local function RecordLoot(beastName, diffs)
     if not charKey or not diffs then return end
@@ -317,6 +358,7 @@ local function RecordLoot(beastName, diffs)
                 items = charData.loot.thisReset,
                 perBeast = charData.loot.perBeastReset,
                 prices = charData.loot.prices,
+                killBuffs = charData.loot.killBuffsReset,
             }
             table.insert(charData.loot.history, 1, entry)  -- newest first
             -- Keep max 90 days
@@ -326,6 +368,7 @@ local function RecordLoot(beastName, diffs)
         end
         charData.loot.thisReset = {}
         charData.loot.perBeastReset = {}
+        charData.loot.killBuffsReset = {}
         charData.loot.resetTime = GetServerTime()
     end
 
@@ -337,6 +380,15 @@ local function RecordLoot(beastName, diffs)
     if not charData.loot.perBeastReset[beastName] then charData.loot.perBeastReset[beastName] = {} end
     local beastLoot = charData.loot.perBeast[beastName]
     local beastResetLoot = charData.loot.perBeastReset[beastName]
+    -- Snapshot active buffs at kill time
+    local activeBuffs = SnapshotActiveBuffs()
+    if #activeBuffs > 0 then
+        if not charData.loot.killBuffs then charData.loot.killBuffs = {} end
+        charData.loot.killBuffs[beastName] = activeBuffs
+        -- Also store in per-reset for history archiving
+        if not charData.loot.killBuffsReset then charData.loot.killBuffsReset = {} end
+        charData.loot.killBuffsReset[beastName] = activeBuffs
+    end
     for id, count in pairs(diffs) do
         charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
         charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
@@ -369,11 +421,13 @@ function ns.GetCharLoot(charData)
                 items = loot.thisReset,
                 perBeast = loot.perBeastReset,
                 prices = loot.prices,
+                killBuffs = loot.killBuffsReset,
             })
             while #loot.history > 90 do table.remove(loot.history) end
         end
         loot.thisReset = {}
         loot.perBeastReset = {}
+        loot.killBuffsReset = {}
         loot.prices = {}
         loot.resetTime = GetServerTime()
     end
@@ -1739,6 +1793,15 @@ end
 ------------------------------------------------------
 
 f:SetScript("OnEvent", function(_, event, ...)
+    -- Instance detection: check on every zone change
+    if event == "PLAYER_ENTERING_WORLD" then
+        CheckInstance()
+        if ns.isInInstance then return end
+    end
+    -- Skip most events while in instanced content
+    if ns.isInInstance and event ~= "PLAYER_LOGIN" and event ~= "PLAYER_LOGOUT" and event ~= "PLAYER_ENTERING_WORLD" then
+        return
+    end
     if event == "BANKFRAME_OPENED" then
         ns.isBankOpen = true
         if ns.UpdateUI then ns.UpdateUI() end
