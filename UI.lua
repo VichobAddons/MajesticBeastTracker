@@ -1185,13 +1185,18 @@ function ns.UpdateUI()
                 headerIcons[i]:Hide()
             else
                 headerIcons[i]:ClearAllPoints()
-                -- Center lure icons vertically relative to cons+travel area
-                local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
-                local lureH = ICON_SIZE + ZONE_LABEL_HEIGHT + 2
-                local lureVCenter = (consTravelH - lureH) / 2
+                -- Center lure icons vertically relative to header area
+                local lureY = contentTop - 2 - reagentExtra
+                if not showReagents then
+                    -- No reagents: center lures relative to cons+travel height
+                    local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
+                    local lureH = ICON_SIZE + ZONE_LABEL_HEIGHT + 2
+                    local vPad = math.max((consTravelH - lureH) / 2, 0)
+                    lureY = contentTop - 2 - vPad
+                end
                 headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
                     PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
-                    contentTop - 2 - reagentExtra - lureVCenter)
+                    lureY)
                 zoneLabels[i]:ClearAllPoints()
                 zoneLabels[i]:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
             end
