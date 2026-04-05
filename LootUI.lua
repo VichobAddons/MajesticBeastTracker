@@ -1147,6 +1147,19 @@ end)
 
 -- Calendar picker for history date selection
 ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
+    local resetDate = ns.GetResetDate()
+    if dateStr == resetDate then
+        -- Today = current reset data (not archived yet)
+        ns.lootSummaryHistoryMode = false
+        ns.lootSummaryHistoryPage = 0
+        lsHistoryBtn.icon:SetAlpha(0.4)
+        lsPageLeft:Hide()
+        lsPageRight:Hide()
+        if ns._populateLootSummary then ns._populateLootSummary() end
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
+        ns.lsCalendar:Hide()
+        return
+    end
     -- Find which history page matches this date
     ns.EnsureDB()
     for _, charData in pairs(MajesticBeastTrackerDB.chars) do
@@ -1180,10 +1193,10 @@ local function UpdateCalendarHighlights()
             end
         end
     end
-    -- Also highlight today if there's current reset data
-    local todayStr = date("%Y-%m-%d")
+    -- Also highlight current reset day if there's data
+    local resetDate = ns.GetResetDate()
     local resetLoot = ns.GetGlobalLoot()
-    if resetLoot and next(resetLoot) then dates[todayStr] = true end
+    if resetLoot and next(resetLoot) then dates[resetDate] = true end
     ns.lsCalendar:SetHighlightDates(dates)
 end
 

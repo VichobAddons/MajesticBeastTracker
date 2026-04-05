@@ -154,7 +154,7 @@ function ns.CreateCalendarPicker(parent, onDateSelected)
 
         local daysInMonth = DaysInMonth(curYear, curMonth)
         local firstDay = FirstWeekday(curYear, curMonth)
-        local today = date("%Y-%m-%d")
+        local today = ns.GetResetDate and ns.GetResetDate() or date("%Y-%m-%d")
 
         -- Disable month navigation beyond data range
         local minDate, maxDate = GetDataMonthRange()

@@ -216,6 +216,11 @@ local function GetLastDailyReset()
     return GetServerTime() + secondsUntil - 86400
 end
 
+-- Get the date string for the current reset period
+function ns.GetResetDate()
+    return date("%Y-%m-%d", GetLastDailyReset())
+end
+
 local function IsLureReady(timestamp)
     if not timestamp then return false end
     return timestamp < GetLastDailyReset()
