@@ -1500,7 +1500,11 @@ function ns.UpdateUI()
 
     ns.HideAllRows()
 
-    local dynDataTop = contentTop - reagentExtra - ICON_ROW_HEIGHT - 5
+    -- Header height: max of (reagent+lure icons) vs (consumable+travel boxes)
+    local lureHeaderH = reagentExtra + ICON_ROW_HEIGHT + 5
+    local consHeaderH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8 + 5
+    local headerH = math.max(lureHeaderH, consHeaderH)
+    local dynDataTop = contentTop - headerH
 
     for idx, key in ipairs(keys) do
         if not charRows[idx] then
@@ -1769,11 +1773,11 @@ function ns.UpdateUI()
     local statsExtra = 0  -- stats now shares row with consumable box
     local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
     local hasTravelBtns = #activeTravelBtns > 0
-    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + statsExtra + tsmTotalExtra + PAD + 4
+    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
-    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
+    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + 2)
 
     if not InCombatLockdown() then
         frame:SetSize(w, h)
