@@ -1146,7 +1146,7 @@ lsPageLeft:SetScript("OnClick", function()
 end)
 
 -- Calendar picker for history date selection
-local lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
+ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
     -- Find which history page matches this date
     ns.EnsureDB()
     for _, charData in pairs(MajesticBeastTrackerDB.chars) do
@@ -1156,7 +1156,7 @@ local lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
                     ns.lootSummaryHistoryPage = page
                     if ns._populateLootSummary then ns._populateLootSummary() end
                     if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
-                    lsCalendar:Hide()
+                    ns.lsCalendar:Hide()
                     return
                 end
             end
@@ -1165,9 +1165,9 @@ local lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
     -- No data for this date
     ns.lootSummaryHistoryPage = 0
     lootSumTitle:SetText("History — No data for " .. dateStr)
-    lsCalendar:Hide()
+    ns.lsCalendar:Hide()
 end)
-lsCalendar:SetPoint("TOPLEFT", ns.lootSummary, "BOTTOMLEFT", 0, -4)
+ns.lsCalendar:SetPoint("TOPLEFT", ns.lootSummary, "BOTTOMLEFT", 0, -4)
 
 -- Update calendar highlight dates from history
 local function UpdateCalendarHighlights()
@@ -1184,7 +1184,7 @@ local function UpdateCalendarHighlights()
     local todayStr = date("%Y-%m-%d")
     local resetLoot = ns.GetGlobalLoot()
     if resetLoot and next(resetLoot) then dates[todayStr] = true end
-    lsCalendar:SetHighlightDates(dates)
+    ns.lsCalendar:SetHighlightDates(dates)
 end
 
 -- Show calendar when clicking history button while history mode is on
@@ -1196,12 +1196,12 @@ lsHistoryBtn:SetScript("OnClick", function()
         lsPageLeft:Show()
         lsPageRight:Show()
         UpdateCalendarHighlights()
-        lsCalendar:Show()
+        ns.lsCalendar:Show()
     else
         ns.lootSummaryHistoryPage = 0
         lsPageLeft:Hide()
         lsPageRight:Hide()
-        lsCalendar:Hide()
+        ns.lsCalendar:Hide()
     end
     if ns._populateLootSummary then ns._populateLootSummary() end
     if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
@@ -1214,7 +1214,7 @@ ns.lootSummary:SetScript("OnHide", function()
     lsHistoryBtn.icon:SetAlpha(0.4)
     lsPageLeft:Hide()
     lsPageRight:Hide()
-    lsCalendar:Hide()
+    ns.lsCalendar:Hide()
 end)
 
 -- Custom scroll frame (no UIPanelScrollFrameTemplate — avoids rendering glitches)

@@ -114,11 +114,11 @@ function ns.CreateCalendarPicker(parent, onDateSelected)
             label:SetJustifyV("MIDDLE")
             btn.label = label
 
-            -- Highlight texture (for dates with data)
-            local dot = btn:CreateTexture(nil, "BACKGROUND")
-            dot:SetSize(4, 4)
-            dot:SetPoint("BOTTOM", btn, "BOTTOM", 0, 2)
-            dot:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.8)
+            -- Data indicator dot (top-right corner, green)
+            local dot = btn:CreateTexture(nil, "OVERLAY")
+            dot:SetSize(5, 5)
+            dot:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -3, -3)
+            dot:SetColorTexture(0.2, 0.9, 0.2, 0.9)
             dot:Hide()
             btn.dot = dot
 
@@ -138,6 +138,16 @@ function ns.CreateCalendarPicker(parent, onDateSelected)
         end
     end
 
+    -- Find min/max months with data
+    local function GetDataMonthRange()
+        local minDate, maxDate
+        for d in pairs(highlightDates) do
+            if not minDate or d < minDate then minDate = d end
+            if not maxDate or d > maxDate then maxDate = d end
+        end
+        return minDate, maxDate
+    end
+
     -- Refresh display
     function f:Refresh()
         monthLabel:SetText(MONTH_NAMES[curMonth] .. " " .. curYear)
@@ -146,42 +156,79 @@ function ns.CreateCalendarPicker(parent, onDateSelected)
         local firstDay = FirstWeekday(curYear, curMonth)
         local today = date("%Y-%m-%d")
 
+        -- Disable month navigation beyond data range
+        local minDate, maxDate = GetDataMonthRange()
+        local curMonthStr = string.format("%04d-%02d", curYear, curMonth)
+        local minMonth = minDate and minDate:sub(1, 7) or curMonthStr
+        local maxMonth = maxDate and maxDate:sub(1, 7) or curMonthStr
+        -- Also allow current month (today)
+        local todayMonth = date("%Y-%m")
+        if todayMonth > maxMonth then maxMonth = todayMonth end
+
+        if curMonthStr <= minMonth then
+            prevBtn:Disable()
+            prevTex:SetTextColor(0.3, 0.3, 0.3)
+        else
+            prevBtn:Enable()
+            prevTex:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+        end
+        if curMonthStr >= maxMonth then
+            nextBtn:Disable()
+            nextTex:SetTextColor(0.3, 0.3, 0.3)
+        else
+            nextBtn:Enable()
+            nextTex:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+        end
+
         for idx = 1, 42 do
             local btn = cells[idx]
             local dayNum = idx - firstDay + 1
             if dayNum >= 1 and dayNum <= daysInMonth then
                 local dateStr = string.format("%04d-%02d-%02d", curYear, curMonth, dayNum)
+                local hasData = highlightDates[dateStr]
                 btn.label:SetText(tostring(dayNum))
                 btn:Show()
 
-                -- Today
+                -- Today: white bold
                 if dateStr == today then
-                    btn.label:SetTextColor(1, 1, 1)
                     btn.label:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-                else
-                    btn.label:SetTextColor(0.8, 0.8, 0.8)
+                    btn.label:SetTextColor(1, 1, 1)
+                elseif hasData then
+                    -- Has data: normal color
                     btn.label:SetFont(STANDARD_TEXT_FONT, 10)
+                    btn.label:SetTextColor(0.9, 0.9, 0.9)
+                else
+                    -- No data: grey, not clickable
+                    btn.label:SetFont(STANDARD_TEXT_FONT, 10)
+                    btn.label:SetTextColor(0.35, 0.35, 0.35)
                 end
 
-                -- Has data dot
-                if highlightDates[dateStr] then
+                -- Green dot for dates with data
+                if hasData then
                     btn.dot:Show()
                 else
                     btn.dot:Hide()
                 end
 
-                -- Selected
+                -- Selected highlight
                 if dateStr == selectedDate then
                     btn.sel:Show()
                 else
                     btn.sel:Hide()
                 end
 
-                btn:SetScript("OnClick", function()
-                    selectedDate = dateStr
-                    if onDateSelected then onDateSelected(dateStr) end
-                    f:Refresh()
-                end)
+                -- Only clickable if has data
+                if hasData then
+                    btn:SetScript("OnClick", function()
+                        selectedDate = dateStr
+                        if onDateSelected then onDateSelected(dateStr) end
+                        f:Refresh()
+                    end)
+                    btn:Enable()
+                else
+                    btn:SetScript("OnClick", nil)
+                    btn:Disable()
+                end
             else
                 btn.label:SetText("")
                 btn:Hide()
