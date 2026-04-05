@@ -1688,7 +1688,7 @@ function ns.UpdateUI()
             totalVisibleCons = totalVisibleCons + 1
         end
     end
-    local consSpacing = totalVisibleCons > 0 and (BASE_NAME_COL_WIDTH / totalVisibleCons) or ns.CONS_ITEM_WIDTH
+    local consSpacing = totalVisibleCons > 0 and math.max(BASE_NAME_COL_WIDTH / totalVisibleCons, ns.CONS_ITEM_WIDTH) or ns.CONS_ITEM_WIDTH
 
     local visibleConsIdx = 0
     for i, cons in ipairs(CONSUMABLES) do
@@ -1731,7 +1731,7 @@ function ns.UpdateUI()
     end
 
     -- Resize consumable box and adapt NAME_COL_WIDTH dynamically
-    local consWidth = ns.CONS_PAD * 2 + visibleConsIdx * ns.CONS_ITEM_WIDTH
+    local consWidth = totalVisibleCons * consSpacing
     NAME_COL_WIDTH = math.max(BASE_NAME_COL_WIDTH, consWidth)
     if not InCombatLockdown() then
         if visibleConsIdx > 0 and frame:IsShown() then

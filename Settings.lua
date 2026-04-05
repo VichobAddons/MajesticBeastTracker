@@ -337,7 +337,12 @@ local function InitSettings()
             MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show " .. cons.name,
             CONS_DEFAULTS[cons.itemID] ~= nil and CONS_DEFAULTS[cons.itemID] or true)
         local cbShow = Settings.CreateCheckbox(category, sShow, "Show " .. cons.name .. " in the consumable tracking bar.")
-        sShow:SetValueChangedCallback(function() ns.UpdateUI() end)
+        sShow:SetValueChangedCallback(function()
+            ns.UpdateUI()
+            -- Double call: first sets NAME_COL_WIDTH, second applies it to layout
+            C_Timer.After(0, function() ns.UpdateUI() end)
+            SettingsInbound.RepairDisplay()
+        end)
         cbShow:AddShownPredicate(isConsExpanded)
 
         -- Stock slider (skip for spells — no item to stock)
@@ -361,6 +366,7 @@ local function InitSettings()
                 MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
             end)
             slStock:AddShownPredicate(isConsExpanded)
+            slStock:AddShownPredicate(function() return MajesticBeastTrackerDB.settings[showKey] ~= false end)
         end)
         if not ok then
             print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
