@@ -1105,16 +1105,21 @@ lsExportBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsExportBtn:SetPoint("RIGHT", lsHistoryBtn, "LEFT", -2, 0)
 lsExportBtn.icon:SetTexCoord(0, 1, 0, 1)
 lsExportBtn:SetScript("OnClick", function()
-    local csv = "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
     ns.EnsureDB()
-    local resetLoot, allTimeLoot, globalPrices
+    local LURES = ns.LURES
+    local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset
+    local resetDateStr = ns.GetResetDate()
+
     if ns.lootSummaryHistoryMode and ns.lootSummaryHistoryPage > 0 then
         resetLoot = {}
         globalPrices = {}
+        globalPerBeastReset = {}
+        resetDateStr = "?"
         for _, charData in pairs(MajesticBeastTrackerDB.chars) do
             if charData.loot and charData.loot.history then
                 local entry = charData.loot.history[ns.lootSummaryHistoryPage]
                 if entry then
+                    if resetDateStr == "?" then resetDateStr = entry.date end
                     for id, count in pairs(entry.items or {}) do
                         resetLoot[id] = (resetLoot[id] or 0) + count
                     end
@@ -1123,32 +1128,66 @@ lsExportBtn:SetScript("OnClick", function()
                             if not globalPrices[id] then globalPrices[id] = price end
                         end
                     end
+                    if entry.perBeast then
+                        for beastName, items in pairs(entry.perBeast) do
+                            if not globalPerBeastReset[beastName] then globalPerBeastReset[beastName] = {} end
+                            for id, count in pairs(items) do
+                                globalPerBeastReset[beastName][id] = (globalPerBeastReset[beastName][id] or 0) + count
+                            end
+                        end
+                    end
                 end
             end
         end
-        _, allTimeLoot = ns.GetGlobalLoot()
+        _, allTimeLoot, _, globalPerBeast = ns.GetGlobalLoot()
     else
-        resetLoot, allTimeLoot, globalPrices = ns.GetGlobalLoot()
+        resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
     end
+
     local hasTSM = TSM_API ~= nil
-    local allIDs = {}
-    local idSet = {}
-    for id in pairs(allTimeLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-    for id in pairs(resetLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-    for _, id in ipairs(allIDs) do
+    local csv = "Majestic Beast Tracker - Loot Export\nDate," .. resetDateStr .. "\n\n"
+    csv = csv .. "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
+
+    -- Helper to format one item row
+    local function addItemRow(id, rc, ac)
         local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-        local rc = resetLoot and resetLoot[id] or 0
-        local ac = allTimeLoot and allTimeLoot[id] or 0
         local rv, av = 0, 0
         if hasTSM then
             local price = globalPrices and globalPrices[id] or ns.GetTSMPrice(id)
             if price then
-                -- Use gold (divide by 10000) to avoid integer overflow
                 rv = math.floor(rc * (price / 10000) + 0.5)
                 av = math.floor(ac * (price / 10000) + 0.5)
             end
         end
         csv = csv .. string.format("%s,%d,%d,%d,%d\n", name:gsub(",", ";"), rc, rv, ac, av)
+    end
+
+    -- Summary rows
+    local allIDs = {}
+    local idSet = {}
+    for id in pairs(allTimeLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+    for id in pairs(resetLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+    for _, id in ipairs(allIDs) do
+        addItemRow(id, resetLoot and resetLoot[id] or 0, allTimeLoot and allTimeLoot[id] or 0)
+    end
+
+    -- Beast breakdown
+    local perReset = globalPerBeastReset or {}
+    local perAll = globalPerBeast or {}
+    for _, lure in ipairs(LURES) do
+        local resetBl = perReset[lure.name]
+        local allTimeBl = perAll[lure.name]
+        if (resetBl and next(resetBl)) or (allTimeBl and next(allTimeBl)) then
+            csv = csv .. "\n" .. lure.name .. "\n"
+            csv = csv .. "Item,Reset Count,Reset Value (gold),All Time Count,All Time Value (gold)\n"
+            local beastIDs = {}
+            local beastSet = {}
+            for id in pairs(allTimeBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
+            for id in pairs(resetBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
+            for _, id in ipairs(beastIDs) do
+                addItemRow(id, resetBl and resetBl[id] or 0, allTimeBl and allTimeBl[id] or 0)
+            end
+        end
     end
     -- Show in scrollable copy window
     if not ns._exportFrame then
