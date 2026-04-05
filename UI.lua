@@ -766,7 +766,6 @@ travelBox:SetBackdropColor(0, 0, 0, 0.9)
 travelBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
 travelBox:SetFrameStrata("MEDIUM")
 travelBox:SetFrameLevel(201)
-travelBox:Hide()
 ns.travelBox = travelBox
 
 local function CreateTravelButton(index, itemInfo)
@@ -1792,16 +1791,14 @@ function ns.UpdateUI()
         wormholeBtn:Hide()
 
         -- Show + position active ones (below consumable box in header area)
-        -- Position travel box below consumable box
-        local travelY = contentTop - 2 - ns.CONS_BOX_HEIGHT - 2
-        ns.travelBox:ClearAllPoints()
-        ns.travelBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, travelY)
-        ns.travelBox:SetWidth(NAME_COL_WIDTH)
-
+        -- Position travel box below consumable box (anchored to it)
         local numTravel = #activeTravelBtns
-        local travelItemW = TRAVEL_ICON_SIZE + TRAVEL_SPACING
-        -- Center buttons inside travel box
-        local travelSpacing = numTravel > 0 and (NAME_COL_WIDTH / numTravel) or travelItemW
+        ns.travelBox:ClearAllPoints()
+        ns.travelBox:SetPoint("TOPLEFT", ns.consumableBox, "BOTTOMLEFT", 0, -2)
+        ns.travelBox:SetWidth(NAME_COL_WIDTH)
+        ns.travelBox:SetHeight(TRAVEL_ICON_SIZE + 8)
+
+        local travelSpacing = numTravel > 0 and math.max(NAME_COL_WIDTH / numTravel, TRAVEL_ICON_SIZE + TRAVEL_SPACING) or 0
         for idx, btn in ipairs(activeTravelBtns) do
             local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
             if tex then btn.icon:SetTexture(tex) end
