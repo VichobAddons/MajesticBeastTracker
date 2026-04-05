@@ -224,7 +224,12 @@ function ns.RefreshConsumableLabels()
                 consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
                 consumableButtons[i].glow:Hide()
             else
-                local cdRemaining = C_Spell.GetSpellCooldownRemaining(cons.spellID) or 0
+                local cdRemaining = 0
+                local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
+                if cdInfo and cdInfo.startTime and cdInfo.duration and cdInfo.duration > 0 then
+                    cdRemaining = (cdInfo.startTime + cdInfo.duration) - GetTime()
+                    if cdRemaining < 0 then cdRemaining = 0 end
+                end
                 if cdRemaining > 0 then
                     local cdText = cdRemaining >= 3600 and (math.ceil(cdRemaining / 3600) .. "h")
                         or cdRemaining >= 60 and (math.ceil(cdRemaining / 60) .. "m")
