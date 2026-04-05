@@ -30,6 +30,8 @@ local CONSUMABLES = {
     { itemID = 242299, name = "Sanguithorn Tea", buffName = "Relaxed", itemName = "Sanguithorn Tea", minLevel = 80 },
     { itemID = 241317, name = "Haranir Phial of Perception", buffName = "Haranir Phial of Perception", spellID = 1236763, itemName = "Haranir Phial of Perception", minLevel = 81 },
     { itemID = 238367, name = "Root Crab", buffName = "Midnight Perception", spellID = 1235216, itemName = "Root Crab", minLevel = 80, stackable = true },
+    { itemID = 237372, name = "Refulgent Razorstone", itemName = "Refulgent Razorstone", minLevel = 80, isToolEnchant = true },
+    { spellID = 1223388, name = "Sharpen Your Knife", isSpell = true, minLevel = 80 },
 }
 local NUM_EXTRA_COLS = #CONSUMABLES
 ns.CONSUMABLE_ITEMS = CONSUMABLES
@@ -724,211 +726,11 @@ for i = 1, #LURES do
     tsmPriceLabels[i] = priceLabel
 end
 
--- Consumable box (floating panel anchored to frame, same row as lure icons)
-local CONS_ICON_SIZE = 20
-local CONS_SPACING = 4
-local CONS_PAD = 6
-local CONS_LABEL_HEIGHT = 12
-local CONS_ITEM_WIDTH = CONS_ICON_SIZE + CONS_SPACING + 8
-local CONS_BOX_WIDTH = #CONSUMABLES * CONS_ITEM_WIDTH + CONS_PAD * 2
-local CONS_BOX_HEIGHT = CONS_ICON_SIZE + CONS_LABEL_HEIGHT + 10
-
-local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
-consumableBox:SetBackdrop(BACKDROP)
-consumableBox:SetBackdropColor(0, 0, 0, 0.9)
-consumableBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-consumableBox:SetFrameStrata("MEDIUM")
-consumableBox:SetFrameLevel(201)
-local consumableIcons = {}
-local consumableButtons = {}
-local consumableLabels = {}
-for i, cons in ipairs(CONSUMABLES) do
-    local btn = CreateFrame("Button", "MBT_ConsumableBtn" .. i, consumableBox, "SecureActionButtonTemplate")
-    btn:SetSize(CONS_ICON_SIZE, CONS_ICON_SIZE)
-    btn:SetFrameLevel(consumableBox:GetFrameLevel() + 1)
-    btn:SetAttribute("type", "item")
-    btn:SetAttribute("item", cons.itemName or "")
-    btn:RegisterForClicks("AnyUp", "AnyDown")
-    btn:Hide()
-    -- Cache item name async
-    C_Item.RequestLoadItemDataByID(cons.itemID)
-    local ticker
-    ticker = C_Timer.NewTicker(1, function()
-        local name = C_Item.GetItemNameByID(cons.itemID)
-        if name and not InCombatLockdown() then
-            btn:SetAttribute("item", name)
-            ticker:Cancel()
-        end
-    end, 10)
-
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    btn.icon = icon
-
-    -- Golden border glow (shown when item in bags but buff inactive)
-    -- Four edge textures around the icon
-    local glowSize = 2
-    local glowColor = {1, 0.75, 0, 0.9}
-    local glowTop = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowTop:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
-    glowTop:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
-    glowTop:SetHeight(glowSize)
-    glowTop:SetColorTexture(unpack(glowColor))
-    local glowBot = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowBot:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
-    glowBot:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
-    glowBot:SetHeight(glowSize)
-    glowBot:SetColorTexture(unpack(glowColor))
-    local glowLeft = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowLeft:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
-    glowLeft:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
-    glowLeft:SetWidth(glowSize)
-    glowLeft:SetColorTexture(unpack(glowColor))
-    local glowRight = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowRight:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
-    glowRight:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
-    glowRight:SetWidth(glowSize)
-    glowRight:SetColorTexture(unpack(glowColor))
-    local glowParts = {glowTop, glowBot, glowLeft, glowRight}
-    for _, g in ipairs(glowParts) do g:Hide() end
-    btn.glow = {
-        Show = function() for _, g in ipairs(glowParts) do g:Show() end end,
-        Hide = function() for _, g in ipairs(glowParts) do g:Hide() end end,
-    }
-
-    -- Hover border highlight
-    for _, info in ipairs({
-        {"TOPLEFT", "TOPRIGHT", true},
-        {"BOTTOMLEFT", "BOTTOMRIGHT", true},
-        {"TOPLEFT", "BOTTOMLEFT", false},
-        {"TOPRIGHT", "BOTTOMRIGHT", false},
-    }) do
-        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetColorTexture(1, 0.84, 0, 0.7)
-        if info[3] then
-            hl:SetPoint(info[1], icon, info[1], -1, 1)
-            hl:SetPoint(info[2], icon, info[2], 1, 1)
-            hl:SetHeight(1)
-        else
-            hl:SetPoint(info[1], icon, info[1], -1, 1)
-            hl:SetPoint(info[2], icon, info[2], -1, -1)
-            hl:SetWidth(1)
-        end
-    end
-
-    -- Tooltip
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-        GameTooltip:SetItemByID(cons.itemID)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click: Use item", 0.5, 0.8, 1)
-        GameTooltip:AddLine("Shift-click: Search in AH", 0.5, 0.8, 1)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- PreClick: block on shift (AH search) or if buff has >20% remaining
-    btn:SetScript("PreClick", function(self)
-        if InCombatLockdown() then return end
-        if IsShiftKeyDown() then
-            self:SetAttribute("type", nil)
-            return
-        end
-        -- Block if buff still has >20% duration left (skip for stackable buffs like Root Crab)
-        if not cons.stackable then
-            local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-            if not buffInfo and cons.itemName ~= cons.buffName then
-                buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
-            end
-            if buffInfo and buffInfo.duration and buffInfo.duration > 0 and buffInfo.expirationTime then
-                local remaining = buffInfo.expirationTime - GetTime()
-                if remaining / buffInfo.duration > 0.2 then
-                    self:SetAttribute("type", nil)
-                    if not self._blockedMsg or (GetTime() - self._blockedMsg) > 1 then
-                        if MajesticBeastTrackerDB.settings.chatNotify ~= false then
-                            local timeLeft = remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s")
-                            print("|cff3FC7EB[MBT]|r Buff still has " .. timeLeft .. " left. Not consumed.")
-                        end
-                        self._blockedMsg = GetTime()
-                    end
-                end
-            end
-        end
-    end)
-    btn:SetScript("PostClick", function(self)
-        -- Restore type attribute
-        if not InCombatLockdown() then
-            self:SetAttribute("type", "item")
-        end
-        if IsShiftKeyDown() then
-            if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
-                local itemName = C_Item.GetItemNameByID(cons.itemID)
-                if itemName then
-                    AuctionHouseFrame.SearchBar.SearchBox:SetText(itemName)
-                    AuctionHouseFrame.SearchBar.SearchButton:Click()
-                end
-            else
-                if MajesticBeastTrackerDB.settings.chatNotify ~= false then
-                    print("|cff3FC7EB[MBT]|r Open the Auction House first!")
-                end
-            end
-        end
-    end)
-
-    -- Status label to the right of icon (on consumableBox, high strata)
-    local label = consumableBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetFont(label:GetFont(), 10)
-    label:SetJustifyH("LEFT")
-
-    consumableIcons[i] = btn
-    consumableButtons[i] = btn
-    consumableLabels[i] = label
-end
-
--- Refresh consumable labels (called every 1s for real-time buff timers)
-function ns.RefreshConsumableLabels()
-    local playerLevel = UnitLevel("player")
-    for i, cons in ipairs(CONSUMABLES) do
-        local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
-        local count = C_Item.GetItemCount(cons.itemName or cons.itemID)
-        local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-        if not buffInfo and cons.spellID then
-            buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
-        end
-        local remaining = buffInfo and buffInfo.expirationTime and (buffInfo.expirationTime - GetTime()) or 0
-        if not meetsLevel then
-            consumableLabels[i]:SetText("Lv" .. cons.minLevel)
-            consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
-            consumableButtons[i].glow:Hide()
-        elseif cons.stackable and buffInfo and remaining > 0 then
-            local label = remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s")
-            if count > 0 then label = label .. " " .. count .. "x" end
-            consumableLabels[i]:SetText(label)
-            consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
-            if count > 0 then consumableButtons[i].glow:Show() else consumableButtons[i].glow:Hide() end
-        elseif buffInfo and remaining > 0 then
-            consumableLabels[i]:SetText(remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s"))
-            consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
-            consumableButtons[i].glow:Hide()
-        elseif count > 0 then
-            consumableLabels[i]:SetText(count .. "x")
-            consumableLabels[i]:SetTextColor(1, 1, 1)
-            consumableButtons[i].glow:Show()
-        else
-            consumableLabels[i]:SetText("0")
-            consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
-            consumableButtons[i].glow:Hide()
-        end
-    end
-end
 
 -- 1-second ticker for real-time consumable buff timers + route timer
 C_Timer.NewTicker(1, function()
     if frame:IsShown() then
         ns.RefreshConsumableLabels()
-        -- Live timer update
         if ns.IsTimerRunning() then
             timerLabel:SetText("|cff00ff00" .. ns.FormatTimerElapsed() .. "|r")
             timerBtn:SetWidth(math.max(timerLabel:GetStringWidth() + 4, 40))
@@ -1382,8 +1184,8 @@ function ns.UpdateUI()
         ns.iconSep:ClearAllPoints()
         ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
         ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-        consumableBox:ClearAllPoints()
-        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
+        ns.consumableBox:ClearAllPoints()
+        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
     end
 
 
@@ -1879,41 +1681,43 @@ function ns.UpdateUI()
     local visibleConsIdx = 0
     for i, cons in ipairs(CONSUMABLES) do
         local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
-        consumableIcons[i].icon:SetDesaturated(not meetsLevel)
-        consumableIcons[i].icon:SetAlpha(meetsLevel and 1.0 or 0.4)
+        ns.consumableIcons[i].icon:SetDesaturated(not meetsLevel)
+        ns.consumableIcons[i].icon:SetAlpha(meetsLevel and 1.0 or 0.4)
 
         -- Update icon texture
         local tex = C_Item.GetItemIconByID(cons.itemID)
-        if tex then consumableIcons[i].icon:SetTexture(tex) end
+        if tex then ns.consumableIcons[i].icon:SetTexture(tex) end
 
         -- Position button in consumable box (respect show/hide setting)
         if not InCombatLockdown() then
-            local btn = consumableButtons[i]
+            local btn = ns.consumableButtons[i]
             local showKey = "consShow_" .. cons.itemID
             local isVisible = MajesticBeastTrackerDB.settings[showKey] ~= false
             if isVisible and frame:IsShown() then
                 btn:ClearAllPoints()
-                btn:SetPoint("TOPLEFT", consumableBox, "TOPLEFT",
-                    CONS_PAD + visibleConsIdx * CONS_ITEM_WIDTH, -CONS_PAD)
-                consumableLabels[i]:ClearAllPoints()
-                consumableLabels[i]:SetPoint("TOP", btn, "BOTTOM", 0, -1)
-                consumableLabels[i]:SetJustifyH("CENTER")
+                btn:SetPoint("TOPLEFT", ns.consumableBox, "TOPLEFT",
+                    ns.CONS_PAD + visibleConsIdx * ns.CONS_ITEM_WIDTH, -ns.CONS_PAD)
+                ns.consumableLabels[i]:ClearAllPoints()
+                ns.consumableLabels[i]:SetPoint("TOP", btn, "BOTTOM", 0, -1)
+                ns.consumableLabels[i]:SetJustifyH("CENTER")
                 btn:Show()
-                consumableLabels[i]:Show()
+                ns.consumableLabels[i]:Show()
                 visibleConsIdx = visibleConsIdx + 1
             else
                 btn:Hide()
-                consumableLabels[i]:Hide()
+                ns.consumableLabels[i]:Hide()
             end
         end
     end
 
-    -- Hide consumable box if no visible consumables
+    -- Resize and show/hide consumable box based on visible count
     if not InCombatLockdown() then
         if visibleConsIdx > 0 and frame:IsShown() then
-            consumableBox:Show()
+            local consWidth = ns.CONS_PAD * 2 + visibleConsIdx * ns.CONS_ITEM_WIDTH
+            ns.consumableBox:SetWidth(math.max(consWidth, NAME_COL_WIDTH))
+            ns.consumableBox:Show()
         else
-            consumableBox:Hide()
+            ns.consumableBox:Hide()
         end
     end
 
@@ -1934,8 +1738,8 @@ function ns.UpdateUI()
     local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
     local hasTravelBtns = #activeTravelBtns > 0
     local travelRowExtra = hasTravelBtns and (TRAVEL_ICON_SIZE + 4) or 0
-    local consExtra = CONS_BOX_HEIGHT + 2 + travelRowExtra
-    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + consExtra + statsExtra + tsmTotalExtra + PAD + 4
+    local bottomExtra = travelRowExtra
+    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + bottomExtra + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
@@ -1946,9 +1750,9 @@ function ns.UpdateUI()
 
         -- Title moved to toolbar (MBT vX)
 
-        -- Position consumable box below divider
-        consumableBox:ClearAllPoints()
-        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, divY - 4)
+        -- Position consumable box in header area (old title space)
+        ns.consumableBox:ClearAllPoints()
+        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2)
         -- Divider between char rows and bottom bar
         ns.travelSep:ClearAllPoints()
         ns.travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
@@ -1961,7 +1765,7 @@ function ns.UpdateUI()
 
         -- Show + position active ones (below consumable box)
         local travelStartX = PAD + 4
-        local travelY = divY - CONS_BOX_HEIGHT - 6
+        local travelY = divY - ns.CONS_BOX_HEIGHT - 6
         for idx, btn in ipairs(activeTravelBtns) do
             local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
             if tex then btn.icon:SetTexture(tex) end
@@ -1984,7 +1788,7 @@ function ns.UpdateUI()
         -- Position stats on the right side of bottom row (2-row layout when narrow)
         local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
         local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
-        local statsY = divY - 4 - CONS_BOX_HEIGHT / 2
+        local statsY = divY - 4 - ns.CONS_BOX_HEIGHT / 2
         if hasAnyStats then
             -- Collect visible stats
             local visibleStats = {}
@@ -2003,7 +1807,7 @@ function ns.UpdateUI()
                 totalStatsWidth = totalStatsWidth + statsTexts[si]:GetStringWidth() + 6
             end
             -- Available space: frame width minus consumable box
-            local availableWidth = w - CONS_BOX_WIDTH - PAD * 2 - 16
+            local availableWidth = w - ns.CONS_BOX_WIDTH - PAD * 2 - 16
             local useTwoRows = totalStatsWidth > availableWidth and #visibleStats > 2
             if useTwoRows then
                 -- Two rows: top row = first half, bottom row = second half
@@ -2011,7 +1815,7 @@ function ns.UpdateUI()
                 local rowHeight = 7
                 -- Top row: first half (Skl, Per)
                 local statsX = w - PAD - 4
-                local topRowY = divY - 4 - CONS_BOX_HEIGHT / 2 + rowHeight
+                local topRowY = divY - 4 - ns.CONS_BOX_HEIGHT / 2 + rowHeight
                 for ri = half, 1, -1 do
                     local si = visibleStats[ri]
                     statsTexts[si]:ClearAllPoints()
@@ -2021,7 +1825,7 @@ function ns.UpdateUI()
                 end
                 -- Bottom row: second half (Fin, Dft)
                 statsX = w - PAD - 4
-                local bottomRowY = divY - 4 - CONS_BOX_HEIGHT / 2 - rowHeight
+                local bottomRowY = divY - 4 - ns.CONS_BOX_HEIGHT / 2 - rowHeight
                 statsY = bottomRowY
                 for ri = #visibleStats, half + 1, -1 do
                     local si = visibleStats[ri]
@@ -2248,7 +2052,7 @@ combatFrame:SetScript("OnEvent", function(_, event)
         if frame:IsShown() then
             frame._hiddenByCombat = true
             frame:Hide()
-            consumableBox:Hide()
+            ns.consumableBox:Hide()
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if frame._hiddenByCombat then
@@ -2339,8 +2143,8 @@ function ns.HideFrame()
     MajesticBeastTrackerDB.settings.showFrame = false
     -- Hide consumable buttons and box
     if not InCombatLockdown() then
-        for _, btn in ipairs(consumableButtons) do btn:Hide() end
-        consumableBox:Hide()
+        for _, btn in ipairs(ns.consumableButtons) do btn:Hide() end
+        ns.consumableBox:Hide()
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
     end

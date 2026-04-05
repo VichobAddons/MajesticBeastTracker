@@ -553,6 +553,45 @@ local function ParseStatsFromText(text, stats)
     end
 end
 
+-- Check if skinning tool has temporary enchant (e.g. Razor Sharp from Razorstone)
+-- Returns: remainingSeconds (0 if not active), isActive
+function ns.GetToolEnchantRemaining()
+    local gear = DetectSkinningGear()
+    if not gear or #gear == 0 then return 0, false end
+    local tip = CreateFrame("GameTooltip", "MBT_EnchantScanTip", nil, "GameTooltipTemplate")
+    tip:SetOwner(UIParent, "ANCHOR_NONE")
+    for _, item in ipairs(gear) do
+        if item.slotID then
+            tip:ClearLines()
+            tip:SetInventoryItem("player", item.slotID)
+            for i = 1, tip:NumLines() do
+                local line = _G["MBT_EnchantScanTipTextLeft" .. i]
+                if line then
+                    local text = line:GetText()
+                    if text then
+                        -- Look for time pattern: "(X hours)", "(X hour)", "(X min)", "(X sec)"
+                        -- or localized: "(2 Stunden)", "(2 heures)" etc.
+                        -- Generic: find a line with parenthesized duration near stat keywords
+                        local hours = text:match("(%d+)%s*[Hh]ou?r")
+                            or text:match("(%d+)%s*[Ss]tund")  -- German
+                            or text:match("(%d+)%s*[Hh]eure")  -- French
+                        local mins = text:match("(%d+)%s*[Mm]in")
+                        if hours or mins then
+                            local secs = (tonumber(hours) or 0) * 3600 + (tonumber(mins) or 0) * 60
+                            if secs > 0 then
+                                tip:Hide()
+                                return secs, true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    tip:Hide()
+    return 0, false
+end
+
 -- Get invested points for a single node (not recursive)
 local function GetNodePoints(configID, nodeID)
     local info = C_Traits.GetNodeInfo(configID, nodeID)
