@@ -391,11 +391,6 @@ local function InitSettings()
     sLootTSM:SetValueChangedCallback(function() ns.UpdateUI() end)
     cbLootTSM:AddShownPredicate(isLootExpanded)
 
-    local sLootHover = Settings.RegisterAddOnSetting(category, "MBT_lootSummaryDisableHover", "lootSummaryDisableHover",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Disable Loot Hover Tooltip", false)
-    local cbLootHover = Settings.CreateCheckbox(category, sLootHover, "Disable the hover tooltip on the loot summary button. Click the button to open a separate summary window instead.")
-    cbLootHover:AddShownPredicate(isLootExpanded)
-
     --------------------------------------------------------
     -- Expandable: Warband Bank
     --------------------------------------------------------
