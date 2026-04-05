@@ -1685,13 +1685,20 @@ function ns.UpdateUI()
         ns.consumableIcons[i].icon:SetAlpha(meetsLevel and 1.0 or 0.4)
 
         -- Update icon texture
-        local tex = C_Item.GetItemIconByID(cons.itemID)
-        if tex then ns.consumableIcons[i].icon:SetTexture(tex) end
+        if cons.isSpell then
+            local spellInfo = C_Spell.GetSpellInfo(cons.spellID)
+            if spellInfo and spellInfo.iconID then
+                ns.consumableIcons[i].icon:SetTexture(spellInfo.iconID)
+            end
+        elseif cons.itemID then
+            local tex = C_Item.GetItemIconByID(cons.itemID)
+            if tex then ns.consumableIcons[i].icon:SetTexture(tex) end
+        end
 
         -- Position button in consumable box (respect show/hide setting)
         if not InCombatLockdown() then
             local btn = ns.consumableButtons[i]
-            local showKey = "consShow_" .. cons.itemID
+            local showKey = "consShow_" .. (cons.itemID or cons.spellID)
             local isVisible = MajesticBeastTrackerDB.settings[showKey] ~= false
             if isVisible and frame:IsShown() then
                 btn:ClearAllPoints()

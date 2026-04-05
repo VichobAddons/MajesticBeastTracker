@@ -329,7 +329,7 @@ local function InitSettings()
 
     for _, cons in ipairs(CONSUMABLES) do
         -- Show/hide toggle
-        local showKey = "consShow_" .. cons.itemID
+        local showKey = "consShow_" .. (cons.itemID or cons.spellID)
         if MajesticBeastTrackerDB.settings[showKey] == nil then
             MajesticBeastTrackerDB.settings[showKey] = CONS_DEFAULTS[cons.itemID] ~= nil and CONS_DEFAULTS[cons.itemID] or true
         end
@@ -341,7 +341,7 @@ local function InitSettings()
         cbShow:AddShownPredicate(isConsExpanded)
 
         -- Stock slider
-        local flatKey = "consStock_" .. cons.itemID
+        local flatKey = "consStock_" .. (cons.itemID or cons.spellID)
         if MajesticBeastTrackerDB.settings[flatKey] == nil then
             MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
         end
