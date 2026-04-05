@@ -1185,18 +1185,27 @@ function ns.UpdateUI()
                 headerIcons[i]:Hide()
             else
                 headerIcons[i]:ClearAllPoints()
+                -- Center lure icons vertically relative to cons+travel area
+                local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
+                local lureH = ICON_SIZE + ZONE_LABEL_HEIGHT + 2
+                local lureVCenter = (consTravelH - lureH) / 2
                 headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
                     PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
-                    contentTop - 2 - reagentExtra)
+                    contentTop - 2 - reagentExtra - lureVCenter)
                 zoneLabels[i]:ClearAllPoints()
                 zoneLabels[i]:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
             end
         end
-        ns.iconSep:ClearAllPoints()
-        ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
-        ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
+        -- Position consumable box at contentTop
         ns.consumableBox:ClearAllPoints()
-        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
+        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2)
+        -- iconSep: below whichever is taller (lure icons or consumable+travel)
+        local lureSepY = contentTop - reagentExtra - ICON_ROW_HEIGHT - 2
+        local consSepY = contentTop - 2 - ns.CONS_BOX_HEIGHT - 2 - TRAVEL_ICON_SIZE - 8 - 4
+        local sepY = math.min(lureSepY, consSepY)
+        ns.iconSep:ClearAllPoints()
+        ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, sepY)
+        ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
     end
 
 
@@ -1784,9 +1793,7 @@ function ns.UpdateUI()
 
         -- Title moved to toolbar (MBT vX)
 
-        -- Position consumable box in header area (old title space)
-        ns.consumableBox:ClearAllPoints()
-        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2)
+        -- consumableBox already positioned above
         -- Travel separator hidden (travel buttons moved to header)
         ns.travelSep:Hide()
 
