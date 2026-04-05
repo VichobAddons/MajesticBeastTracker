@@ -758,6 +758,17 @@ ns.travelSep:SetHeight(1)
 ns.travelSep:SetColorTexture(unpack(C_SEPARATOR))
 ns.travelSep:Hide()
 
+-- Travel box (border container, same style as consumable box)
+local travelBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+travelBox:SetSize(NAME_COL_WIDTH, TRAVEL_ICON_SIZE + 8)
+travelBox:SetBackdrop(BACKDROP)
+travelBox:SetBackdropColor(0, 0, 0, 0.9)
+travelBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
+travelBox:SetFrameStrata("MEDIUM")
+travelBox:SetFrameLevel(201)
+travelBox:Hide()
+ns.travelBox = travelBox
+
 local function CreateTravelButton(index, itemInfo)
     local btn = CreateFrame("Button", "MBT_TravelBtn" .. index, frame, "SecureActionButtonTemplate")
     btn:SetSize(TRAVEL_ICON_SIZE, TRAVEL_ICON_SIZE)
@@ -1759,9 +1770,7 @@ function ns.UpdateUI()
     local statsExtra = 0  -- stats now shares row with consumable box
     local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
     local hasTravelBtns = #activeTravelBtns > 0
-    local travelRowExtra = hasTravelBtns and (TRAVEL_ICON_SIZE + 4) or 0
-    local bottomExtra = travelRowExtra
-    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + bottomExtra + statsExtra + tsmTotalExtra + PAD + 4
+    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + statsExtra + tsmTotalExtra + PAD + 4
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
@@ -1775,26 +1784,31 @@ function ns.UpdateUI()
         -- Position consumable box in header area (old title space)
         ns.consumableBox:ClearAllPoints()
         ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2)
-        -- Divider between char rows and bottom bar
-        ns.travelSep:ClearAllPoints()
-        ns.travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
-        ns.travelSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-        ns.travelSep:Show()
+        -- Travel separator hidden (travel buttons moved to header)
+        ns.travelSep:Hide()
 
         -- Hide all first
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
 
-        -- Show + position active ones (below consumable box)
-        local travelStartX = PAD + 4
-        local travelY = divY - ns.CONS_BOX_HEIGHT - 6
+        -- Show + position active ones (below consumable box in header area)
+        -- Position travel box below consumable box
+        local travelY = contentTop - 2 - ns.CONS_BOX_HEIGHT - 2
+        ns.travelBox:ClearAllPoints()
+        ns.travelBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, travelY)
+        ns.travelBox:SetWidth(NAME_COL_WIDTH)
+
+        local numTravel = #activeTravelBtns
+        local travelItemW = TRAVEL_ICON_SIZE + TRAVEL_SPACING
+        -- Center buttons inside travel box
+        local travelSpacing = numTravel > 0 and (NAME_COL_WIDTH / numTravel) or travelItemW
         for idx, btn in ipairs(activeTravelBtns) do
             local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
             if tex then btn.icon:SetTexture(tex) end
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                travelStartX + (idx - 1) * (TRAVEL_ICON_SIZE + TRAVEL_SPACING),
-                travelY)
+            btn:SetParent(ns.travelBox)
+            local xOff = (idx - 1) * travelSpacing + (travelSpacing - TRAVEL_ICON_SIZE) / 2
+            btn:SetPoint("TOPLEFT", ns.travelBox, "TOPLEFT", xOff, -4)
             -- Update cooldown sweep
             local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
             if start and duration and duration > 0 then
@@ -1806,11 +1820,16 @@ function ns.UpdateUI()
                 btn:Show()
             end
         end
+        if numTravel > 0 and frame:IsShown() then
+            ns.travelBox:Show()
+        else
+            ns.travelBox:Hide()
+        end
 
         -- Position stats on the right side of bottom row (2-row layout when narrow)
         local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
         local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
-        local statsY = divY - 4 - ns.CONS_BOX_HEIGHT / 2
+        local statsY = divY - 4
         if hasAnyStats then
             -- Collect visible stats
             local visibleStats = {}
@@ -1837,7 +1856,7 @@ function ns.UpdateUI()
                 local rowHeight = 7
                 -- Top row: first half (Skl, Per)
                 local statsX = w - PAD - 4
-                local topRowY = divY - 4 - ns.CONS_BOX_HEIGHT / 2 + rowHeight
+                local topRowY = divY - 4 + rowHeight
                 for ri = half, 1, -1 do
                     local si = visibleStats[ri]
                     statsTexts[si]:ClearAllPoints()
@@ -1847,7 +1866,7 @@ function ns.UpdateUI()
                 end
                 -- Bottom row: second half (Fin, Dft)
                 statsX = w - PAD - 4
-                local bottomRowY = divY - 4 - ns.CONS_BOX_HEIGHT / 2 - rowHeight
+                local bottomRowY = divY - 4 - rowHeight
                 statsY = bottomRowY
                 for ri = #visibleStats, half + 1, -1 do
                     local si = visibleStats[ri]
