@@ -1092,6 +1092,82 @@ local lsHistoryBtn = CreateToolbarButton(lsToolbar,
     nil, nil)
 lsHistoryBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsHistoryBtn:SetPoint("RIGHT", lsBreakdownBtn, "LEFT", -2, 0)
+
+-- Export CSV button
+local lsExportBtn = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_ExportData",
+    function(self)
+        GameTooltip:AddLine("Export CSV", 1, 1, 1)
+        GameTooltip:AddLine("Copy loot data to clipboard", 0.5, 0.8, 1, true)
+    end,
+    nil, nil)
+lsExportBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsExportBtn:SetPoint("RIGHT", lsHistoryBtn, "LEFT", -2, 0)
+lsExportBtn.icon:SetTexCoord(0, 1, 0, 1)
+lsExportBtn:SetScript("OnClick", function()
+    local csv = "Item,Reset Count,Reset Value,All Time Count,All Time Value\n"
+    ns.EnsureDB()
+    local resetLoot, allTimeLoot, globalPrices
+    if ns.lootSummaryHistoryMode and ns.lootSummaryHistoryPage > 0 then
+        resetLoot = {}
+        globalPrices = {}
+        for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+            if charData.loot and charData.loot.history then
+                local entry = charData.loot.history[ns.lootSummaryHistoryPage]
+                if entry then
+                    for id, count in pairs(entry.items or {}) do
+                        resetLoot[id] = (resetLoot[id] or 0) + count
+                    end
+                    if entry.prices then
+                        for id, price in pairs(entry.prices) do
+                            if not globalPrices[id] then globalPrices[id] = price end
+                        end
+                    end
+                end
+            end
+        end
+        _, allTimeLoot = ns.GetGlobalLoot()
+    else
+        resetLoot, allTimeLoot, globalPrices = ns.GetGlobalLoot()
+    end
+    local hasTSM = TSM_API ~= nil
+    local allIDs = {}
+    local idSet = {}
+    for id in pairs(allTimeLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+    for id in pairs(resetLoot or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
+    for _, id in ipairs(allIDs) do
+        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+        local rc = resetLoot and resetLoot[id] or 0
+        local ac = allTimeLoot and allTimeLoot[id] or 0
+        local rv, av = 0, 0
+        if hasTSM then
+            local price = globalPrices and globalPrices[id] or ns.GetTSMPrice(id)
+            if price then rv = rc * price; av = ac * price end
+        end
+        csv = csv .. string.format("%s,%d,%d,%d,%d\n", name:gsub(",", ";"), rc, rv, ac, av)
+    end
+    -- Show in copy dialog
+    StaticPopupDialogs["MBT_EXPORT_CSV"] = {
+        text = "Copy CSV data (Ctrl+C):",
+        button1 = CLOSE,
+        whileDead = true,
+        hasEditBox = true,
+        editBoxWidth = 400,
+        OnShow = function(dialog)
+            local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
+            editBox:SetText(csv)
+            editBox:SetAutoFocus(true)
+            editBox:HighlightText()
+            editBox:SetScript("OnEscapePressed", function() dialog:Hide() end)
+        end,
+        OnHide = function(dialog)
+            local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
+            editBox:SetScript("OnEscapePressed", nil)
+        end,
+        timeout = 0, hideOnEscape = true,
+    }
+    StaticPopup_Show("MBT_EXPORT_CSV")
+end)
 lsHistoryBtn.icon:SetTexCoord(0, 1, 0, 1)
 lsHistoryBtn.icon:SetAlpha(0.4)
 lsHistoryBtn:SetScript("OnClick", function()
@@ -1180,7 +1256,20 @@ ns.lsCalendar = ns.CreateCalendarPicker(ns.lootSummary, function(dateStr)
     lootSumTitle:SetText("History — No data for " .. dateStr)
     ns.lsCalendar:Hide()
 end)
-ns.lsCalendar:SetPoint("TOPLEFT", ns.lootSummary, "BOTTOMLEFT", 0, -4)
+-- Position calendar: same side as loot summary relative to main frame (always outward)
+local function RepositionCalendar()
+    ns.lsCalendar:ClearAllPoints()
+    local frameCenter = ns.frame:GetCenter() or 0
+    local sumCenter = ns.lootSummary:GetCenter() or 0
+    if sumCenter < frameCenter then
+        -- Summary is left of main → calendar goes further left
+        ns.lsCalendar:SetPoint("TOPRIGHT", ns.lootSummary, "TOPLEFT", -4, 0)
+    else
+        -- Summary is right of main → calendar goes further right
+        ns.lsCalendar:SetPoint("TOPLEFT", ns.lootSummary, "TOPRIGHT", 4, 0)
+    end
+end
+ns.lsCalendar:SetScript("OnShow", RepositionCalendar)
 
 -- Update calendar highlight dates from history
 local function UpdateCalendarHighlights()
@@ -1205,7 +1294,6 @@ lsHistoryBtn:SetScript("OnClick", function()
     ns.lootSummaryHistoryMode = not ns.lootSummaryHistoryMode
     lsHistoryBtn.icon:SetAlpha(ns.lootSummaryHistoryMode and 1.0 or 0.4)
     if ns.lootSummaryHistoryMode then
-        ns.lootSummaryHistoryPage = 1
         lsPageLeft:Show()
         lsPageRight:Show()
         UpdateCalendarHighlights()
@@ -1215,9 +1303,10 @@ lsHistoryBtn:SetScript("OnClick", function()
         lsPageLeft:Hide()
         lsPageRight:Hide()
         ns.lsCalendar:Hide()
+        -- Return to current reset data
+        if ns._populateLootSummary then ns._populateLootSummary() end
+        if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
     end
-    if ns._populateLootSummary then ns._populateLootSummary() end
-    if ns._lootSumScrollbar then ns._lootSumScrollbar:SetValue(0) end
 end)
 
 -- Reset history on hide
