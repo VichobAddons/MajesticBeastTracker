@@ -65,6 +65,53 @@
 - **OnHide cascading** — Closing the main window cascades to all sub-windows
 - **Smart positioning** — All windows auto-reposition on drag, calendar follows loot summary
 
+### Settings Dropdown (NEW)
+- **Toolbar gear icon** — Quick settings access from the tracker toolbar
+- **Fly-out submenus** — Hover a category to open its settings panel beside the main menu
+- **Categories** — Route, Reagents & AH, Consumables, Loot Tracking, Warband Bank, Display, Borders
+- **Enabled/Disabled** — Green/red status labels for each toggle
+- **Auto-Hide button** — Moved to left side of toolbar for quick toggle
+
+### Travel Bar (Enhanced)
+- **Dalaran Hearthstone** — Added as static travel button
+- **Hearthstone toy selector** — Drag any Hearthstone toy onto the HS slot to replace it (validates via tooltip text)
+- **Shift+Right-click** — Reset custom HS back to default
+- **Mage Teleport: Silvermoon** — Class-conditional travel button (classID 8)
+- **Vulpera Return to Camp** — Race-conditional travel button (raceID 35)
+- **Spell travel buttons** — Full support for spell-type travel (icon, cooldown, tooltip, secure action)
+
+### Consumable Bar (Enhanced)
+- **Sharpen Your Knife charges** — Shows X/Y charges with recharge timer, cooldown sweep when 0 charges
+- **Razorstone auto-apply** — Click Razorstone icon, then click tool icon next to character name to apply enchant
+- **Tool icon on tracker** — Skinning tool shown next to current character name when Razorstone is active and no enchant applied
+- **Secret value taint fix** — All spell charge/cooldown logic inside pcall for instanced content
+
+### Buff Tracking (NEW)
+- **Kill-time buff snapshot** — Active consumable buffs recorded per beast kill (tea, phial, crab, razorstone, sharpen knife)
+- **History integration** — Buff data archived with daily loot history (90 days)
+- **Loot editor display** — "Buffs:" line shown in per-character loot editor (current day + history)
+- **CSV export** — Active Buffs column added to CSV export (semicolon-separated per beast)
+
+### Lure Bag Tracking (NEW)
+- **Pre-crafted lure detection** — Tracks lures already in bags per character
+- **Reagent count reduction** — Characters with lures in bags excluded from reagent need calculations
+- **Cap at 1** — Only one lure per type matters (soulbound, one use per day)
+
+### Locale Support
+- **Stat parsing** — Skill, Perception, Finesse, Deftness names resolved from spell IDs (locale-safe)
+- **Talented Tracker** — Detection via pathNode ID 106119 instead of English name search (fixes "Locked" on non-English clients)
+- **TalentData.lua** — New module with all 10 skinning talent path IDs for locale-safe talent detection
+- **Numeric IDs** — ClassID/RaceID used for Mage/Vulpera travel button detection
+
+### Instance Guard (NEW)
+- **Disable in instances** — Addon hides and stops processing in dungeons, raids, PvP, arenas, scenarios (including Delves)
+- **Toggleable** — Settings > Display > "Disable in Instances" (default ON)
+- **Chat notification** — Shows message when trying to open tracker in instance
+
+### Bottom Bar (NEW)
+- **Dedicated bottom bar** — Timer, Total Needed (gold), and Logout button in a styled bar
+- **Consistent theme** — Same dark background and gold separator as top toolbar
+
 ### Warband Bank
 - **Taint warning** — Added note in Warband Bank settings about potential bag interaction issues after depositing
 
