@@ -573,6 +573,9 @@ local function GetInvestedPointsForTree(configID, rootNodeID)
     return totalPoints
 end
 
+-- Talented Tracker pathNode ID (locale-safe, from profession data)
+local TALENTED_TRACKER_PATH_NODE = 106119
+
 local function DetectTalentedTrackerPoints()
     if not HasSkinning() then return 0 end
     if not C_ProfSpecs then return 0 end
@@ -580,6 +583,17 @@ local function DetectTalentedTrackerPoints()
     local ok, configID = pcall(C_ProfSpecs.GetConfigIDForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
     if not ok or not configID or configID == 0 then return 0 end
 
+    -- Try direct pathNode ID first (locale-safe)
+    local ok1, points = pcall(function()
+        local nodeInfo = C_Traits.GetNodeInfo(configID, TALENTED_TRACKER_PATH_NODE)
+        if nodeInfo and nodeInfo.activeRank and nodeInfo.activeRank > 0 then
+            return GetInvestedPointsForTree(configID, TALENTED_TRACKER_PATH_NODE)
+        end
+        return 0
+    end)
+    if ok1 and points and points > 0 then return points end
+
+    -- Fallback: search by tab name (in case node ID changes)
     local ok2, tabIDs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
     if not ok2 or not tabIDs then return 0 end
 
