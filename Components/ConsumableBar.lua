@@ -37,6 +37,19 @@ for i, cons in ipairs(CONSUMABLES) do
     if cons.isSpell then
         btn:SetAttribute("type", "spell")
         btn:SetAttribute("spell", cons.spellID)
+    elseif cons.isToolEnchant then
+        -- Click uses razorstone + opens skinning profession window for easy tool click
+        btn:SetAttribute("type", "item")
+        btn:SetAttribute("item", cons.itemName or "")
+        C_Item.RequestLoadItemDataByID(cons.itemID)
+        local ticker
+        ticker = C_Timer.NewTicker(1, function()
+            local name = C_Item.GetItemNameByID(cons.itemID)
+            if name and not InCombatLockdown() then
+                btn:SetAttribute("item", name)
+                ticker:Cancel()
+            end
+        end, 10)
     else
         btn:SetAttribute("type", "item")
         btn:SetAttribute("item", cons.itemName or "")
@@ -142,8 +155,8 @@ for i, cons in ipairs(CONSUMABLES) do
             self:SetAttribute("type", nil)
             return
         end
-        -- Block if buff still has >20% duration left (skip for stackable buffs and spells)
-        if not cons.stackable and not cons.isSpell then
+        -- Block if buff still has >20% duration left (skip for stackable, spells, and tool enchants)
+        if not cons.stackable and not cons.isSpell and not cons.isToolEnchant then
             local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
             if not buffInfo and cons.itemName ~= cons.buffName then
                 buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")

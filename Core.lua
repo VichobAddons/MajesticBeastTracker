@@ -554,59 +554,10 @@ end
 -- Talented Tracker auto-detection
 ------------------------------------------------------
 
-local function GetInvestedPointsForTree(configID, rootNodeID)
-    local todo = { rootNodeID }
-    local totalPoints = 0
-    while #todo > 0 do
-        local nodeID = table.remove(todo)
-        local children = C_ProfSpecs.GetChildrenForPath(nodeID)
-        if children then
-            for _, childID in ipairs(children) do
-                table.insert(todo, childID)
-            end
-        end
-        local info = C_Traits.GetNodeInfo(configID, nodeID)
-        if info and info.activeRank and info.activeRank > 0 then
-            totalPoints = totalPoints + info.activeRank
-        end
-    end
-    return totalPoints
-end
-
--- Talented Tracker pathNode ID (locale-safe, from profession data)
-local TALENTED_TRACKER_PATH_NODE = 106119
-
+-- Talented Tracker detection delegated to TalentData.lua (locale-safe pathNode IDs)
 local function DetectTalentedTrackerPoints()
     if not HasSkinning() then return 0 end
-    if not C_ProfSpecs then return 0 end
-
-    local ok, configID = pcall(C_ProfSpecs.GetConfigIDForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
-    if not ok or not configID or configID == 0 then return 0 end
-
-    -- Try direct pathNode ID first (locale-safe)
-    local ok1, points = pcall(function()
-        local nodeInfo = C_Traits.GetNodeInfo(configID, TALENTED_TRACKER_PATH_NODE)
-        if nodeInfo and nodeInfo.activeRank and nodeInfo.activeRank > 0 then
-            return GetInvestedPointsForTree(configID, TALENTED_TRACKER_PATH_NODE)
-        end
-        return 0
-    end)
-    if ok1 and points and points > 0 then return points end
-
-    -- Fallback: search by tab name (in case node ID changes)
-    local ok2, tabIDs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
-    if not ok2 or not tabIDs then return 0 end
-
-    for _, tabID in ipairs(tabIDs) do
-        local ok3, tabInfo = pcall(C_ProfSpecs.GetTabInfo, tabID)
-        if ok3 and tabInfo and tabInfo.name then
-            if tabInfo.name:lower():find("tracker") then
-                return GetInvestedPointsForTree(configID, tabInfo.rootNodeID)
-            end
-        end
-    end
-
-    return 0
+    return ns.GetTrackerPoints and ns.GetTrackerPoints() or 0
 end
 
 ------------------------------------------------------
@@ -1343,6 +1294,10 @@ local function DetectSkinningAndTalent()
         local points = DetectTalentedTrackerPoints()
         if points > 0 then
             charData.talentPoints = points
+        end
+        -- Save full talent breakdown (all paths)
+        if ns.SaveTalentData then
+            ns.SaveTalentData(charData)
         end
         -- Save profession gear
         local gear = DetectSkinningGear()

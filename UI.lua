@@ -406,8 +406,15 @@ local function DefineCategories()
         local t = {}
         for _, lure in ipairs(ns.LURES) do
             local ln = lure.name
-            t[#t + 1] = { text = "Skip " .. ln, get = function() return s.routeSkip and s.routeSkip[ln] end,
-                set = function() if not s.routeSkip then s.routeSkip = {} end; s.routeSkip[ln] = not s.routeSkip[ln] end }
+            local flatKey = "routeSkip_" .. ln:gsub("[%s']", "")
+            t[#t + 1] = { text = "Skip " .. ln, get = function()
+                return (s.routeSkip and s.routeSkip[ln]) or s[flatKey] or false
+            end, set = function()
+                if not s.routeSkip then s.routeSkip = {} end
+                local newVal = not ((s.routeSkip[ln]) or s[flatKey] or false)
+                s.routeSkip[ln] = newVal
+                s[flatKey] = newVal
+            end }
         end
         t[#t + 1] = { text = "Hide Skipped Columns", get = function() return s.routeHideSkipped end, set = function() s.routeHideSkipped = not s.routeHideSkipped end }
         t[#t + 1] = { text = "Auto-Waypoint", get = function() return s.autoRouteWaypoint end, set = function() s.autoRouteWaypoint = not s.autoRouteWaypoint end }
@@ -1456,6 +1463,35 @@ local function CreateCharRow(index)
     row.name = nameBtn
     row.nameLabel = nameLabel
 
+    -- Tool icon (shown inside name cell, left side, for current char when Razorstone is active)
+    local toolIcon = CreateFrame("Button", "MBT_ToolIcon" .. index, frame, "SecureActionButtonTemplate")
+    toolIcon:SetSize(ROW_HEIGHT - 2, ROW_HEIGHT - 2)
+    -- Position set dynamically in UpdateUI (anchored to frame, not nameBtn)
+    toolIcon:RegisterForClicks("AnyUp", "AnyDown")
+    toolIcon:SetFrameLevel(nameBtn:GetFrameLevel() + 5)
+    toolIcon:Hide()
+    local toolTex = toolIcon:CreateTexture(nil, "ARTWORK")
+    toolTex:SetAllPoints()
+    toolTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    toolIcon.icon = toolTex
+    -- Golden hover border
+    local toolHl = toolIcon:CreateTexture(nil, "HIGHLIGHT")
+    toolHl:SetAllPoints()
+    toolHl:SetColorTexture(1, 0.84, 0, 0.3)
+    toolIcon:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.slotID then
+            GameTooltip:SetInventoryItem("player", self.slotID)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click to apply enchant", 0.7, 0.7, 0.7)
+        end
+        GameTooltip:Show()
+    end)
+    toolIcon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- Secure macro: /use <slotID> applies enchant cursor to that slot
+    toolIcon:SetAttribute("type", "macro")
+    row.toolIcon = toolIcon
+
     row.cells = {}
     for i = 1, #LURES do
         local cell = CreateFrame("Button", nil, frame)
@@ -2025,6 +2061,65 @@ function ns.UpdateUI()
         if isCharHidden then name = name .. " |cff666666(hidden)|r" end
 
         row.nameLabel:SetText(classColor .. name .. "|r")
+
+        -- Tool icon: show only for current char when Razorstone consumable is active
+        if row.toolIcon then
+            local showTool = false
+            if key == currentChar then
+                -- Check if Razorstone is toggled on in consumable settings
+                local razorID = 237372  -- Refulgent Razorstone itemID
+                local showKey = "consShow_" .. razorID
+                -- Only show if Razorstone is toggled on AND no enchant currently active
+                local enchantActive = ns.GetToolEnchantRemaining and ns.GetToolEnchantRemaining() and ns.GetToolEnchantRemaining() > 0
+                if MajesticBeastTrackerDB.settings[showKey] ~= false and not enchantActive then
+                    -- Get skinning tool slot and icon
+                    pcall(function()
+                        local prof1, prof2 = GetProfessions()
+                        local profID
+                        if prof1 then
+                            local _, _, _, _, _, _, sklID, _, _, _, _, pID = GetProfessionInfo(prof1)
+                            if sklID == 393 then profID = pID or Enum.Profession.Skinning end
+                        end
+                        if not profID and prof2 then
+                            local _, _, _, _, _, _, sklID, _, _, _, _, pID = GetProfessionInfo(prof2)
+                            if sklID == 393 then profID = pID or Enum.Profession.Skinning end
+                        end
+                        if profID then
+                            local s = C_TradeSkillUI.GetProfessionSlots(profID)
+                            if s and s[1] then
+                                local itemID = GetInventoryItemID("player", s[1])
+                                if itemID then
+                                    local tex = C_Item.GetItemIconByID(itemID)
+                                    if tex then
+                                        row.toolIcon.icon:SetTexture(tex)
+                                        row.toolIcon.slotID = s[1]
+                                        row.toolIcon:SetAttribute("macrotext", "/use " .. s[1])
+                                        showTool = true
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+            if not InCombatLockdown() then
+                if showTool then
+                    row.toolIcon:ClearAllPoints()
+                    row.toolIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
+                    row.toolIcon:Show()
+                    -- Shift name label right
+                    row.nameLabel:ClearAllPoints()
+                    row.nameLabel:SetPoint("LEFT", row.name, "LEFT", ROW_HEIGHT, 0)
+                    row.nameLabel:SetPoint("RIGHT", row.name, "RIGHT", 0, 0)
+                else
+                    row.toolIcon:Hide()
+                    row.nameLabel:ClearAllPoints()
+                    row.nameLabel:SetPoint("TOPLEFT", row.name, "TOPLEFT", 0, 0)
+                    row.nameLabel:SetPoint("BOTTOMRIGHT", row.name, "BOTTOMRIGHT", 0, 0)
+                end
+            end
+        end
+
         row.name:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
                 local isHidden = MajesticBeastTrackerDB.settings.hiddenChars[key]
