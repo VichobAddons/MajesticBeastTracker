@@ -1,6 +1,6 @@
 # Majestic Beast Tracker
 
-## [v2.0.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.0) (2026-04-05)
+## [v2.0.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.0) (2026-04-06)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v2.0.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 
 - Major overhaul: architecture refactor, gold UI theme, loot history with calendar, CSV export, consumable tracker expansion, and loot editor redesign
