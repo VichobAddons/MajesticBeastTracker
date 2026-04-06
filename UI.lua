@@ -1297,16 +1297,19 @@ hsBtn:HookScript("PostClick", function(self, button)
     end
 end)
 
--- Restore saved custom HS on login
+-- Restore saved custom HS on login (retry until DB is ready)
 local function RestoreCustomHearthstone()
     ns.EnsureDB()
-    local savedToy = MajesticBeastTrackerDB.settings.hearthstoneToy
+    local savedToy = MajesticBeastTrackerDB and MajesticBeastTrackerDB.settings and MajesticBeastTrackerDB.settings.hearthstoneToy
     if savedToy and not InCombatLockdown() then
         ApplyCustomHearthstone(savedToy)
+    elseif savedToy then
+        -- Combat lockdown, retry later
+        C_Timer.After(2, RestoreCustomHearthstone)
     end
 end
--- Defer to after ADDON_LOADED has set up DB
-C_Timer.After(1, RestoreCustomHearthstone)
+-- Defer to after PLAYER_LOGIN has set up DB
+C_Timer.After(3, RestoreCustomHearthstone)
 -- Conditional travel buttons (created but shown based on class/profession/race)
 local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
 local mageTeleportBtn = CreateTravelButton(#TRAVEL_ITEMS + 2, MAGE_TELEPORT)
@@ -2093,7 +2096,7 @@ function ns.UpdateUI()
                                     if tex then
                                         row.toolIcon.icon:SetTexture(tex)
                                         row.toolIcon.slotID = s[1]
-                                        row.toolIcon:SetAttribute("macrotext", "/use " .. s[1])
+                                        row.toolIcon._pendingSlot = s[1]
                                         showTool = true
                                     end
                                 end
@@ -2104,6 +2107,10 @@ function ns.UpdateUI()
             end
             if not InCombatLockdown() then
                 if showTool then
+                    if row.toolIcon._pendingSlot then
+                        row.toolIcon:SetAttribute("macrotext", "/use " .. row.toolIcon._pendingSlot)
+                        row.toolIcon._pendingSlot = nil
+                    end
                     row.toolIcon:ClearAllPoints()
                     row.toolIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
                     row.toolIcon:Show()
