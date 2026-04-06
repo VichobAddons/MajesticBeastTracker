@@ -1,5 +1,120 @@
 # Majestic Beast Tracker
 
+## [v2.0.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.0) (2026-04-06)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v2.0.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Major overhaul: architecture refactor, gold UI theme, loot history with calendar, CSV export, consumable tracker expansion, and loot editor redesign
+
+### Architecture Refactor
+- **File split** — UI.lua split into UI, LootUI, GearPopup, Settings, CalendarPicker, and Components/ConsumableBar for maintainability
+- **Component extraction** — ConsumableBar is now a standalone reusable component
+
+### Toolbar (NEW)
+- **Dedicated toolbar row** — All action buttons moved to a separate toolbar at the top of the tracker
+- **Custom Tabler icons** — Gold-themed icons for Close, Auto-Hide, Reagents, TSM Coins, Loot Summary, Warbank Deposit, Auctionator Shopping List
+- **Title in toolbar** — "Majestic Beast Tracker vX" displayed in the toolbar
+- **Consistent hover effects** — Gold icons brighten on hover, close button turns red
+
+### Loot Summary Window (NEW)
+- **Separate loot window** — Click the loot summary button to open a dedicated loot summary window instead of a tooltip
+- **3-column layout** — Item name, Reset count+value, and All Time count+value in clearly separated columns
+- **Beast breakdown toggle** — Expand to see loot grouped by beast with localized headers (Zone — NPC Name via tooltip scan)
+- **Custom scroll** — Custom mousewheel scroll handler replacing UIPanelScrollFrameTemplate (fixes rendering glitch)
+- **Dynamic item name width** — Adapts to longest item name for locale support
+- **Smart positioning** — Window opens on the left side if the tracker is near the right edge of the screen, auto-repositions when dragging the main frame
+- **Custom loot tooltip** — Replaces GameTooltip for per-char and global hover with proper 3-column layout
+
+### Loot History (NEW)
+- **90-day archive** — Daily loot is archived on reset and stored for 90 days (covers a full patch cycle)
+- **Per-character history** — Browse historical loot data per character with pagination
+- **Global summary history** — View combined loot history across all characters
+- **Calendar picker** — Reusable CalendarPicker component with data dots on days that have loot data
+- **Server reset awareness** — Calendar dates align with server daily reset cycle, not local midnight
+
+### CSV Export (NEW)
+- **Export button** — Click in the loot summary toolbar to export loot data
+- **Per-character flat data** — Item ID, quality, beast, date in analytics-ready format
+- **Beast breakdown** — Grouped by beast with reset date headers
+- **Gold values** — Includes TSM gold values to avoid overflow
+- **Scrollable window** — View and copy export data from a scrollable text popup
+
+### Loot Editor Redesign
+- **3-column layout** — Separate Reset (editable) and All Time (readonly) columns
+- **Toolbar** — Title bar with close button and lock toggle
+- **Lock toggle** — Lock/Unlock All Time values with Lock/LockOpen icon states
+- **Minus control** — Minus button disabled by default, toggle in toolbar to enable; always allows reset decrease
+
+### Consumable Bar (Enhanced)
+- **Razorstone tracker** — Tooltip scan for remaining tool enchant duration
+- **Sharpen Your Knife tracker** — Spell cooldown tracking with secret value pcall wrapping
+- **Show/hide per item** — Settings toggle for each consumable (Tea/Crab default OFF)
+- **Moved to header area** — Consumables and travel buttons relocated from bottom to the old title space
+- **Even spacing** — Dynamic NAME_COL_WIDTH based on visible consumable count
+- **TravelBox** — Travel buttons in their own gold-bordered box below consumable box
+- **Dynamic header height** — Adapts to max of lure icons vs consumable+travel boxes
+
+### UI Theme
+- **Gold color scheme** — All borders, separators, title text, and accent colors changed from blue to gold
+- **Border toggles** — Separate settings for Lure+Reagents and Travel+Consumables borders
+- **All borders 0.7 alpha** — Consistent transparency across all border elements
+- **Lure borders** — Always visible when toggled on, match consumable+travel height when reagents are off
+- **Lure icon centering** — Centered vertically relative to consumable+travel area
+
+### Window Management
+- **Autohide sync** — Auto-hide state synced across all MBT windows (main, loot summary, editor, calendar)
+- **OnHide cascading** — Closing the main window cascades to all sub-windows
+- **Smart positioning** — All windows auto-reposition on drag, calendar follows loot summary
+
+### Settings Dropdown (NEW)
+- **Toolbar gear icon** — Quick settings access from the tracker toolbar
+- **Fly-out submenus** — Hover a category to open its settings panel beside the main menu
+- **Categories** — Route, Reagents & AH, Consumables, Loot Tracking, Warband Bank, Display, Borders
+- **Enabled/Disabled** — Green/red status labels for each toggle
+- **Auto-Hide button** — Moved to left side of toolbar for quick toggle
+
+### Travel Bar (Enhanced)
+- **Dalaran Hearthstone** — Added as static travel button
+- **Hearthstone toy selector** — Drag any Hearthstone toy onto the HS slot to replace it (validates via tooltip text)
+- **Shift+Right-click** — Reset custom HS back to default
+- **Mage Teleport: Silvermoon** — Class-conditional travel button (classID 8)
+- **Vulpera Return to Camp** — Race-conditional travel button (raceID 35)
+- **Spell travel buttons** — Full support for spell-type travel (icon, cooldown, tooltip, secure action)
+
+### Consumable Bar (Enhanced)
+- **Sharpen Your Knife charges** — Shows X/Y charges with recharge timer, cooldown sweep when 0 charges
+- **Razorstone auto-apply** — Click Razorstone icon, then click tool icon next to character name to apply enchant
+- **Tool icon on tracker** — Skinning tool shown next to current character name when Razorstone is active and no enchant applied
+- **Secret value taint fix** — All spell charge/cooldown logic inside pcall for instanced content
+
+### Buff Tracking (NEW)
+- **Kill-time buff snapshot** — Active consumable buffs recorded per beast kill (tea, phial, crab, razorstone, sharpen knife)
+- **History integration** — Buff data archived with daily loot history (90 days)
+- **Loot editor display** — "Buffs:" line shown in per-character loot editor (current day + history)
+- **CSV export** — Active Buffs column added to CSV export (semicolon-separated per beast)
+
+### Lure Bag Tracking (NEW)
+- **Pre-crafted lure detection** — Tracks lures already in bags per character
+- **Reagent count reduction** — Characters with lures in bags excluded from reagent need calculations
+- **Cap at 1** — Only one lure per type matters (soulbound, one use per day)
+
+### Locale Support
+- **Stat parsing** — Skill, Perception, Finesse, Deftness names resolved from spell IDs (locale-safe)
+- **Talented Tracker** — Detection via pathNode ID 106119 instead of English name search (fixes "Locked" on non-English clients)
+- **TalentData.lua** — New module with all 10 skinning talent path IDs for locale-safe talent detection
+- **Numeric IDs** — ClassID/RaceID used for Mage/Vulpera travel button detection
+
+### Instance Guard (NEW)
+- **Disable in instances** — Addon hides and stops processing in dungeons, raids, PvP, arenas, scenarios (including Delves)
+- **Toggleable** — Settings > Display > "Disable in Instances" (default ON)
+- **Chat notification** — Shows message when trying to open tracker in instance
+
+### Bottom Bar (NEW)
+- **Dedicated bottom bar** — Timer, Total Needed (gold), and Logout button in a styled bar
+- **Consistent theme** — Same dark background and gold separator as top toolbar
+
+### Warband Bank
+- **Taint warning** — Added note in Warband Bank settings about potential bag interaction issues after depositing
+
 ## [v1.6.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v1.6.0) (2026-03-27)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.5.1...v1.6.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

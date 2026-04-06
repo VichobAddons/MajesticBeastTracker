@@ -168,8 +168,23 @@ ns.GetDemoName = function(realName)
     return demoNameMap[realName]
 end
 
+-- Instance detection: disable addon in dungeons/raids/pvp/arenas (toggleable)
+ns.isInInstance = false
+local function CheckInstance()
+    local inInstance, instanceType = IsInInstance()
+    local rawInInstance = inInstance and instanceType ~= "none"
+    -- Respect user setting (default: enabled)
+    ns.EnsureDB()
+    local settingEnabled = MajesticBeastTrackerDB.settings.disableInInstance ~= false
+    ns.isInInstance = rawInInstance and settingEnabled
+    if ns.isInInstance then
+        if ns.frame and ns.frame:IsShown() then ns.frame:Hide() end
+    end
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_LOGOUT")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
 f:RegisterEvent("LOOT_CLOSED")
@@ -177,6 +192,7 @@ f:RegisterEvent("SKILL_LINES_CHANGED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("BANKFRAME_OPENED")
 f:RegisterEvent("BANKFRAME_CLOSED")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 ------------------------------------------------------
 -- Helpers
@@ -207,12 +223,34 @@ local function FormatTimeLeft(seconds)
     end
 end
 
+-- Save per-character lure bag counts to SavedVariables
+local function SaveLureBagCounts()
+    ns.EnsureDB()
+    local key = GetCharKey()
+    local charData = MajesticBeastTrackerDB.chars[key]
+    if not charData then return end
+    local counts = {}
+    for _, lure in ipairs(LURES) do
+        local count = C_Item.GetItemCount(lure.itemID, false, false, false, false)  -- bags only, no bank
+        if count > 0 then
+            counts[lure.name] = math.min(count, 1)  -- cap at 1 (only 1 useful per day)
+        end
+    end
+    charData.lureBags = counts
+end
+ns.SaveLureBagCounts = SaveLureBagCounts
+
 local DEMO_TIME_OFFSET = 8 * 3600  -- 8 hours back in demo mode
 
 local function GetLastDailyReset()
     local secondsUntil = C_DateAndTime.GetSecondsUntilDailyReset()
     if ns.demoMode then secondsUntil = secondsUntil + DEMO_TIME_OFFSET end
     return GetServerTime() + secondsUntil - 86400
+end
+
+-- Get the date string for the current reset period
+function ns.GetResetDate()
+    return date("%Y-%m-%d", GetLastDailyReset())
 end
 
 local function IsLureReady(timestamp)
@@ -269,6 +307,32 @@ local function DiffSnapshots(before, after)
     return diffs
 end
 
+-- Snapshot active consumable buffs at kill time
+local function SnapshotActiveBuffs()
+    local buffs = {}
+    local consItems = ns.CONSUMABLE_ITEMS
+    if not consItems then return buffs end
+    for _, cons in ipairs(consItems) do
+        local active = false
+        if cons.isToolEnchant then
+            -- Check tool enchant via GetWeaponEnchantInfo or tooltip
+            active = ns.GetToolEnchantRemaining and ns.GetToolEnchantRemaining() and ns.GetToolEnchantRemaining() > 0
+        elseif cons.isSpell then
+            -- Check if spell buff is active (Sharpen Your Knife applies a buff)
+            local buffName = cons.name
+            local aura = C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL")
+            active = aura ~= nil
+        elseif cons.buffName then
+            local aura = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
+            active = aura ~= nil
+        end
+        if active then
+            buffs[#buffs + 1] = cons.name
+        end
+    end
+    return buffs
+end
+
 -- Record loot diffs for a beast into charData
 local function RecordLoot(beastName, diffs)
     if not charKey or not diffs then return end
@@ -284,10 +348,27 @@ local function RecordLoot(beastName, diffs)
         charData.loot = { thisReset = {}, allTime = {}, resetTime = GetServerTime() }
     end
 
-    -- Reset thisReset if daily reset has passed
+    -- Reset thisReset if daily reset has passed — archive to history first
     if charData.loot.resetTime and charData.loot.resetTime < GetLastDailyReset() then
+        -- Archive previous day's loot to history
+        if charData.loot.thisReset and next(charData.loot.thisReset) then
+            if not charData.loot.history then charData.loot.history = {} end
+            local entry = {
+                date = date("%Y-%m-%d", charData.loot.resetTime),
+                items = charData.loot.thisReset,
+                perBeast = charData.loot.perBeastReset,
+                prices = charData.loot.prices,
+                killBuffs = charData.loot.killBuffsReset,
+            }
+            table.insert(charData.loot.history, 1, entry)  -- newest first
+            -- Keep max 90 days
+            while #charData.loot.history > 90 do
+                table.remove(charData.loot.history)
+            end
+        end
         charData.loot.thisReset = {}
         charData.loot.perBeastReset = {}
+        charData.loot.killBuffsReset = {}
         charData.loot.resetTime = GetServerTime()
     end
 
@@ -299,6 +380,15 @@ local function RecordLoot(beastName, diffs)
     if not charData.loot.perBeastReset[beastName] then charData.loot.perBeastReset[beastName] = {} end
     local beastLoot = charData.loot.perBeast[beastName]
     local beastResetLoot = charData.loot.perBeastReset[beastName]
+    -- Snapshot active buffs at kill time
+    local activeBuffs = SnapshotActiveBuffs()
+    if #activeBuffs > 0 then
+        if not charData.loot.killBuffs then charData.loot.killBuffs = {} end
+        charData.loot.killBuffs[beastName] = activeBuffs
+        -- Also store in per-reset for history archiving
+        if not charData.loot.killBuffsReset then charData.loot.killBuffsReset = {} end
+        charData.loot.killBuffsReset[beastName] = activeBuffs
+    end
     for id, count in pairs(diffs) do
         charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
         charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
@@ -322,10 +412,22 @@ ns.RecordLoot = RecordLoot
 function ns.GetCharLoot(charData)
     if not charData or not charData.loot then return nil end
     local loot = charData.loot
-    -- Auto-reset thisReset if daily reset has passed
+    -- Auto-reset thisReset if daily reset has passed — archive to history first
     if loot.resetTime and loot.resetTime < GetLastDailyReset() then
+        if loot.thisReset and next(loot.thisReset) then
+            if not loot.history then loot.history = {} end
+            table.insert(loot.history, 1, {
+                date = date("%Y-%m-%d", loot.resetTime),
+                items = loot.thisReset,
+                perBeast = loot.perBeastReset,
+                prices = loot.prices,
+                killBuffs = loot.killBuffsReset,
+            })
+            while #loot.history > 90 do table.remove(loot.history) end
+        end
         loot.thisReset = {}
         loot.perBeastReset = {}
+        loot.killBuffsReset = {}
         loot.prices = {}
         loot.resetTime = GetServerTime()
     end
@@ -452,45 +554,10 @@ end
 -- Talented Tracker auto-detection
 ------------------------------------------------------
 
-local function GetInvestedPointsForTree(configID, rootNodeID)
-    local todo = { rootNodeID }
-    local totalPoints = 0
-    while #todo > 0 do
-        local nodeID = table.remove(todo)
-        local children = C_ProfSpecs.GetChildrenForPath(nodeID)
-        if children then
-            for _, childID in ipairs(children) do
-                table.insert(todo, childID)
-            end
-        end
-        local info = C_Traits.GetNodeInfo(configID, nodeID)
-        if info and info.activeRank and info.activeRank > 0 then
-            totalPoints = totalPoints + info.activeRank
-        end
-    end
-    return totalPoints
-end
-
+-- Talented Tracker detection delegated to TalentData.lua (locale-safe pathNode IDs)
 local function DetectTalentedTrackerPoints()
     if not HasSkinning() then return 0 end
-    if not C_ProfSpecs then return 0 end
-
-    local ok, configID = pcall(C_ProfSpecs.GetConfigIDForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
-    if not ok or not configID or configID == 0 then return 0 end
-
-    local ok2, tabIDs = pcall(C_ProfSpecs.GetSpecTabIDsForSkillLine, MIDNIGHT_SKINNING_SKILL_LINE)
-    if not ok2 or not tabIDs then return 0 end
-
-    for _, tabID in ipairs(tabIDs) do
-        local ok3, tabInfo = pcall(C_ProfSpecs.GetTabInfo, tabID)
-        if ok3 and tabInfo and tabInfo.name then
-            if tabInfo.name:lower():find("tracker") then
-                return GetInvestedPointsForTree(configID, tabInfo.rootNodeID)
-            end
-        end
-    end
-
-    return 0
+    return ns.GetTrackerPoints and ns.GetTrackerPoints() or 0
 end
 
 ------------------------------------------------------
@@ -498,25 +565,43 @@ end
 -- Sources: talent perks, per-point bonuses, gear tooltips
 ------------------------------------------------------
 
--- Parse stat bonuses from a perk/path description string
--- Handles: "+5 Perception", "Increases Perception by 60", "Gain 60 Perception", "60 Perception"
+-- Localized stat names from spell IDs (locale-safe)
+local STAT_SPELL_IDS = { Skill = 1265719, Perception = 1265727, Finesse = 1265723, Deftness = 1265730 }
+local L_STAT_NAMES = {}  -- localized name → internal key
+local L_STAT_KEYS = {}   -- internal key → localized name
+for key, spellID in pairs(STAT_SPELL_IDS) do
+    local name = C_Spell.GetSpellName(spellID)
+    if name then
+        L_STAT_NAMES[name] = key
+        L_STAT_KEYS[key] = name
+    else
+        -- Fallback to English if API not ready
+        L_STAT_NAMES[key] = key
+        L_STAT_KEYS[key] = key
+    end
+end
+-- Localized "Midnight Skinning" + Skill name for gear tooltip parsing
+local L_MIDNIGHT_SKINNING = C_Spell.GetSpellName(471014) or "Midnight Skinning"
+local L_SKILL = L_STAT_KEYS.Skill or "Skill"
+
+-- Parse stat bonuses from a perk/path description string (locale-safe)
+-- Handles: "+5 Perception", "Perception increased by 60", "+5 Midnight Skinning Skill"
 local function ParseStatsFromText(text, stats)
     if not text then return end
-    local validStats = { Skill = true, Perception = true, Finesse = true, Deftness = true }
-    -- Pattern 1: "+N Stat" (talents, gear)
-    for amount, stat in text:gmatch("%+(%d+)%s+(%a+)") do
-        if validStats[stat] then
-            stats[stat] = (stats[stat] or 0) + tonumber(amount)
+    for key, localName in pairs(L_STAT_KEYS) do
+        -- Pattern 1: "+N StatName" (talents, gear)
+        for amount in text:gmatch("%+(%d+)%s+" .. localName) do
+            stats[key] = (stats[key] or 0) + tonumber(amount)
+        end
+        -- Pattern 2: "StatName ... by N" (buff tooltips, e.g. "Perception increased by 60")
+        local byAmount = text:match(localName .. "%s+%w+%s+%w+%s+(%d+)")
+        if byAmount then
+            stats[key] = (stats[key] or 0) + tonumber(byAmount)
         end
     end
-    -- Pattern 2: "Stat increased by N" (buff tooltips)
-    for stat, amount in text:gmatch("(%a+)%s+increased%s+by%s+(%d+)") do
-        if validStats[stat] then
-            stats[stat] = (stats[stat] or 0) + tonumber(amount)
-        end
-    end
-    -- "Midnight Skinning Skill" from gear tooltips
-    local skillAmount = text:match("%+(%d+) Midnight Skinning Skill")
+    -- "+N Midnight Skinning Skill" from gear tooltips (locale-safe)
+    local mssPattern = "%+(%d+)%s+" .. L_MIDNIGHT_SKINNING .. "%s+" .. L_SKILL
+    local skillAmount = text:match(mssPattern)
     if skillAmount then
         stats.Skill = (stats.Skill or 0) + tonumber(skillAmount)
     end
@@ -531,13 +616,15 @@ local function GetNodePoints(configID, nodeID)
     return 0
 end
 
--- Parse per-point bonus from path description
+-- Parse per-point bonus from path description (locale-safe)
 -- e.g. "gaining +1 Perception while skinning ... per point"
 local function ParsePerPointBonus(desc)
     if not desc then return nil, nil end
-    local amount, stat = desc:match("%+(%d+)%s+(%a+)%s+.-per point")
-    if amount and (stat == "Skill" or stat == "Perception" or stat == "Finesse" or stat == "Deftness") then
-        return stat, tonumber(amount)
+    for key, localName in pairs(L_STAT_KEYS) do
+        local amount = desc:match("%+(%d+)%s+" .. localName)
+        if amount then
+            return key, tonumber(amount)
+        end
     end
     return nil, nil
 end
@@ -595,6 +682,127 @@ local function TestProfessionStatsAPIs()
     end
 end
 ns.TestProfessionStatsAPIs = TestProfessionStatsAPIs
+
+-- Route Timer: tracks total time across character switches
+local function EnsureTimer()
+    if not MajesticBeastTrackerDB then return false end
+    if not MajesticBeastTrackerDB.timer then
+        MajesticBeastTrackerDB.timer = { running = false, accumulated = 0, sessionStart = nil }
+    end
+    return true
+end
+
+function ns.StartTimer()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running then return end -- already running
+    t.running = true
+    t.sessionStart = GetServerTime()
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        print("|cff3FC7EB[MBT]|r Route timer started.")
+    end
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.StopTimer()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if not t.running then return end -- already stopped
+    if t.sessionStart then
+        t.accumulated = t.accumulated + (GetServerTime() - t.sessionStart)
+        t.sessionStart = nil
+    end
+    t.running = false
+    if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+        print("|cff3FC7EB[MBT]|r Route timer stopped: " .. ns.FormatTimerElapsed())
+    end
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.ResetTimer()
+    if not MajesticBeastTrackerDB then return end
+    MajesticBeastTrackerDB.timer = { running = false, accumulated = 0, sessionStart = nil }
+    if ns.UpdateUI then ns.UpdateUI() end
+end
+
+function ns.GetTimerElapsed()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    local total = t.accumulated or 0
+    if t.running and t.sessionStart then
+        total = total + (GetServerTime() - t.sessionStart)
+    end
+    return total
+end
+
+function ns.FormatTimerElapsed()
+    local elapsed = ns.GetTimerElapsed()
+    local h = math.floor(elapsed / 3600)
+    local m = math.floor((elapsed % 3600) / 60)
+    local s = elapsed % 60
+    if h > 0 then
+        return string.format("%dh %02dm %02ds", h, m, s)
+    else
+        return string.format("%dm %02ds", m, s)
+    end
+end
+
+function ns.IsTimerRunning()
+    if not EnsureTimer() then return end
+    return MajesticBeastTrackerDB.timer.running
+end
+
+-- Pause timer on logout (save accumulated time)
+function ns.PauseTimerForLogout()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running and t.sessionStart then
+        t.accumulated = t.accumulated + (GetServerTime() - t.sessionStart)
+        t.sessionStart = nil
+        -- Keep running=true so it resumes on next login
+    end
+end
+
+-- Resume timer on login (if it was running)
+function ns.ResumeTimerOnLogin()
+    if not EnsureTimer() then return end
+    local t = MajesticBeastTrackerDB.timer
+    if t.running then
+        t.sessionStart = GetServerTime()
+    end
+end
+
+-- Check if all route beasts are done for all visible characters
+function ns.IsRouteComplete()
+    if not MajesticBeastTrackerDB or not MajesticBeastTrackerDB.settings then return false end
+    local settings = MajesticBeastTrackerDB.settings
+    local routeSkip = settings.routeSkip or {}
+    local hiddenChars = settings.hiddenChars or {}
+    local harandarMinLvl = settings.routeHarandarMinLevel or 80
+
+    for key, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if not hiddenChars[key] and charData.hasSkinning then
+            for i, lure in ipairs(LURES) do
+                -- Skip globally skipped beasts
+                local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
+                local isSkipped = routeSkip[lure.name] or settings[skipKey]
+                if not isSkipped then
+                    -- Skip Harandar level check
+                    if lure.name == "Harandar" and charData.level and charData.level < harandarMinLvl then
+                        isSkipped = true
+                    end
+                end
+                if not isSkipped and ns.CanSeeLure(charData, i) then
+                    local ts = charData.lures and charData.lures[lure.name]
+                    if not ts or IsLureReady(ts) then
+                        return false -- this char still has work to do
+                    end
+                end
+            end
+        end
+    end
+    return true
+end
 
 -- Namespace exports for UI.lua
 ns.IsLureReady = IsLureReady
@@ -760,6 +968,15 @@ local function RecordLureKill(index)
     charData.hasSkinning = true
     local lure = LURES[index]
     print("|cff3FC7EB[MBT]|r " .. lure.color .. lure.name .. "|r beast killed! Cooldown tracked.")
+    -- Auto-stop timer if all characters are done
+    C_Timer.After(2, function()
+        if ns.IsTimerRunning() and ns.IsRouteComplete() then
+            ns.StopTimer()
+            if MajesticBeastTrackerDB.settings.chatNotify ~= false then
+                print("|cff3FC7EB[MBT]|r All characters done! Timer stopped: " .. ns.FormatTimerElapsed())
+            end
+        end
+    end)
 end
 
 -- Sync kill status from quest flags (authoritative source)
@@ -896,6 +1113,42 @@ local function TestGearStats()
     tip:Hide()
 end
 ns.TestGearStats = TestGearStats
+
+-- Check if skinning tool has temporary enchant (e.g. Razor Sharp from Razorstone)
+-- Returns: remainingSeconds (0 if not active), isActive
+function ns.GetToolEnchantRemaining()
+    local gear = DetectSkinningGear()
+    if not gear or #gear == 0 then return 0, false end
+    local tip = CreateFrame("GameTooltip", "MBT_EnchantScanTip", nil, "GameTooltipTemplate")
+    tip:SetOwner(UIParent, "ANCHOR_NONE")
+    for _, item in ipairs(gear) do
+        if item.slotID then
+            tip:ClearLines()
+            tip:SetInventoryItem("player", item.slotID)
+            for i = 1, tip:NumLines() do
+                local line = _G["MBT_EnchantScanTipTextLeft" .. i]
+                if line then
+                    local text = line:GetText()
+                    if text then
+                        local hours = text:match("(%d+)%s*[Hh]ou?r")
+                            or text:match("(%d+)%s*[Ss]tund")
+                            or text:match("(%d+)%s*[Hh]eure")
+                        local mins = text:match("(%d+)%s*[Mm]in")
+                        if hours or mins then
+                            local secs = (tonumber(hours) or 0) * 3600 + (tonumber(mins) or 0) * 60
+                            if secs > 0 then
+                                tip:Hide()
+                                return secs, true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    tip:Hide()
+    return 0, false
+end
 
 -- Calculate total profession stats from talents + gear
 local function CalculateProfessionStats()
@@ -1041,6 +1294,10 @@ local function DetectSkinningAndTalent()
         local points = DetectTalentedTrackerPoints()
         if points > 0 then
             charData.talentPoints = points
+        end
+        -- Save full talent breakdown (all paths)
+        if ns.SaveTalentData then
+            ns.SaveTalentData(charData)
         end
         -- Save profession gear
         local gear = DetectSkinningGear()
@@ -1340,7 +1597,7 @@ function ns.GetMissingReagents()
         if isSkipped then
             -- do nothing, skip this lure entirely
         elseif lure.reagents then
-            -- Count characters that still need this lure today
+            -- Count characters that still need this lure crafted today
             local numLeft = 0
             for charKey, cData in pairs(MajesticBeastTrackerDB.chars) do
                 if not hiddenChars[charKey] and ns.CanSeeLure(cData, i) then
@@ -1349,7 +1606,11 @@ function ns.GetMissingReagents()
                     if not skipForLevel then
                         local ts = cData.lures[lure.name]
                         if not ts or ns.IsLureReady(ts) then
-                            numLeft = numLeft + 1
+                            -- Character needs this lure, but check if they already have one in bags
+                            local hasBagged = cData.lureBags and cData.lureBags[lure.name]
+                            if not hasBagged then
+                                numLeft = numLeft + 1
+                            end
                         end
                     end
                 end
@@ -1501,6 +1762,15 @@ end
 ------------------------------------------------------
 
 f:SetScript("OnEvent", function(_, event, ...)
+    -- Instance detection: check on every zone change
+    if event == "PLAYER_ENTERING_WORLD" then
+        CheckInstance()
+        if ns.isInInstance then return end
+    end
+    -- Skip most events while in instanced content
+    if ns.isInInstance and event ~= "PLAYER_LOGIN" and event ~= "PLAYER_LOGOUT" and event ~= "PLAYER_ENTERING_WORLD" then
+        return
+    end
     if event == "BANKFRAME_OPENED" then
         ns.isBankOpen = true
         if ns.UpdateUI then ns.UpdateUI() end
@@ -1556,6 +1826,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         -- Quest flags already set by the time bag updates resolve
         SyncKillsFromQuests(true)
         RefreshWeeklies()
+        SaveLureBagCounts()
         -- Finalize pending loot after timeout (kill → regular loot → skinning → done)
         if pendingLootBeast and (GetTime() - pendingLootTime) > 15 then
             FinalizePendingLoot()
@@ -1586,6 +1857,9 @@ f:SetScript("OnEvent", function(_, event, ...)
             if ns.UpdateUI then ns.UpdateUI() end
         end
         return
+    elseif event == "PLAYER_LOGOUT" then
+        ns.PauseTimerForLogout()
+        return
     elseif event == "PLAYER_LOGIN" then
         charKey = GetCharKey()
         EnsureChar(charKey)
@@ -1594,9 +1868,11 @@ f:SetScript("OnEvent", function(_, event, ...)
         MajesticBeastTrackerDB.chars[charKey].level = UnitLevel("player")
         DetectSkinningAndTalent()
         SyncKillsFromQuests()
+        ns.ResumeTimerOnLogin()
         C_Timer.After(5, function()
             DetectSkinningAndTalent()
             SyncKillsFromQuests()
+            SaveLureBagCounts()
             if ns.UpdateUI then ns.UpdateUI() end
         end)
         C_Timer.NewTicker(60, function()

@@ -5,6 +5,7 @@
 
 local addonName, ns = ...
 local LURES = ns.LURES
+local WEEKLIES = ns.SKINNING_WEEKLIES
 
 -- Constants
 ns.CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
@@ -13,8 +14,11 @@ ns.CHECKMARK_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
 local ICON_SIZE = 26
 local COL_WIDTH = 62
 local NAME_COL_WIDTH = 150
+local BASE_NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
-local TITLE_HEIGHT = 22
+local TOOLBAR_HEIGHT = 22
+local BOTTOM_BAR_HEIGHT = 20
+local TITLE_HEIGHT = 4  -- reduced after title moved to toolbar
 local ZONE_LABEL_HEIGHT = 10
 local ICON_ROW_HEIGHT = ICON_SIZE + 6 + ZONE_LABEL_HEIGHT
 local REAGENT_ICON_SIZE = 20
@@ -28,6 +32,8 @@ local CONSUMABLES = {
     { itemID = 242299, name = "Sanguithorn Tea", buffName = "Relaxed", itemName = "Sanguithorn Tea", minLevel = 80 },
     { itemID = 241317, name = "Haranir Phial of Perception", buffName = "Haranir Phial of Perception", spellID = 1236763, itemName = "Haranir Phial of Perception", minLevel = 81 },
     { itemID = 238367, name = "Root Crab", buffName = "Midnight Perception", spellID = 1235216, itemName = "Root Crab", minLevel = 80, stackable = true },
+    { itemID = 237372, name = "Refulgent Razorstone", itemName = "Refulgent Razorstone", minLevel = 80, isToolEnchant = true },
+    { spellID = 1223388, name = "Sharpen Your Knife", isSpell = true, minLevel = 80 },
 }
 local NUM_EXTRA_COLS = #CONSUMABLES
 ns.CONSUMABLE_ITEMS = CONSUMABLES
@@ -35,19 +41,26 @@ ns.CONSUMABLE_ITEMS = CONSUMABLES
 -- Travel items (shown at bottom of frame)
 local TRAVEL_ITEMS = {
     { itemID = 6948, name = "Hearthstone" },
+    { itemID = 140192, name = "Dalaran Hearthstone", isToy = true },
     { itemID = 253629, name = "Personal Key to the Arcantina", isToy = true },
 }
 -- Wormhole Generator: conditional on Engineering profession + item in bags
 local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas", spellID = 1229928, requiresEngineering = true, isToy = true }
+-- Mage Teleport: Silvermoon City (conditional on class)
+local MAGE_TELEPORT = { spellID = 1259190, name = "Teleport: Silvermoon City", isSpell = true, requiresClass = "MAGE" }
+-- Vulpera Return to Camp (conditional on race)
+local VULPERA_RETURN = { spellID = 312372, name = "Return to Camp", isSpell = true, requiresRace = "Vulpera" }
 local TRAVEL_ICON_SIZE = 22
 local TRAVEL_SPACING = 3
 local TRAVEL_ROW_HEIGHT = TRAVEL_ICON_SIZE + 8
 
 -- Colors
-local C_ACCENT = CreateColor(0.25, 0.78, 0.92)
-local C_BORDER_RGB = { 0.25, 0.78, 0.92 }
+local C_ACCENT = CreateColor(0.82, 0.71, 0.35)
+local C_BORDER_RGB = { 0.82, 0.71, 0.35 }
 local C_ROW_ALT = { 0.1, 0.1, 0.14, 0.4 }
-local C_SEPARATOR = { 0.25, 0.78, 0.92, 0.3 }
+local C_SEPARATOR = { 0.82, 0.71, 0.35, 0.3 }
+
+local MEDIA_PATH = "Interface\\AddOns\\" .. addonName .. "\\Media\\"
 
 local BACKDROP = {
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -55,6 +68,16 @@ local BACKDROP = {
     edgeSize = 16,
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
+
+-- Expose shared constants for other files (LootUI.lua, Settings.lua)
+ns.MEDIA_PATH = MEDIA_PATH
+ns.BACKDROP = BACKDROP
+ns.C_BORDER_RGB = C_BORDER_RGB
+ns.C_ACCENT = C_ACCENT
+ns.ROW_HEIGHT = ROW_HEIGHT
+ns.PAD = PAD
+ns.NAME_COL_WIDTH = NAME_COL_WIDTH
+ns.COL_WIDTH = COL_WIDTH
 
 ------------------------------------------------------
 -- Helpers
@@ -102,6 +125,7 @@ end
 ------------------------------------------------------
 
 local frame = CreateFrame("Frame", "MajesticBeastTrackerFrame", UIParent, "BackdropTemplate")
+ns.frame = frame
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
 frame:SetFrameStrata("MEDIUM")
 frame:SetFrameLevel(200)
@@ -124,35 +148,85 @@ frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local point, _, relPoint, x, y = self:GetPoint()
     MajesticBeastTrackerDB.settings.framePosition = { point, "UIParent", relPoint, x, y }
+    -- Reposition loot summary if open
+    if ns.lootSummary and ns.lootSummary:IsShown() and ns.RepositionLootSummary then
+        ns.RepositionLootSummary()
+    end
 end)
 
 -- Autohide: fade in/out on hover
+local function IsMouseOverAnyMBT()
+    if frame:IsMouseOver() then return true end
+    if ns.lootSummary and ns.lootSummary:IsShown() and ns.lootSummary:IsMouseOver() then return true end
+    if ns.lootEditor and ns.lootEditor:IsShown() and ns.lootEditor:IsMouseOver() then return true end
+    return false
+end
+
 function ns.RefreshAutoHide()
     if not frame:IsShown() then return end
     ns.EnsureDB()
-    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+    if MajesticBeastTrackerDB.settings.autoHide and not IsMouseOverAnyMBT() then
         UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
+        if ns.lootSummary and ns.lootSummary:IsShown() then
+            UIFrameFadeOut(ns.lootSummary, 0.5, ns.lootSummary:GetAlpha(), 0)
+        end
+        if ns.lootEditor and ns.lootEditor:IsShown() then
+            UIFrameFadeOut(ns.lootEditor, 0.5, ns.lootEditor:GetAlpha(), 0)
+        end
     else
         UIFrameFadeIn(frame, 0.1, frame:GetAlpha(), 1)
+        if ns.lootSummary and ns.lootSummary:IsShown() then
+            UIFrameFadeIn(ns.lootSummary, 0.1, ns.lootSummary:GetAlpha(), 1)
+        end
+        if ns.lootEditor and ns.lootEditor:IsShown() then
+            UIFrameFadeIn(ns.lootEditor, 0.1, ns.lootEditor:GetAlpha(), 1)
+        end
     end
 end
 
-frame:SetScript("OnEnter", function()
+local function OnFrameEnter()
     ns.EnsureDB()
     if MajesticBeastTrackerDB.settings.autoHide then
         UIFrameFadeIn(frame, 0.1, frame:GetAlpha(), 1)
     end
-end)
-frame:SetScript("OnLeave", function()
+end
+local function OnFrameLeave()
     ns.EnsureDB()
-    if MajesticBeastTrackerDB.settings.autoHide and not frame:IsMouseOver() then
+    if MajesticBeastTrackerDB.settings.autoHide and not IsMouseOverAnyMBT() then
         UIFrameFadeOut(frame, 0.5, frame:GetAlpha(), 0)
     end
+end
+frame:SetScript("OnEnter", OnFrameEnter)
+frame:SetScript("OnLeave", OnFrameLeave)
+frame:SetScript("OnHide", function()
+    if ns.lootSummary then ns.lootSummary:Hide() end
+    if ns.lootEditor then ns.lootEditor:Hide() end
+    if settingsDropdown then settingsDropdown:Hide() end
+    if settingsSubmenu then settingsSubmenu:Hide() end
 end)
 
--- Logout button (left of close button)
-local logoutBtn = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
-logoutBtn:SetHeight(16)
+------------------------------------------------------
+-- Bottom Bar (timer + logout)
+------------------------------------------------------
+local bottomBar = CreateFrame("Frame", nil, frame)
+bottomBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 4, 4)
+bottomBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+bottomBar:SetHeight(BOTTOM_BAR_HEIGHT)
+bottomBar:SetFrameLevel(frame:GetFrameLevel() + 25)
+
+local bottomBarBg = bottomBar:CreateTexture(nil, "BACKGROUND")
+bottomBarBg:SetAllPoints()
+bottomBarBg:SetColorTexture(0, 0, 0, 0.4)
+
+local bottomBarSep = bottomBar:CreateTexture(nil, "ARTWORK")
+bottomBarSep:SetHeight(1)
+bottomBarSep:SetPoint("TOPLEFT", bottomBar, "TOPLEFT", 0, 0)
+bottomBarSep:SetPoint("TOPRIGHT", bottomBar, "TOPRIGHT", 0, 0)
+bottomBarSep:SetColorTexture(0.82, 0.71, 0.35, 0.3)
+
+-- Logout button (right side of bottom bar)
+local logoutBtn = CreateFrame("Button", nil, bottomBar, "SecureActionButtonTemplate")
+logoutBtn:SetSize(BOTTOM_BAR_HEIGHT, BOTTOM_BAR_HEIGHT)
 logoutBtn:SetAttribute("type", "macro")
 logoutBtn:SetAttribute("macrotext", "/logout")
 logoutBtn:RegisterForClicks("AnyUp", "AnyDown")
@@ -161,7 +235,7 @@ logoutText:SetFont(logoutText:GetFont(), 9)
 logoutText:SetText("|cff999999Logout|r")
 logoutText:SetPoint("CENTER")
 logoutBtn:SetWidth(logoutText:GetStringWidth() + 8)
-logoutBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, 4)
+logoutBtn:SetPoint("RIGHT", bottomBar, "RIGHT", -2, 0)
 logoutBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-MinimizeButton-Highlight")
 logoutBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
@@ -171,57 +245,439 @@ logoutBtn:SetScript("OnEnter", function(self)
 end)
 logoutBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
--- Close button (native)
-local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
-closeBtn:SetScript("OnClick", function()
-    ns.HideFrame()
+-- Timer display (left side of bottom bar)
+local timerLabel = bottomBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+timerLabel:SetFont(timerLabel:GetFont(), 9)
+timerLabel:SetPoint("LEFT", bottomBar, "LEFT", 6, 0)
+timerLabel:SetTextColor(0.5, 0.5, 0.5)
+timerLabel:Hide()
+
+local timerBtn = CreateFrame("Button", nil, bottomBar)
+timerBtn:SetHeight(BOTTOM_BAR_HEIGHT)
+timerBtn:SetPoint("LEFT", bottomBar, "LEFT", 2, 0)
+timerBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+timerBtn:SetScript("OnClick", function(_, btn)
+    if btn == "RightButton" then
+        ns.ResetTimer()
+    elseif ns.IsTimerRunning() then
+        ns.StopTimer()
+    else
+        ns.StartTimer()
+    end
+end)
+timerBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    GameTooltip:AddLine("Route Timer", 1, 0.82, 0)
+    if ns.IsTimerRunning() then
+        GameTooltip:AddLine("Click to stop", 0.7, 0.7, 0.7)
+    else
+        GameTooltip:AddLine("Click to start", 0.7, 0.7, 0.7)
+    end
+    if ns.GetTimerElapsed() > 0 then
+        GameTooltip:AddLine("Right-click to reset", 0.5, 0.5, 0.5)
+    end
+    GameTooltip:Show()
+end)
+timerBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+------------------------------------------------------
+-- Toolbar
+------------------------------------------------------
+local toolbar = CreateFrame("Frame", nil, frame)
+toolbar:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+toolbar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+toolbar:SetHeight(TOOLBAR_HEIGHT)
+toolbar:SetFrameLevel(frame:GetFrameLevel() + 25)
+
+-- Toolbar background
+local toolbarBg = toolbar:CreateTexture(nil, "BACKGROUND")
+toolbarBg:SetAllPoints()
+toolbarBg:SetColorTexture(0, 0, 0, 0.4)
+
+-- Toolbar separator line
+local toolbarSep = toolbar:CreateTexture(nil, "ARTWORK")
+toolbarSep:SetHeight(1)
+toolbarSep:SetPoint("BOTTOMLEFT", toolbar, "BOTTOMLEFT", 0, 0)
+toolbarSep:SetPoint("BOTTOMRIGHT", toolbar, "BOTTOMRIGHT", 0, 0)
+toolbarSep:SetColorTexture(0.82, 0.71, 0.35, 0.3)
+
+-- Toolbar title (left side)
+local toolbarTitle = toolbar:CreateFontString(nil, "OVERLAY")
+toolbarTitle:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+toolbarTitle:SetPoint("LEFT", toolbar, "LEFT", TOOLBAR_HEIGHT + 4, 0)
+toolbarTitle:SetTextColor(0.6, 0.6, 0.6)
+toolbarTitle:SetText("|cffD1B559MBT|r")  -- version set after GetMBTVersion is defined below
+
+-- Helper: create a toolbar icon button
+local TOOLBAR_ICON_SIZE = 16
+local TOOLBAR_BTN_PADDING = 3
+local C_TOOLBAR_ICON = { 0.82, 0.71, 0.35 }  -- gold/amber default
+local C_TOOLBAR_ICON_HOVER = { 1.0, 0.88, 0.44 }  -- brighter gold on hover
+ns.C_TOOLBAR_ICON = C_TOOLBAR_ICON
+ns.C_TOOLBAR_ICON_HOVER = C_TOOLBAR_ICON_HOVER
+local function CreateToolbarButton(parent, texture, tooltipTitle, tooltipDesc, onClick)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT)
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE)
+    icon:SetPoint("CENTER")
+    icon:SetTexture(texture)
+    icon:SetTexCoord(0, 1, 0, 1)
+    icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+    btn.icon = icon
+    btn:SetScript("OnEnter", function(self)
+        icon:SetVertexColor(C_TOOLBAR_ICON_HOVER[1], C_TOOLBAR_ICON_HOVER[2], C_TOOLBAR_ICON_HOVER[3], 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+        if type(tooltipTitle) == "function" then
+            tooltipTitle(self)
+        else
+            GameTooltip:AddLine(tooltipTitle, 1, 1, 1)
+            if tooltipDesc then
+                GameTooltip:AddLine(tooltipDesc, 0.5, 0.8, 1, true)
+            end
+        end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+        GameTooltip:Hide()
+        if ns.HideLootTooltip then ns.HideLootTooltip() end
+    end)
+    if onClick then btn:SetScript("OnClick", onClick) end
+    return btn
+end
+ns.CreateToolbarButton = CreateToolbarButton
+
+-- Close button
+local closeBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Close",
+    "Close", nil,
+    function() ns.HideFrame() end)
+closeBtn:SetPoint("RIGHT", toolbar, "RIGHT", -2, 0)
+closeBtn.icon:SetTexCoord(0, 1, 0, 1)
+closeBtn:SetScript("OnEnter", function(self)
+    closeBtn.icon:SetVertexColor(1, 0.3, 0.3, 1)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
+    GameTooltip:AddLine("Close", 1, 1, 1)
+    GameTooltip:Show()
+end)
+closeBtn:SetScript("OnLeave", function()
+    closeBtn.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+    GameTooltip:Hide()
 end)
 
--- Autohide toggle button (eye icon)
-local autoHideBtn = CreateFrame("Button", nil, frame)
-autoHideBtn:SetSize(14, 14)
-autoHideBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
-local autoHideIcon = autoHideBtn:CreateTexture(nil, "ARTWORK")
-autoHideIcon:SetAllPoints()
-autoHideIcon:SetTexture("Interface\\Icons\\Spell_Nature_Invisibilty")
-autoHideIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-autoHideBtn:SetScript("OnClick", function()
+-- Settings dropdown button (gear icon, right of close)
+local settingsBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Settings",
+    "Settings", nil, nil)
+settingsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+settingsBtn.icon:SetTexCoord(0, 1, 0, 1)
+
+-- Settings dropdown frame (custom, gold-themed)
+local settingsDropdown = CreateFrame("Frame", "MBT_SettingsDropdown", UIParent, "BackdropTemplate")
+settingsDropdown:SetBackdrop(ns.BACKDROP)
+settingsDropdown:SetBackdropColor(0, 0, 0, 0.97)
+settingsDropdown:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3])
+settingsDropdown:SetFrameStrata("DIALOG")
+settingsDropdown:SetFrameLevel(500)
+settingsDropdown:EnableMouse(true)
+settingsDropdown:Hide()
+settingsDropdown:SetClampedToScreen(true)
+
+local SD_WIDTH = 230
+local SD_ROW_HEIGHT = 18
+local SD_PAD = 6
+local SD_GOLD = { 0.82, 0.71, 0.35 }
+local SD_TEXT = { 0.9, 0.9, 0.9 }
+local SD_DIM = { 0.5, 0.5, 0.5 }
+local SD_ARROW = " |cffD1B559>|r"
+
+-- Category definitions: { name, buildFunc }
+local sdCurrentView = nil  -- nil = main menu, string = category name
+local sdCategories = {}
+local sdRowFrames = {}
+
+local function DefineCategories()
+    sdCategories = {}
+    ns.EnsureDB()
+    local s = MajesticBeastTrackerDB.settings
+
+    sdCategories[#sdCategories + 1] = { name = "Route", items = function()
+        local t = {}
+        for _, lure in ipairs(ns.LURES) do
+            local ln = lure.name
+            local flatKey = "routeSkip_" .. ln:gsub("[%s']", "")
+            t[#t + 1] = { text = "Skip " .. ln, get = function()
+                return (s.routeSkip and s.routeSkip[ln]) or s[flatKey] or false
+            end, set = function()
+                if not s.routeSkip then s.routeSkip = {} end
+                local newVal = not ((s.routeSkip[ln]) or s[flatKey] or false)
+                s.routeSkip[ln] = newVal
+                s[flatKey] = newVal
+            end }
+        end
+        t[#t + 1] = { text = "Hide Skipped Columns", get = function() return s.routeHideSkipped end, set = function() s.routeHideSkipped = not s.routeHideSkipped end }
+        t[#t + 1] = { text = "Auto-Waypoint", get = function() return s.autoRouteWaypoint end, set = function() s.autoRouteWaypoint = not s.autoRouteWaypoint end }
+        return t
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Reagents & AH", items = function()
+        return {
+            { text = "Show Reagent Icons", get = function() return s.showReagents ~= false end, set = function() s.showReagents = not (s.showReagents ~= false) end },
+            { text = "Count All Characters", get = function() return s.reagentAllChars end, set = function() s.reagentAllChars = not s.reagentAllChars end },
+            { text = "Show Missing Count", get = function() return s.showMissingCount end, set = function() s.showMissingCount = not s.showMissingCount end },
+            { text = "Autofill AH Quantity", get = function() return s.ahAutofillQuantity end, set = function() s.ahAutofillQuantity = not s.ahAutofillQuantity end },
+        }
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Consumables", items = function()
+        local t = {}
+        for _, cons in ipairs(ns.CONSUMABLE_ITEMS) do
+            local cID = cons.itemID or cons.spellID
+            t[#t + 1] = { text = cons.name, get = function() return s["consShow_" .. cID] ~= false end,
+                set = function() s["consShow_" .. cID] = not (s["consShow_" .. cID] ~= false) end }
+        end
+        return t
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Loot Tracking", items = function()
+        return {
+            { text = "Enable Loot Tracking", get = function() return s.lootTracking ~= false end, set = function() s.lootTracking = not (s.lootTracking ~= false) end },
+            { text = "Integrate TSM Prices", get = function() return s.tsmIntegration ~= false end, set = function() s.tsmIntegration = not (s.tsmIntegration ~= false) end },
+        }
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Warband Bank", items = function()
+        return {
+            { text = "Enable Deposit", get = function() return s.warbankDeposit end, set = function() s.warbankDeposit = not s.warbankDeposit end },
+            { text = "Auto Deposit on Open", get = function() return s.warbankAutoDeposit end, set = function() s.warbankAutoDeposit = not s.warbankAutoDeposit end },
+            { text = "Deposit Beast Rewards", get = function() return s.warbankDepositRewards end, set = function() s.warbankDepositRewards = not s.warbankDepositRewards end },
+            { text = "Deposit Lure Reagents", get = function() return s.warbankDepositReagents end, set = function() s.warbankDepositReagents = not s.warbankDepositReagents end },
+        }
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Display", items = function()
+        return {
+            { text = "Show Weekly Knowledge", get = function() return s.showKnowledge ~= false end, set = function() s.showKnowledge = not (s.showKnowledge ~= false) end },
+            { text = "Hide in Combat", get = function() return s.hideInCombat end, set = function() s.hideInCombat = not s.hideInCombat end },
+            { text = "Disable in Instances", get = function() return s.disableInInstance ~= false end, set = function() s.disableInInstance = not (s.disableInInstance ~= false) end },
+            { text = "Lock Frame", get = function() return s.locked end, set = function() s.locked = not s.locked end },
+            { text = "Chat Notifications", get = function() return s.chatNotify ~= false end, set = function() s.chatNotify = not (s.chatNotify ~= false) end },
+            { text = "Hide on Non-Skinners", get = function() return s.hideNonSkinner end, set = function() s.hideNonSkinner = not s.hideNonSkinner end },
+        }
+    end }
+
+    sdCategories[#sdCategories + 1] = { name = "Borders", items = function()
+        return {
+            { text = "Lure + Reagent Borders", get = function() return s.showLureBorders end, set = function() s.showLureBorders = not s.showLureBorders end },
+            { text = "Travel + Consumable Borders", get = function() return s.showConsBorders ~= false end, set = function() s.showConsBorders = not (s.showConsBorders ~= false) end },
+        }
+    end }
+end
+
+-- Submenu frame (fly-out, appears beside main menu on hover)
+local settingsSubmenu = CreateFrame("Frame", "MBT_SettingsSubmenu", UIParent, "BackdropTemplate")
+settingsSubmenu:SetBackdrop(ns.BACKDROP)
+settingsSubmenu:SetBackdropColor(0, 0, 0, 0.97)
+settingsSubmenu:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3])
+settingsSubmenu:SetFrameStrata("DIALOG")
+settingsSubmenu:SetFrameLevel(501)
+settingsSubmenu:EnableMouse(true)
+settingsSubmenu:Hide()
+settingsSubmenu:SetClampedToScreen(true)
+
+local sdMainRowFrames = {}
+local sdSubRowFrames = {}
+local sdActiveCategory = nil
+
+local function GetRowFrame(pool, parent, i)
+    if not pool[i] then
+        local f = CreateFrame("Button", nil, parent)
+        f:SetHeight(SD_ROW_HEIGHT)
+        local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetFont(label:GetFont(), 10)
+        label:SetPoint("LEFT", 4, 0)
+        label:SetJustifyH("LEFT")
+        f.label = label
+        local right = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        right:SetFont(right:GetFont(), 10)
+        right:SetPoint("LEFT", SD_WIDTH - SD_PAD * 2 - 60, 0)
+        right:SetJustifyH("LEFT")
+        f.right = right
+        local hl = f:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.05)
+        f.hl = hl
+        pool[i] = f
+    end
+    pool[i]:SetParent(parent)
+    return pool[i]
+end
+
+-- Show submenu for a category, anchored to the hovered row
+local function ShowSubmenu(cat, anchorRow)
+    local items = cat.items()
+    local y = -SD_PAD
+    local idx = 0
+
+    -- Header
+    idx = idx + 1
+    local hf = GetRowFrame(sdSubRowFrames, settingsSubmenu, idx)
+    hf:ClearAllPoints()
+    hf:SetPoint("TOPLEFT", settingsSubmenu, "TOPLEFT", SD_PAD, y)
+    hf:SetPoint("TOPRIGHT", settingsSubmenu, "TOPRIGHT", -SD_PAD, y)
+    hf:SetHeight(SD_ROW_HEIGHT)
+    hf.label:SetText("|cffD1B559" .. cat.name .. "|r")
+    hf.right:SetText("")
+    hf.hl:Hide()
+    hf:EnableMouse(false)
+    hf:SetScript("OnClick", nil)
+    hf:SetScript("OnEnter", nil)
+    hf:SetScript("OnLeave", nil)
+    hf:Show()
+    y = y - SD_ROW_HEIGHT
+
+    for _, item in ipairs(items) do
+        idx = idx + 1
+        local f = GetRowFrame(sdSubRowFrames, settingsSubmenu, idx)
+        f:ClearAllPoints()
+        f:SetPoint("TOPLEFT", settingsSubmenu, "TOPLEFT", SD_PAD, y)
+        f:SetPoint("TOPRIGHT", settingsSubmenu, "TOPRIGHT", -SD_PAD, y)
+        f:SetHeight(SD_ROW_HEIGHT)
+        local isOn = item.get()
+        f.label:SetText(item.text)
+        f.label:SetTextColor(unpack(isOn and SD_TEXT or SD_DIM))
+        f.right:ClearAllPoints()
+        f.right:SetPoint("LEFT", SD_WIDTH - SD_PAD * 2 - 60, 0)
+        f.right:SetJustifyH("LEFT")
+        f.right:SetText(isOn and "|cff00ff00Enabled|r" or "|cffff4444Disabled|r")
+        f.hl:Show()
+        f:EnableMouse(true)
+        local itemRef = item
+        local catRef = cat
+        f:SetScript("OnClick", function()
+            itemRef.set()
+            ns.UpdateUI()
+            ShowSubmenu(catRef, anchorRow)
+        end)
+        f:SetScript("OnEnter", nil)
+        f:SetScript("OnLeave", nil)
+        f:Show()
+        y = y - SD_ROW_HEIGHT
+    end
+
+    for i = idx + 1, #sdSubRowFrames do sdSubRowFrames[i]:Hide() end
+    settingsSubmenu:SetSize(SD_WIDTH, math.abs(y) + SD_PAD)
+
+    -- Position: try right side of main menu, fall back to left
+    settingsSubmenu:ClearAllPoints()
+    local mainRight = settingsDropdown:GetRight() or 0
+    local screenW = GetScreenWidth() * UIParent:GetEffectiveScale()
+    if mainRight + SD_WIDTH < screenW then
+        settingsSubmenu:SetPoint("TOPLEFT", anchorRow, "TOPRIGHT", 0, SD_PAD)
+    else
+        settingsSubmenu:SetPoint("TOPRIGHT", anchorRow, "TOPLEFT", 0, SD_PAD)
+    end
+    settingsSubmenu:Show()
+    sdActiveCategory = cat.name
+end
+
+-- Populate main menu
+local function PopulateMainMenu()
+    DefineCategories()
+    local y = -SD_PAD
+    local idx = 0
+
+    for _, cat in ipairs(sdCategories) do
+        idx = idx + 1
+        local f = GetRowFrame(sdMainRowFrames, settingsDropdown, idx)
+        f:ClearAllPoints()
+        f:SetPoint("TOPLEFT", settingsDropdown, "TOPLEFT", SD_PAD, y)
+        f:SetPoint("TOPRIGHT", settingsDropdown, "TOPRIGHT", -SD_PAD, y)
+        f:SetHeight(SD_ROW_HEIGHT)
+        f.label:SetText(cat.name)
+        f.label:SetTextColor(SD_TEXT[1], SD_TEXT[2], SD_TEXT[3])
+        f.right:ClearAllPoints()
+        f.right:SetPoint("RIGHT", -4, 0)
+        f.right:SetJustifyH("RIGHT")
+        f.right:SetText(SD_ARROW)
+        f.hl:Show()
+        f:EnableMouse(true)
+        local catRef = cat
+        f:SetScript("OnClick", nil)
+        f:SetScript("OnEnter", function(self)
+            if sdActiveCategory ~= catRef.name then
+                ShowSubmenu(catRef, self)
+            end
+        end)
+        f:SetScript("OnLeave", function()
+            -- Submenu hides on its own via mouse check
+        end)
+        f:Show()
+        y = y - SD_ROW_HEIGHT
+    end
+
+    for i = idx + 1, #sdMainRowFrames do sdMainRowFrames[i]:Hide() end
+    settingsDropdown:SetSize(SD_WIDTH, math.abs(y) + SD_PAD)
+end
+
+local PopulateSettingsDropdown = PopulateMainMenu
+
+-- Toggle dropdown on settings button click
+settingsBtn:SetScript("OnClick", function(self)
+    if settingsDropdown:IsShown() then
+        settingsDropdown:Hide()
+        settingsSubmenu:Hide()
+    else
+        sdActiveCategory = nil
+        PopulateMainMenu()
+        settingsDropdown:ClearAllPoints()
+        settingsDropdown:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -2)
+        settingsDropdown:Show()
+    end
+end)
+
+-- Close dropdown + submenu when clicking outside
+settingsDropdown:SetScript("OnShow", function()
+    settingsDropdown:RegisterEvent("GLOBAL_MOUSE_DOWN")
+end)
+settingsDropdown:SetScript("OnHide", function()
+    settingsDropdown:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+    settingsSubmenu:Hide()
+    sdActiveCategory = nil
+end)
+settingsDropdown:SetScript("OnEvent", function(self, event)
+    if event == "GLOBAL_MOUSE_DOWN" then
+        if not self:IsMouseOver() and not settingsBtn:IsMouseOver()
+           and not settingsSubmenu:IsMouseOver() then
+            self:Hide()
+        end
+    end
+end)
+
+-- Autohide toggle button (eye icon) — left side of toolbar, before title
+local autoHideBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Show",
+    function(self)
+        ns.EnsureDB()
+        local state = MajesticBeastTrackerDB.settings.autoHide
+        GameTooltip:AddLine(state and "Auto Hide: ON" or "Auto Hide: OFF", 1, 1, 1)
+        GameTooltip:AddLine("Click to toggle. Fades tracker when mouse leaves.", 0.5, 0.8, 1, true)
+    end,
+    nil, nil)
+autoHideBtn:SetScript("OnClick", function(self)
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.autoHide = not MajesticBeastTrackerDB.settings.autoHide
     ns.RefreshAutoHide()
     local state = MajesticBeastTrackerDB.settings.autoHide
-    autoHideIcon:SetDesaturated(not state)
-    autoHideIcon:SetAlpha(state and 1.0 or 0.4)
+    self.icon:SetTexture(MEDIA_PATH .. (state and "Icon_Show" or "Icon_Hide"))
+    self.icon:SetAlpha(state and 1.0 or 0.4)
 end)
-autoHideBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-    ns.EnsureDB()
-    local state = MajesticBeastTrackerDB.settings.autoHide
-    GameTooltip:AddLine(state and "Auto Hide: ON" or "Auto Hide: OFF", 1, 1, 1)
-    GameTooltip:AddLine("Click to toggle. Fades tracker when mouse leaves.", 0.5, 0.8, 1, true)
-    GameTooltip:Show()
-end)
-autoHideBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+autoHideBtn:SetPoint("LEFT", toolbar, "LEFT", 2, 0)
+autoHideBtn.icon:SetTexCoord(0, 1, 0, 1)
+local autoHideIcon = autoHideBtn.icon
 
--- Title (branding, fills empty space left of lure icons)
-local titleFrame = CreateFrame("Frame", nil, frame)
-titleFrame:SetAllPoints()
-titleFrame:SetFrameLevel(frame:GetFrameLevel() + 20)
-titleFrame:EnableMouse(false)
-
-local title = titleFrame:CreateFontString(nil, "OVERLAY")
-title:SetFont(STANDARD_TEXT_FONT, 20, "OUTLINE")
-title:SetText("|cff3FC7EBMajestic|r\n|cff3FC7EBBeast|r\n|cff3FC7EBTracker|r")
-title:SetJustifyH("CENTER")
-title:SetJustifyV("TOP")
-title:SetSpacing(0)
-title:SetAlpha(0.6)
-
-local verLabel = titleFrame:CreateFontString(nil, "OVERLAY")
-verLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-verLabel:SetTextColor(0.5, 0.5, 0.5, 0.6)
-verLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
+-- Title removed — version shown in toolbar ("MBT vX")
 local function GetMBTVersion()
     local devLoaded = C_AddOns.IsAddOnLoaded("MajesticBeastTrackerDev")
     if devLoaded then
@@ -229,136 +685,102 @@ local function GetMBTVersion()
     end
     return C_AddOns.GetAddOnMetadata("MajesticBeastTracker", "Version") or "?"
 end
-verLabel:SetText("v" .. GetMBTVersion())
+toolbarTitle:SetText("|cffD1B559Majestic Beast Tracker|r v" .. GetMBTVersion())
 
--- Lock indicator
-local lockIcon = frame:CreateTexture(nil, "OVERLAY")
+-- Lock indicator (shown in toolbar)
+local lockIcon = toolbar:CreateTexture(nil, "OVERLAY")
 lockIcon:SetSize(10, 10)
-lockIcon:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+lockIcon:SetPoint("LEFT", toolbarTitle, "RIGHT", 4, 0)
 lockIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
 lockIcon:SetVertexColor(0.6, 0.6, 0.6)
 lockIcon:Hide()
 
 -- Toggle fish button (show/hide reagent icons)
-local fishBtn = CreateFrame("Button", nil, frame)
-fishBtn:SetSize(14, 14)
-fishBtn:SetPoint("RIGHT", autoHideBtn, "LEFT", -2, 0)
-local fishIcon = fishBtn:CreateTexture(nil, "ARTWORK")
-fishIcon:SetAllPoints()
-fishIcon:SetTexture("Interface\\Icons\\INV_Misc_Fish_02")
-fishIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-fishBtn.icon = fishIcon
-fishBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-    local shown = MajesticBeastTrackerDB.settings.showReagents ~= false
-    GameTooltip:AddLine(shown and "Hide Reagents" or "Show Reagents", 1, 1, 1)
-    GameTooltip:Show()
-end)
-fishBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-fishBtn:SetScript("OnClick", function()
-    local settings = MajesticBeastTrackerDB.settings
-    if settings.showReagents == nil then settings.showReagents = true end
-    settings.showReagents = not settings.showReagents
-    ns.UpdateUI()
-end)
+local fishBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Reagents",
+    function(self)
+        local shown = MajesticBeastTrackerDB.settings.showReagents ~= false
+        GameTooltip:AddLine(shown and "Hide Reagents" or "Show Reagents", 1, 1, 1)
+    end,
+    nil,
+    function()
+        local settings = MajesticBeastTrackerDB.settings
+        if settings.showReagents == nil then settings.showReagents = true end
+        settings.showReagents = not settings.showReagents
+        ns.UpdateUI()
+    end)
+fishBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -2, 0)
+local fishIcon = fishBtn.icon
 
 -- Global loot summary button (goblin icon)
-local globalGoblinBtn = CreateFrame("Button", nil, frame)
-globalGoblinBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
-globalGoblinBtn:SetSize(14, 14)
--- Anchored dynamically in UpdateUI after coinBtn is created
-local globalGoblinIcon = globalGoblinBtn:CreateTexture(nil, "ARTWORK")
-globalGoblinIcon:SetAllPoints()
-globalGoblinIcon:SetTexture("Interface\\Icons\\Achievement_GoblinHead")
-globalGoblinIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-globalGoblinBtn.icon = globalGoblinIcon
-globalGoblinBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
-    GameTooltip:AddLine("Loot Summary (All Characters)", 0.25, 0.78, 0.92)
-    local resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
-    if resetLoot or allTimeLoot then
-        ns.AddLootTooltipColumns(resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset)
-    else
-        GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
-    end
-    GameTooltip:Show()
-end)
-globalGoblinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+local globalGoblinBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Results",
+    function(self)
+        ns.EnsureDB()
+        local resetLoot, allTimeLoot, globalPrices = ns.GetGlobalLoot()
+        if resetLoot or allTimeLoot then
+            ns.ShowLootTooltip(self, "Loot Summary (All Characters)", resetLoot, allTimeLoot, globalPrices)
+            return  -- ShowLootTooltip handles display, skip GameTooltip:Show
+        else
+            GameTooltip:AddLine("Loot Summary", 0.82, 0.71, 0.35)
+            GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
+        end
+    end,
+    nil,
+    function() ns.ToggleLootSummary() end)
+ns.globalGoblinIcon = globalGoblinBtn.icon
+ns.globalGoblinBtn = globalGoblinBtn
 
 -- Warband Bank deposit button (bank icon, only visible when bank is open)
-local warbankBtn = CreateFrame("Button", nil, frame)
-warbankBtn:SetSize(14, 14)
-warbankBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -2, 0)
-local warbankIcon = warbankBtn:CreateTexture(nil, "ARTWORK")
-warbankIcon:SetAllPoints()
-warbankIcon:SetTexture("Interface\\Icons\\INV_Misc_Bag_34")
-warbankIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-warbankBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
-    GameTooltip:AddLine("Deposit Reagents to Warband Bank", 0.25, 0.78, 0.92)
-    GameTooltip:AddLine("Click to deposit all tracked skinning reagents.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end)
-warbankBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-warbankBtn:SetScript("OnClick", function()
-    ns.DepositTrackedToWarbank()
-end)
+local warbankBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Bank",
+    function(self)
+        GameTooltip:AddLine("Deposit Reagents to Warband Bank", 0.82, 0.71, 0.35)
+        GameTooltip:AddLine("Click to deposit all tracked skinning reagents.", 0.8, 0.8, 0.8, true)
+    end,
+    nil,
+    function() ns.DepositTrackedToWarbank() end)
 warbankBtn:Hide()
+ns.warbankBtn = warbankBtn
 
 -- Auctionator shopping list button
-local auctionatorBtn = CreateFrame("Button", nil, frame)
-auctionatorBtn:SetSize(14, 14)
-auctionatorBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
-auctionatorBtn:SetPoint("RIGHT", globalGoblinBtn, "LEFT", -2, 0)
-local auctionatorIcon = auctionatorBtn:CreateTexture(nil, "ARTWORK")
-auctionatorIcon:SetAllPoints()
-auctionatorIcon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
-auctionatorIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-auctionatorBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM", 0, -4)
-    GameTooltip:AddLine("Create Auctionator Shopping List", 0.25, 0.78, 0.92)
-    GameTooltip:AddLine("Creates/updates 'MBT Reagents' list with all missing reagents.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end)
-auctionatorBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-auctionatorBtn:SetScript("OnClick", function()
-    ns.CreateAuctionatorShoppingList()
-end)
+local auctionatorBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_ShoppingList",
+    function(self)
+        GameTooltip:AddLine("Create Auctionator Shopping List", 0.82, 0.71, 0.35)
+        GameTooltip:AddLine("Creates/updates 'MBT Reagents' list with all missing reagents.", 0.8, 0.8, 0.8, true)
+    end,
+    nil,
+    function() ns.CreateAuctionatorShoppingList() end)
 auctionatorBtn:Hide()
+ns.auctionatorBtn = auctionatorBtn
 
 -- Toggle TSM prices button (coin icon)
-local coinBtn = CreateFrame("Button", nil, frame)
-coinBtn:SetSize(14, 14)
-coinBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
-coinBtn:SetPoint("RIGHT", fishBtn, "LEFT", -4, 0)
-local coinIcon = coinBtn:CreateTexture(nil, "ARTWORK")
-coinIcon:SetAllPoints()
-coinIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
-coinIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-coinBtn.icon = coinIcon
-coinBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-    local enabled = MajesticBeastTrackerDB.settings.tsmIntegration
-    if not TSM_API then
-        GameTooltip:AddLine("TSM not installed", 0.5, 0.5, 0.5)
-    else
-        GameTooltip:AddLine(enabled and "Hide TSM Prices" or "Show TSM Prices", 1, 1, 1)
-    end
-    GameTooltip:Show()
-end)
-coinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-coinBtn:SetScript("OnClick", function()
-    if not TSM_API then return end
-    local settings = MajesticBeastTrackerDB.settings
-    settings.tsmIntegration = not settings.tsmIntegration
-    ns.UpdateUI()
-end)
+local coinBtn = CreateToolbarButton(toolbar,
+    MEDIA_PATH .. "Icon_Coins",
+    function(self)
+        local enabled = MajesticBeastTrackerDB.settings.tsmIntegration
+        if not TSM_API then
+            GameTooltip:AddLine("TSM not installed", 0.5, 0.5, 0.5)
+        else
+            GameTooltip:AddLine(enabled and "Hide TSM Prices" or "Show TSM Prices", 1, 1, 1)
+        end
+    end,
+    nil,
+    function()
+        if not TSM_API then return end
+        local settings = MajesticBeastTrackerDB.settings
+        settings.tsmIntegration = not settings.tsmIntegration
+        ns.UpdateUI()
+    end)
+coinBtn:SetPoint("RIGHT", fishBtn, "LEFT", -2, 0)
+local coinIcon = coinBtn.icon
 
 ------------------------------------------------------
 -- Content area
 ------------------------------------------------------
 
-local contentTop = -(TITLE_HEIGHT + 2)
+local contentTop = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2)
 
 -- Header icons (lures) - SecureActionButton for item use
 local headerIcons = {}
@@ -594,8 +1016,7 @@ for i = 1, #LURES do
     local box = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     box:SetBackdrop(LURE_BOX_BACKDROP)
     box:SetBackdropColor(0, 0, 0, 0.7)
-    local r, g, b = unpack(LURES[i].colorRGB)
-    box:SetBackdropBorderColor(r, g, b, 0.6)
+    box:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
     box:SetFrameLevel(frame:GetFrameLevel() + 1)
     -- Make sure icons render on top of the box
     headerIcons[i]:SetFrameLevel(box:GetFrameLevel() + 2)
@@ -616,209 +1037,17 @@ for i = 1, #LURES do
     tsmPriceLabels[i] = priceLabel
 end
 
--- Consumable box (floating panel anchored to frame, same row as lure icons)
-local CONS_ICON_SIZE = 20
-local CONS_SPACING = 4
-local CONS_PAD = 6
-local CONS_ITEM_WIDTH = CONS_ICON_SIZE + CONS_SPACING + 46
-local CONS_BOX_WIDTH = #CONSUMABLES * CONS_ITEM_WIDTH + CONS_PAD * 2
-local CONS_BOX_HEIGHT = ICON_SIZE + 12
 
-local consumableBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-consumableBox:SetSize(CONS_BOX_WIDTH, CONS_BOX_HEIGHT)
-consumableBox:SetBackdrop(BACKDROP)
-consumableBox:SetBackdropColor(0, 0, 0, 0.9)
-consumableBox:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-consumableBox:SetFrameStrata("MEDIUM")
-consumableBox:SetFrameLevel(201)
-local consumableIcons = {}
-local consumableButtons = {}
-local consumableLabels = {}
-for i, cons in ipairs(CONSUMABLES) do
-    local btn = CreateFrame("Button", "MBT_ConsumableBtn" .. i, consumableBox, "SecureActionButtonTemplate")
-    btn:SetSize(CONS_ICON_SIZE, CONS_ICON_SIZE)
-    btn:SetFrameLevel(consumableBox:GetFrameLevel() + 1)
-    btn:SetAttribute("type", "item")
-    btn:SetAttribute("item", cons.itemName or "")
-    btn:RegisterForClicks("AnyUp", "AnyDown")
-    btn:Hide()
-    -- Cache item name async
-    C_Item.RequestLoadItemDataByID(cons.itemID)
-    local ticker
-    ticker = C_Timer.NewTicker(1, function()
-        local name = C_Item.GetItemNameByID(cons.itemID)
-        if name and not InCombatLockdown() then
-            btn:SetAttribute("item", name)
-            ticker:Cancel()
-        end
-    end, 10)
-
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    btn.icon = icon
-
-    -- Golden border glow (shown when item in bags but buff inactive)
-    -- Four edge textures around the icon
-    local glowSize = 2
-    local glowColor = {1, 0.75, 0, 0.9}
-    local glowTop = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowTop:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
-    glowTop:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
-    glowTop:SetHeight(glowSize)
-    glowTop:SetColorTexture(unpack(glowColor))
-    local glowBot = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowBot:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
-    glowBot:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
-    glowBot:SetHeight(glowSize)
-    glowBot:SetColorTexture(unpack(glowColor))
-    local glowLeft = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowLeft:SetPoint("TOPLEFT", icon, "TOPLEFT", -glowSize, glowSize)
-    glowLeft:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -glowSize, -glowSize)
-    glowLeft:SetWidth(glowSize)
-    glowLeft:SetColorTexture(unpack(glowColor))
-    local glowRight = btn:CreateTexture(nil, "OVERLAY", nil, 7)
-    glowRight:SetPoint("TOPRIGHT", icon, "TOPRIGHT", glowSize, glowSize)
-    glowRight:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", glowSize, -glowSize)
-    glowRight:SetWidth(glowSize)
-    glowRight:SetColorTexture(unpack(glowColor))
-    local glowParts = {glowTop, glowBot, glowLeft, glowRight}
-    for _, g in ipairs(glowParts) do g:Hide() end
-    btn.glow = {
-        Show = function() for _, g in ipairs(glowParts) do g:Show() end end,
-        Hide = function() for _, g in ipairs(glowParts) do g:Hide() end end,
-    }
-
-    -- Hover border highlight
-    for _, info in ipairs({
-        {"TOPLEFT", "TOPRIGHT", true},
-        {"BOTTOMLEFT", "BOTTOMRIGHT", true},
-        {"TOPLEFT", "BOTTOMLEFT", false},
-        {"TOPRIGHT", "BOTTOMRIGHT", false},
-    }) do
-        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetColorTexture(1, 0.84, 0, 0.7)
-        if info[3] then
-            hl:SetPoint(info[1], icon, info[1], -1, 1)
-            hl:SetPoint(info[2], icon, info[2], 1, 1)
-            hl:SetHeight(1)
-        else
-            hl:SetPoint(info[1], icon, info[1], -1, 1)
-            hl:SetPoint(info[2], icon, info[2], -1, -1)
-            hl:SetWidth(1)
-        end
-    end
-
-    -- Tooltip
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-        GameTooltip:SetItemByID(cons.itemID)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click: Use item", 0.5, 0.8, 1)
-        GameTooltip:AddLine("Shift-click: Search in AH", 0.5, 0.8, 1)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- PreClick: block on shift (AH search) or if buff has >20% remaining
-    btn:SetScript("PreClick", function(self)
-        if InCombatLockdown() then return end
-        if IsShiftKeyDown() then
-            self:SetAttribute("type", nil)
-            return
-        end
-        -- Block if buff still has >20% duration left (skip for stackable buffs like Root Crab)
-        if not cons.stackable then
-            local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-            if not buffInfo and cons.itemName ~= cons.buffName then
-                buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
-            end
-            if buffInfo and buffInfo.duration and buffInfo.duration > 0 and buffInfo.expirationTime then
-                local remaining = buffInfo.expirationTime - GetTime()
-                if remaining / buffInfo.duration > 0.2 then
-                    self:SetAttribute("type", nil)
-                    if not self._blockedMsg or (GetTime() - self._blockedMsg) > 1 then
-                        if MajesticBeastTrackerDB.settings.chatNotify ~= false then
-                            local timeLeft = remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s")
-                            print("|cff3FC7EB[MBT]|r Buff still has " .. timeLeft .. " left. Not consumed.")
-                        end
-                        self._blockedMsg = GetTime()
-                    end
-                end
-            end
-        end
-    end)
-    btn:SetScript("PostClick", function(self)
-        -- Restore type attribute
-        if not InCombatLockdown() then
-            self:SetAttribute("type", "item")
-        end
-        if IsShiftKeyDown() then
-            if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
-                local itemName = C_Item.GetItemNameByID(cons.itemID)
-                if itemName then
-                    AuctionHouseFrame.SearchBar.SearchBox:SetText(itemName)
-                    AuctionHouseFrame.SearchBar.SearchButton:Click()
-                end
-            else
-                if MajesticBeastTrackerDB.settings.chatNotify ~= false then
-                    print("|cff3FC7EB[MBT]|r Open the Auction House first!")
-                end
-            end
-        end
-    end)
-
-    -- Status label to the right of icon (on consumableBox, high strata)
-    local label = consumableBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetFont(label:GetFont(), 10)
-    label:SetJustifyH("LEFT")
-
-    consumableIcons[i] = btn
-    consumableButtons[i] = btn
-    consumableLabels[i] = label
-end
-
--- Refresh consumable labels (called every 1s for real-time buff timers)
-function ns.RefreshConsumableLabels()
-    local playerLevel = UnitLevel("player")
-    for i, cons in ipairs(CONSUMABLES) do
-        local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
-        local count = C_Item.GetItemCount(cons.itemName or cons.itemID)
-        local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-        if not buffInfo and cons.spellID then
-            buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
-        end
-        local remaining = buffInfo and buffInfo.expirationTime and (buffInfo.expirationTime - GetTime()) or 0
-        if not meetsLevel then
-            consumableLabels[i]:SetText("Lv" .. cons.minLevel)
-            consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
-            consumableButtons[i].glow:Hide()
-        elseif cons.stackable and buffInfo and remaining > 0 then
-            local label = remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s")
-            if count > 0 then label = label .. " " .. count .. "x" end
-            consumableLabels[i]:SetText(label)
-            consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
-            if count > 0 then consumableButtons[i].glow:Show() else consumableButtons[i].glow:Hide() end
-        elseif buffInfo and remaining > 0 then
-            consumableLabels[i]:SetText(remaining >= 60 and (math.ceil(remaining / 60) .. "m") or (math.floor(remaining) .. "s"))
-            consumableLabels[i]:SetTextColor(0.2, 0.9, 0.4)
-            consumableButtons[i].glow:Hide()
-        elseif count > 0 then
-            consumableLabels[i]:SetText(count .. "x")
-            consumableLabels[i]:SetTextColor(1, 1, 1)
-            consumableButtons[i].glow:Show()
-        else
-            consumableLabels[i]:SetText("0")
-            consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
-            consumableButtons[i].glow:Hide()
-        end
-    end
-end
-
--- 1-second ticker for real-time consumable buff timers
+-- 1-second ticker for real-time consumable buff timers + route timer
 C_Timer.NewTicker(1, function()
     if frame:IsShown() then
         ns.RefreshConsumableLabels()
+        if ns.IsTimerRunning() then
+            timerLabel:SetText("|cff00ff00" .. ns.FormatTimerElapsed() .. "|r")
+            timerBtn:SetWidth(math.max(timerLabel:GetStringWidth() + 4, 40))
+            timerLabel:Show()
+            timerBtn:Show()
+        end
     end
 end)
 
@@ -839,13 +1068,26 @@ ns.travelSep:SetHeight(1)
 ns.travelSep:SetColorTexture(unpack(C_SEPARATOR))
 ns.travelSep:Hide()
 
+-- Travel box (border container, same style as consumable box)
+local travelBox = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+travelBox:SetSize(NAME_COL_WIDTH, TRAVEL_ICON_SIZE + 8)
+travelBox:SetBackdrop(BACKDROP)
+travelBox:SetBackdropColor(0, 0, 0, 0.9)
+travelBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
+travelBox:SetFrameStrata("MEDIUM")
+travelBox:SetFrameLevel(201)
+ns.travelBox = travelBox
+
 local function CreateTravelButton(index, itemInfo)
     local btn = CreateFrame("Button", "MBT_TravelBtn" .. index, frame, "SecureActionButtonTemplate")
     btn:SetSize(TRAVEL_ICON_SIZE, TRAVEL_ICON_SIZE)
     btn:RegisterForClicks("AnyUp", "AnyDown")
     btn:Hide()
 
-    if itemInfo.isToy then
+    if itemInfo.isSpell then
+        btn:SetAttribute("type", "spell")
+        btn:SetAttribute("spell", itemInfo.spellID)
+    elseif itemInfo.isToy then
         btn:SetAttribute("type", "toy")
         btn:SetAttribute("toy", itemInfo.itemID)
     else
@@ -899,7 +1141,9 @@ local function CreateTravelButton(index, itemInfo)
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP", 0, 4)
-        if itemInfo.isToy then
+        if itemInfo.isSpell then
+            GameTooltip:SetSpellByID(itemInfo.spellID)
+        elseif itemInfo.isToy then
             GameTooltip:SetToyByItemID(itemInfo.itemID)
         else
             GameTooltip:SetItemByID(itemInfo.itemID)
@@ -914,12 +1158,162 @@ local function CreateTravelButton(index, itemInfo)
     return btn
 end
 
--- Create static travel buttons (Hearthstone + Arcantina)
+-- Create static travel buttons (Hearthstone + Dalaran HS + Arcantina)
 for i, item in ipairs(TRAVEL_ITEMS) do
     travelButtons[i] = CreateTravelButton(i, item)
 end
--- Wormhole button (created but shown conditionally)
+
+-- Hearthstone slot: replaceable by dragging a toy onto it
+local hsBtn = travelButtons[1]
+
+-- Apply a custom hearthstone toy to the HS slot
+local function ApplyCustomHearthstone(toyItemID)
+    if InCombatLockdown() then return end
+    ns.EnsureDB()
+    if toyItemID then
+        MajesticBeastTrackerDB.settings.hearthstoneToy = toyItemID
+        hsBtn:SetAttribute("type", "toy")
+        hsBtn:SetAttribute("toy", toyItemID)
+        hsBtn:SetAttribute("item", nil)
+        hsBtn.itemInfo = { itemID = toyItemID, name = C_Item.GetItemNameByID(toyItemID) or "Hearthstone", isToy = true, isCustomHS = true }
+        local tex = C_Item.GetItemIconByID(toyItemID)
+        if tex then hsBtn.icon:SetTexture(tex) end
+    else
+        -- Reset to default Hearthstone
+        MajesticBeastTrackerDB.settings.hearthstoneToy = nil
+        hsBtn:SetAttribute("type", "item")
+        hsBtn:SetAttribute("item", "Hearthstone")
+        hsBtn:SetAttribute("toy", nil)
+        hsBtn.itemInfo = TRAVEL_ITEMS[1]
+        local tex = C_Item.GetItemIconByID(6948)
+        if tex then hsBtn.icon:SetTexture(tex) end
+    end
+end
+
+-- Extract the "Use:" line from the base Hearthstone tooltip (locale-safe)
+local HS_USE_TEXT
+do
+    local tt = CreateFrame("GameTooltip", "MBT_HSCheck", nil, "GameTooltipTemplate")
+    tt:SetOwner(UIParent, "ANCHOR_NONE")
+    tt:SetItemByID(6948)
+    for i = 1, tt:NumLines() do
+        local line = _G["MBT_HSCheckTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            -- The "Use:" line contains the core HS description
+            if text and text:match("^Use:") then
+                -- Strip the "Use: " prefix to get the description
+                HS_USE_TEXT = text:gsub("^Use:%s*", "")
+                break
+            end
+        end
+    end
+    tt:Hide()
+end
+
+-- Validate that a toy is a hearthstone variant (tooltip contains base HS description)
+local function IsHearthstoneToy(itemID)
+    if not itemID or not PlayerHasToy(itemID) or not HS_USE_TEXT then return false end
+    local tt = _G["MBT_HSCheck"]
+    tt:SetOwner(UIParent, "ANCHOR_NONE")
+    tt:SetToyByItemID(itemID)
+    for i = 1, tt:NumLines() do
+        local line = _G["MBT_HSCheckTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            if text and text:find(HS_USE_TEXT, 1, true) then
+                tt:Hide()
+                return true
+            end
+        end
+    end
+    tt:Hide()
+    return false
+end
+
+-- Drop zone overlay: intercepts clicks when cursor holds an item
+local hsDropZone = CreateFrame("Button", nil, hsBtn)
+hsDropZone:SetAllPoints()
+hsDropZone:SetFrameLevel(hsBtn:GetFrameLevel() + 5)
+hsDropZone:RegisterForClicks("LeftButtonUp")
+hsDropZone:Hide()
+hsDropZone:SetScript("OnClick", function()
+    if InCombatLockdown() then return end
+    local infoType, id = GetCursorInfo()
+    if infoType == "item" and id and IsHearthstoneToy(id) then
+        ApplyCustomHearthstone(id)
+        ClearCursor()
+    else
+        ClearCursor()
+    end
+end)
+-- Show drop zone only when cursor holds an item
+hsBtn:HookScript("OnEnter", function()
+    if GetCursorInfo() then hsDropZone:Show() end
+end)
+hsDropZone:SetScript("OnEnter", function()
+    if not GetCursorInfo() then hsDropZone:Hide() end
+end)
+hsDropZone:SetScript("OnLeave", function()
+    hsDropZone:Hide()
+end)
+
+-- Right-click tooltip hint + reset
+local origHSEnter = hsBtn:GetScript("OnEnter")
+hsBtn:SetScript("OnEnter", function(self)
+    if origHSEnter then origHSEnter(self) end
+    if self.itemInfo.isCustomHS then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Drag a Hearthstone toy to replace", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Shift+Right-click: Reset to default", 0.7, 0.7, 0.7)
+    else
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Drag a Hearthstone toy to replace", 0.7, 0.7, 0.7)
+    end
+    GameTooltip:Show()
+end)
+
+-- PreClick: Shift+Right-click reset
+hsBtn:HookScript("PreClick", function(self, button)
+    if InCombatLockdown() then return end
+    if button == "RightButton" and IsShiftKeyDown() and self.itemInfo.isCustomHS then
+        self:SetAttribute("type", nil)
+    end
+end)
+
+-- PostClick: complete reset or restore type after blocked click
+hsBtn:HookScript("PostClick", function(self, button)
+    if InCombatLockdown() then return end
+    if button == "RightButton" and IsShiftKeyDown() and self.itemInfo.isCustomHS then
+        ApplyCustomHearthstone(nil)
+    end
+    -- Restore type if it was cleared by PreClick (drag-drop or blocked reset)
+    if not self:GetAttribute("type") then
+        if self.itemInfo.isToy then
+            self:SetAttribute("type", "toy")
+        else
+            self:SetAttribute("type", "item")
+        end
+    end
+end)
+
+-- Restore saved custom HS on login (retry until DB is ready)
+local function RestoreCustomHearthstone()
+    ns.EnsureDB()
+    local savedToy = MajesticBeastTrackerDB and MajesticBeastTrackerDB.settings and MajesticBeastTrackerDB.settings.hearthstoneToy
+    if savedToy and not InCombatLockdown() then
+        ApplyCustomHearthstone(savedToy)
+    elseif savedToy then
+        -- Combat lockdown, retry later
+        C_Timer.After(2, RestoreCustomHearthstone)
+    end
+end
+-- Defer to after PLAYER_LOGIN has set up DB
+C_Timer.After(3, RestoreCustomHearthstone)
+-- Conditional travel buttons (created but shown based on class/profession/race)
 local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
+local mageTeleportBtn = CreateTravelButton(#TRAVEL_ITEMS + 2, MAGE_TELEPORT)
+local vulperaReturnBtn = CreateTravelButton(#TRAVEL_ITEMS + 3, VULPERA_RETURN)
 
 ------------------------------------------------------
 -- Stats display (Skill, Perception, Finesse, Deftness)
@@ -942,10 +1336,11 @@ for i, stat in ipairs(STAT_LABELS) do
 end
 
 -- Total TSM cost label (below stats)
-ns.tsmTotalLabel = frame:CreateFontString(nil, "OVERLAY")
+ns.tsmTotalLabel = bottomBar:CreateFontString(nil, "OVERLAY")
 ns.tsmTotalLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 ns.tsmTotalLabel:SetTextColor(1, 0.84, 0)
-ns.tsmTotalLabel:SetJustifyH("RIGHT")
+ns.tsmTotalLabel:SetJustifyH("CENTER")
+ns.tsmTotalLabel:SetPoint("CENTER", bottomBar, "CENTER", 0, 0)
 ns.tsmTotalLabel:Hide()
 
 -- Weekly knowledge lines for main window (right-aligned, below stats)
@@ -986,235 +1381,6 @@ function ns.FormatGoldPositive(copper)
     end
 end
 
--- Helper: get TSM min buyout price for an item (returns copper or nil)
-function ns.GetTSMPrice(itemID)
-    if not TSM_API then return nil end
-    local ok, price = pcall(TSM_API.GetCustomPriceValue, "DBMinBuyout", "i:" .. itemID)
-    if ok and price and price > 0 then return price end
-    return nil
-end
-
--- Helper: build loot tooltip lines from item count table
-function ns.AddLootTooltipLines(lootTable, header, savedPrices)
-    if not lootTable then return 0 end
-    local hasAny = false
-    for _, c in pairs(lootTable) do
-        if c > 0 then hasAny = true; break end
-    end
-    if not hasAny then return 0 end
-
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(header, 1, 0.84, 0)
-
-    local totalValue = 0
-    local hasTSM = TSM_API ~= nil
-    -- List each item individually (separate quality tiers)
-    local items = {}
-    for id, count in pairs(lootTable) do
-        if count > 0 then
-            local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
-            items[#items + 1] = { id = id, name = name, quality = quality, count = count }
-        end
-    end
-    table.sort(items, function(a, b)
-        if a.name ~= b.name then return a.name < b.name end
-        return a.quality < b.quality
-    end)
-
-    for _, entry in ipairs(items) do
-        local displayName = entry.name
-        if entry.quality > 0 then
-            displayName = displayName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. entry.quality .. ":12:12::1|a"
-        end
-        local line = displayName .. "  x" .. entry.count
-        if hasTSM then
-            local price = savedPrices and savedPrices[entry.id]
-            if not price then price = ns.GetTSMPrice(entry.id) end
-            if price then
-                local value = price * entry.count
-                totalValue = totalValue + value
-                line = line .. "  |cffffd700" .. ns.FormatGoldPositive(value) .. "|r"
-            end
-        end
-        local r, g, b = 0.9, 0.9, 0.9
-        local itemQuality = select(3, C_Item.GetItemInfo(entry.id))
-        if itemQuality then
-            local color = ITEM_QUALITY_COLORS[itemQuality]
-            if color then r, g, b = color.r, color.g, color.b end
-        end
-        GameTooltip:AddLine(line, r, g, b)
-    end
-
-    if hasTSM and totalValue > 0 then
-        GameTooltip:AddLine("Value: " .. ns.FormatGoldPositive(totalValue), 1, 0.84, 0)
-    end
-    return totalValue
-end
-
--- Helper: build sorted item list from loot table
-local function BuildItemList(lootTable, savedPrices)
-    if not lootTable then return {}, 0 end
-    local items = {}
-    local totalValue = 0
-    local hasTSM = TSM_API ~= nil
-    for id, count in pairs(lootTable) do
-        if count > 0 then
-            local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
-            local displayName = name
-            if quality > 0 then
-                displayName = displayName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
-            end
-            local priceText = ""
-            if hasTSM then
-                local price = savedPrices and savedPrices[id]
-                if not price then price = ns.GetTSMPrice(id) end
-                if price then
-                    totalValue = totalValue + price * count
-                    priceText = "  |cffffd700" .. ns.FormatGoldPositive(price * count) .. "|r"
-                end
-            end
-            local r, g, b = 0.9, 0.9, 0.9
-            local itemQuality = select(3, C_Item.GetItemInfo(id))
-            if itemQuality then
-                local color = ITEM_QUALITY_COLORS[itemQuality]
-                if color then r, g, b = color.r, color.g, color.b end
-            end
-            items[#items + 1] = { name = displayName, count = count, priceText = priceText, r = r, g = g, b = b, sortKey = name .. string.format("%02d", quality) }
-        end
-    end
-    table.sort(items, function(a, b) return a.sortKey < b.sortKey end)
-    return items, totalValue
-end
-
--- Helper: add two-column loot display (This Reset | All Time) to tooltip
-function ns.AddLootTooltipColumns(resetTable, allTimeTable, savedPrices, perBeast, perBeastReset)
-    local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
-    local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
-    local hasTSM = TSM_API ~= nil
-
-    -- Collect all unique item names from both lists
-    local allNames = {}
-    local nameSet = {}
-    for _, item in ipairs(resetItems) do
-        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
-    end
-    for _, item in ipairs(allTimeItems) do
-        if not nameSet[item.sortKey] then nameSet[item.sortKey] = true; allNames[#allNames + 1] = item.sortKey end
-    end
-    table.sort(allNames)
-
-    -- Build lookup by sortKey
-    local resetByKey = {}
-    for _, item in ipairs(resetItems) do resetByKey[item.sortKey] = item end
-    local allTimeByKey = {}
-    for _, item in ipairs(allTimeItems) do allTimeByKey[item.sortKey] = item end
-
-    -- Headers with divider
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("This Reset", "All Time", 1, 0.84, 0, 1, 0.84, 0)
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
-
-    -- Rows: use allTime item list as base (always complete), show reset count on left
-    for _, key in ipairs(allNames) do
-        local ri = resetByKey[key]
-        local ai = allTimeByKey[key]
-        if ai then
-            local leftText
-            local lr, lg, lb
-            if ri then
-                leftText = ri.name .. " x" .. ri.count .. ri.priceText
-                lr, lg, lb = ri.r, ri.g, ri.b
-            else
-                leftText = ai.name .. " |cff666666—|r"
-                lr, lg, lb = 0.4, 0.4, 0.4
-            end
-            local rightText = ai.name .. " x" .. ai.count .. ai.priceText
-            local rr, rg, rb = ai.r, ai.g, ai.b
-            GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
-        elseif ri then
-            -- Item in reset but not alltime (shouldn't happen, but handle)
-            local leftText = ri.name .. " x" .. ri.count .. ri.priceText
-            GameTooltip:AddDoubleLine(leftText, " ", ri.r, ri.g, ri.b, 0.5, 0.5, 0.5)
-        end
-    end
-
-    -- Value totals
-    GameTooltip:AddLine("|cff444444" .. string.rep("—", 40) .. "|r")
-    if hasTSM then
-        local leftVal = resetTotal > 0 and ("Value: " .. ns.FormatGoldPositive(resetTotal)) or " "
-        local rightVal = allTimeTotal > 0 and ("Value: " .. ns.FormatGoldPositive(allTimeTotal)) or " "
-        GameTooltip:AddDoubleLine(leftVal, rightVal, 1, 0.84, 0, 1, 0.84, 0)
-    end
-
-    -- Per-beast breakdown below (this reset + all time)
-    if perBeastReset or perBeast then
-        ns.AddPerBeastTooltipLines(perBeastReset, perBeast)
-    end
-end
-
--- Helper: add per-beast breakdown lines to tooltip
-function ns.AddPerBeastTooltipLines(perBeastReset, perBeastAllTime)
-    if not perBeastReset and not perBeastAllTime then return end
-    local resetData = perBeastReset or {}
-    local allTimeData = perBeastAllTime or {}
-
-    -- Helper: format item name with quality icon
-    local function formatItem(id)
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-        local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
-        if quality and quality > 0 then
-            name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
-        end
-        return name
-    end
-
-    local function getItemColor(id)
-        local r, g, b = 0.9, 0.9, 0.9
-        local itemQuality = select(3, C_Item.GetItemInfo(id))
-        if itemQuality then
-            local color = ITEM_QUALITY_COLORS[itemQuality]
-            if color then r, g, b = color.r, color.g, color.b end
-        end
-        return r, g, b
-    end
-
-    for _, lure in ipairs(LURES) do
-        local resetBl = resetData[lure.name]
-        local allTimeBl = allTimeData[lure.name]
-        local hasReset = resetBl and next(resetBl)
-        local hasAllTime = allTimeBl and next(allTimeBl)
-        if hasReset or hasAllTime then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddDoubleLine(
-                lure.color .. lure.name .. " (Reset)|r",
-                lure.color .. lure.name .. " (All Time)|r",
-                1, 1, 1, 1, 1, 1)
-
-            -- Collect all item IDs from both
-            local allIDs = {}
-            local idSet = {}
-            for id in pairs(allTimeBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-            for id in pairs(resetBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-            table.sort(allIDs, function(a, b)
-                return (C_Item.GetItemNameByID(a) or "") < (C_Item.GetItemNameByID(b) or "")
-            end)
-
-            for _, id in ipairs(allIDs) do
-                local name = formatItem(id)
-                local r, g, b = getItemColor(id)
-                local rc = resetBl and resetBl[id]
-                local ac = allTimeBl and allTimeBl[id]
-                local leftText = rc and ("  " .. name .. " x" .. rc) or " "
-                local rightText = ac and (name .. " x" .. ac) or " "
-                local lr, lg, lb = rc and r or 0.4, rc and g or 0.4, rc and b or 0.4
-                local rr, rg, rb = ac and r or 0.4, ac and g or 0.4, ac and b or 0.4
-                GameTooltip:AddDoubleLine(leftText, rightText, lr, lg, lb, rr, rg, rb)
-            end
-        end
-    end
-end
 
 -- Helper: check if player has Engineering as second profession
 function ns.HasEngineering()
@@ -1257,286 +1423,6 @@ function ns.GetStatusText(charData, lureName)
 end
 
 
-------------------------------------------------------
--- Gear popup (shown when clicking character name)
-------------------------------------------------------
-
-local GEAR_ICON_SIZE = 24
-local GEAR_PAD = 6
-
-local gearPopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-gearPopup:SetFrameStrata("DIALOG")
-gearPopup:SetClampedToScreen(true)
-gearPopup:SetBackdrop(BACKDROP)
-gearPopup:SetBackdropColor(0, 0, 0, 0.97)
-gearPopup:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-gearPopup:EnableMouse(true)
-gearPopup:Hide()
-
-local gearPopupTitle = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-gearPopupTitle:SetPoint("TOPLEFT", gearPopup, "TOPLEFT", GEAR_PAD + 2, -GEAR_PAD)
-gearPopupTitle:SetTextColor(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b)
-
-local gearPopupRows = {}
-for slot = 1, 3 do
-    local row = CreateFrame("Frame", nil, gearPopup)
-    row:SetHeight(GEAR_ICON_SIZE)
-
-    local icon = row:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(GEAR_ICON_SIZE, GEAR_ICON_SIZE)
-    icon:SetPoint("LEFT")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    row.icon = icon
-
-    local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetFont(label:GetFont(), 9)
-    label:SetPoint("LEFT", icon, "RIGHT", 4, 0)
-    label:SetJustifyH("LEFT")
-    label:SetWordWrap(false)
-    row.label = label
-
-    row:EnableMouse(true)
-    row:SetScript("OnEnter", function(self)
-        if self.itemLink then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink(self.itemLink)
-            GameTooltip:Show()
-        end
-    end)
-    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    gearPopupRows[slot] = row
-end
-
--- Stat lines in gear popup
-local POPUP_STAT_LABELS = {
-    { key = "skill",      label = "Skill",      color = "ffFFD100" },
-    { key = "perception", label = "Perception",  color = "ff1EFF00" },
-    { key = "finesse",    label = "Finesse",     color = "ff0070DD" },
-    { key = "deftness",   label = "Deftness",    color = "ffA335EE" },
-}
-
-local gearPopupStatHeader = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-gearPopupStatHeader:SetFont(gearPopupStatHeader:GetFont(), 9)
-gearPopupStatHeader:SetTextColor(0.6, 0.6, 0.6)
-gearPopupStatHeader:SetText("Base Stats against Majestic Beasts")
-
-local gearPopupStatLines = {}
-for i, info in ipairs(POPUP_STAT_LABELS) do
-    local line = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    line:SetFont(line:GetFont(), 9)
-    line:SetJustifyH("LEFT")
-    gearPopupStatLines[i] = line
-end
-
--- Weekly KP header + lines
-local gearPopupWeeklyHeader = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-gearPopupWeeklyHeader:SetFont(gearPopupWeeklyHeader:GetFont(), 9)
-gearPopupWeeklyHeader:SetTextColor(0.6, 0.6, 0.6)
-gearPopupWeeklyHeader:SetText("Weekly Knowledge")
-
-local WEEKLIES = ns.SKINNING_WEEKLIES
-local gearPopupWeeklyLines = {}
-for i = 1, #WEEKLIES do
-    local line = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    line:SetFont(line:GetFont(), 9)
-    line:SetJustifyH("LEFT")
-    gearPopupWeeklyLines[i] = line
-end
-
--- Helper: layout weekly lines in gear popup, returns total height used
-local function LayoutWeeklyLines(charData, anchorFontString, startY, trackMaxWidth)
-    local weeklyHeight = 0
-    local hasWeeklies = charData and charData.weeklies
-    local weeklyExpired = charData and charData.weeklyResetTime and GetServerTime() > charData.weeklyResetTime
-    local dmfUp = ns.IsDarkmoonFaireUp and ns.IsDarkmoonFaireUp()
-
-    if hasWeeklies and not weeklyExpired then
-        gearPopupWeeklyHeader:ClearAllPoints()
-        gearPopupWeeklyHeader:SetPoint("TOPLEFT", anchorFontString, "BOTTOMLEFT", 2, startY)
-        gearPopupWeeklyHeader:Show()
-        local row = 0
-        for i, w in ipairs(WEEKLIES) do
-            local line = gearPopupWeeklyLines[i]
-            if w.dmf and not dmfUp then
-                line:Hide()
-            else
-                local val = charData.weeklies[w.key]
-                local status
-                if w.mode == "each" then
-                    local total = #w.questIDs
-                    local count = val or 0
-                    local totalKP = total * w.kp
-                    if count >= total then
-                        status = "|cff00ff00" .. count .. "/" .. total .. "|r"
-                    elseif count > 0 then
-                        status = "|cffffff00" .. count .. "/" .. total .. "|r"
-                    else
-                        status = "|cffff4444" .. count .. "/" .. total .. "|r"
-                    end
-                    line:SetText(w.label .. " |cff888888(" .. totalKP .. " KP)|r " .. status)
-                else
-                    local done = val
-                    local icon = done and "|cff00ff00done|r" or "|cffff4444todo|r"
-                    line:SetText(w.label .. " |cff888888(" .. w.kp .. " KP)|r " .. icon)
-                end
-                line:ClearAllPoints()
-                line:SetPoint("TOPLEFT", anchorFontString, "BOTTOMLEFT", 2, startY - 10 - row * 12)
-                line:Show()
-                if trackMaxWidth then
-                    trackMaxWidth[1] = math.max(trackMaxWidth[1], line:GetStringWidth())
-                end
-                row = row + 1
-            end
-        end
-        weeklyHeight = 6 + 10 + row * 12 + 2
-    else
-        gearPopupWeeklyHeader:Hide()
-        for i = 1, #WEEKLIES do
-            gearPopupWeeklyLines[i]:Hide()
-        end
-    end
-    return weeklyHeight
-end
-
--- Auto-hide when clicking elsewhere
-gearPopup:SetScript("OnUpdate", function(self)
-    if self:IsShown() and not self:IsMouseOver() and not frame:IsMouseOver() and IsMouseButtonDown("LeftButton") then
-        self:Hide()
-    end
-end)
-
-local function ShowGearPopup(anchor, charKey)
-    ns.EnsureDB()
-    local charData = MajesticBeastTrackerDB.chars[charKey]
-    if not charData or not charData.gear or #charData.gear == 0 then
-        -- No gear data — show empty message + stats if available
-        gearPopupTitle:SetText(ns.GetDemoName(charKey))
-        for _, row in ipairs(gearPopupRows) do
-            row:Hide()
-            row.label:Hide()
-        end
-        local noGear = gearPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        noGear:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 0, -4)
-        local isCurrentChar = charKey == ns.GetCharKey()
-        local noGearMsg = isCurrentChar and "No gear equipped" or "No gear data (login required)"
-        noGear:SetText("|cff666666" .. noGearMsg .. "|r")
-        noGear:SetFont(noGear:GetFont(), 9)
-        gearPopup.noGear = noGear
-
-        -- Still show stats if we have them
-        local statsHeight = 0
-        local hasStats = charData and charData.stats and (charData.stats.skill or 0) > 0
-        if hasStats then
-            local headerY = -(4 + 14 + 6)
-            gearPopupStatHeader:ClearAllPoints()
-            gearPopupStatHeader:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY)
-            gearPopupStatHeader:Show()
-            for i, info in ipairs(POPUP_STAT_LABELS) do
-                local line = gearPopupStatLines[i]
-                local val = charData.stats[info.key] or 0
-                line:SetText("|c" .. info.color .. info.label .. ":|r " .. val)
-                line:ClearAllPoints()
-                line:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY - 10 - (i - 1) * 12)
-                line:Show()
-            end
-            statsHeight = 6 + 10 + #POPUP_STAT_LABELS * 12 + 2
-        else
-            gearPopupStatHeader:Hide()
-            for i = 1, #POPUP_STAT_LABELS do
-                gearPopupStatLines[i]:Hide()
-            end
-        end
-
-        -- Weeklies in no-gear view
-        local weeklyY = -(4 + 14 + statsHeight + 6)
-        local weeklyHeight = LayoutWeeklyLines(charData, gearPopupTitle, weeklyY, nil)
-
-        gearPopup:SetSize(180, GEAR_PAD * 2 + 14 + 16 + statsHeight + weeklyHeight)
-        gearPopup:ClearAllPoints()
-        gearPopup:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -2, 0)
-        gearPopup:Show()
-        return
-    end
-
-    -- Clean up previous no-gear text
-    if gearPopup.noGear then gearPopup.noGear:Hide() end
-
-    gearPopupTitle:SetText(ns.GetClassColor(charData.class) .. ns.GetDemoName(charKey) .. "|r")
-
-    local maxLabelWidth = 0
-    for slot, row in ipairs(gearPopupRows) do
-        local gear = charData.gear[slot]
-        if gear then
-            local tex = gear.icon or C_Item.GetItemIconByID(gear.itemID)
-            if tex then row.icon:SetTexture(tex) end
-            row.itemLink = gear.link
-            local displayName = gear.name or ""
-            -- Color by item rarity from link
-            if gear.link then
-                local _, _, quality = GetItemInfo(gear.link)
-                if quality and ITEM_QUALITY_COLORS[quality] then
-                    displayName = ITEM_QUALITY_COLORS[quality].hex .. displayName .. "|r"
-                end
-            end
-            row.label:SetText(displayName)
-            row.label:SetWidth(180)
-            row:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT",
-                0, -(4 + (slot - 1) * (GEAR_ICON_SIZE + 3)))
-            row:Show()
-            row.label:Show()
-            maxLabelWidth = math.max(maxLabelWidth, row.label:GetStringWidth())
-        else
-            row:Hide()
-            row.label:Hide()
-        end
-    end
-
-    local numGear = #charData.gear
-    local gearHeight = numGear * (GEAR_ICON_SIZE + 3)
-
-    -- Show stats below gear
-    local statsHeight = 0
-    local hasStats = charData.stats and (charData.stats.skill or 0) > 0
-    if hasStats then
-        local headerY = -(4 + gearHeight + 6)
-        gearPopupStatHeader:ClearAllPoints()
-        gearPopupStatHeader:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY)
-        gearPopupStatHeader:Show()
-        for i, info in ipairs(POPUP_STAT_LABELS) do
-            local line = gearPopupStatLines[i]
-            local val = charData.stats[info.key] or 0
-            line:SetText("|c" .. info.color .. info.label .. ":|r " .. val)
-            line:ClearAllPoints()
-            line:SetPoint("TOPLEFT", gearPopupTitle, "BOTTOMLEFT", 2, headerY - 10 - (i - 1) * 12)
-            line:Show()
-            maxLabelWidth = math.max(maxLabelWidth, line:GetStringWidth())
-        end
-        statsHeight = 6 + 10 + #POPUP_STAT_LABELS * 12 + 2
-    else
-        gearPopupStatHeader:Hide()
-        for i = 1, #POPUP_STAT_LABELS do
-            gearPopupStatLines[i]:Hide()
-        end
-    end
-
-    -- Show weeklies below stats
-    local weeklyY = -(4 + gearHeight + statsHeight + 6)
-    local widthTracker = { maxLabelWidth }
-    local weeklyHeight = LayoutWeeklyLines(charData, gearPopupTitle, weeklyY, widthTracker)
-    maxLabelWidth = widthTracker[1]
-
-    local popupW = GEAR_PAD * 2 + GEAR_ICON_SIZE + 8 + math.max(maxLabelWidth, 160)
-    local popupH = GEAR_PAD * 2 + 14 + gearHeight + statsHeight + weeklyHeight
-    -- Set row width to cover full popup for hover tooltip
-    for _, row in ipairs(gearPopupRows) do
-        row:SetWidth(popupW - GEAR_PAD * 2)
-    end
-    gearPopup:SetSize(popupW, popupH)
-    gearPopup:ClearAllPoints()
-    gearPopup:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -2, 0)
-    gearPopup:Show()
-end
 
 ------------------------------------------------------
 -- Character rows
@@ -1573,12 +1459,41 @@ local function CreateCharRow(index)
 
     local nameHl = nameBtn:CreateTexture(nil, "HIGHLIGHT")
     nameHl:SetAllPoints()
-    nameHl:SetColorTexture(0.25, 0.78, 0.92, 0.08)
+    nameHl:SetColorTexture(0.82, 0.71, 0.35, 0.08)
 
     nameBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     nameBtn.label = nameLabel
     row.name = nameBtn
     row.nameLabel = nameLabel
+
+    -- Tool icon (shown inside name cell, left side, for current char when Razorstone is active)
+    local toolIcon = CreateFrame("Button", "MBT_ToolIcon" .. index, frame, "SecureActionButtonTemplate")
+    toolIcon:SetSize(ROW_HEIGHT - 2, ROW_HEIGHT - 2)
+    -- Position set dynamically in UpdateUI (anchored to frame, not nameBtn)
+    toolIcon:RegisterForClicks("AnyUp", "AnyDown")
+    toolIcon:SetFrameLevel(nameBtn:GetFrameLevel() + 5)
+    toolIcon:Hide()
+    local toolTex = toolIcon:CreateTexture(nil, "ARTWORK")
+    toolTex:SetAllPoints()
+    toolTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    toolIcon.icon = toolTex
+    -- Golden hover border
+    local toolHl = toolIcon:CreateTexture(nil, "HIGHLIGHT")
+    toolHl:SetAllPoints()
+    toolHl:SetColorTexture(1, 0.84, 0, 0.3)
+    toolIcon:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.slotID then
+            GameTooltip:SetInventoryItem("player", self.slotID)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click to apply enchant", 0.7, 0.7, 0.7)
+        end
+        GameTooltip:Show()
+    end)
+    toolIcon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- Secure macro: /use <slotID> applies enchant cursor to that slot
+    toolIcon:SetAttribute("type", "macro")
+    row.toolIcon = toolIcon
 
     row.cells = {}
     for i = 1, #LURES do
@@ -1598,7 +1513,7 @@ local function CreateCharRow(index)
         -- Highlight on hover
         local hl = cell:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
-        hl:SetColorTexture(0.25, 0.78, 0.92, 0.1)
+        hl:SetColorTexture(0.82, 0.71, 0.35, 0.1)
 
         cell.lureIndex = i
         row.cells[i] = cell
@@ -1611,8 +1526,9 @@ local function CreateCharRow(index)
     goblinBtn:SetPoint("LEFT", frame, "TOPLEFT", goblinX, yOffset - ROW_HEIGHT / 2)
     local goblinIcon = goblinBtn:CreateTexture(nil, "ARTWORK")
     goblinIcon:SetAllPoints()
-    goblinIcon:SetTexture("Interface\\Icons\\Achievement_GoblinHead")
-    goblinIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    goblinIcon:SetTexture(MEDIA_PATH .. "Icon_Results")
+    goblinIcon:SetTexCoord(0, 1, 0, 1)
+    goblinIcon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
     goblinBtn.icon = goblinIcon
     goblinBtn:RegisterForClicks("LeftButtonUp")
     goblinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1642,388 +1558,6 @@ function ns.HideAllRows()
 end
 
 ------------------------------------------------------
--- Custom dropdown
-------------------------------------------------------
-
-local dropdown
-
-local function CreateDropdown()
-    if dropdown then return dropdown end
-    dropdown = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    dropdown:SetFrameStrata("DIALOG")
-    dropdown:SetClampedToScreen(true)
-    dropdown:SetBackdrop(BACKDROP)
-    dropdown:SetBackdropColor(0, 0, 0, 0.97)
-    dropdown:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-    dropdown:EnableMouse(true)
-    dropdown:Hide()
-    dropdown.buttons = {}
-
-    dropdown:SetScript("OnUpdate", function(self)
-        if self:IsShown() and not self:IsMouseOver() and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
-            self:Hide()
-        end
-    end)
-
-    return dropdown
-end
-
-local function ShowDropdown(anchor, items)
-    local dd = CreateDropdown()
-    for _, btn in ipairs(dd.buttons) do btn:Hide() end
-
-    local btnHeight = 20
-    local btnWidth = 150
-    local yOff = -6
-
-    for idx, item in ipairs(items) do
-        local btn = dd.buttons[idx]
-        if not btn then
-            btn = CreateFrame("Button", nil, dd)
-            btn:SetHeight(btnHeight)
-            local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("LEFT", 8, 0)
-            label:SetPoint("RIGHT", -8, 0)
-            label:SetJustifyH("LEFT")
-            btn.label = label
-
-            local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-            hl:SetAllPoints()
-            hl:SetColorTexture(0.25, 0.78, 0.92, 0.15)
-
-            dd.buttons[idx] = btn
-        end
-
-        btn:SetPoint("TOPLEFT", dd, "TOPLEFT", 6, yOff)
-        btn:SetPoint("TOPRIGHT", dd, "TOPRIGHT", -6, yOff)
-        btn.label:SetText(item.text)
-        if item.isTitle then
-            btn.label:SetTextColor(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b)
-            btn:SetScript("OnClick", nil)
-            btn:Disable()
-        else
-            btn.label:SetTextColor(0.9, 0.9, 0.9)
-            btn:Enable()
-            btn:SetScript("OnClick", function()
-                dd:Hide()
-                if item.func then item.func() end
-            end)
-        end
-        btn:Show()
-        yOff = yOff - btnHeight
-    end
-
-    dd:SetSize(btnWidth + 12, math.abs(yOff) + 6)
-    dd:ClearAllPoints()
-    dd:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
-    dd:Show()
-end
-
-------------------------------------------------------
--- Loot Editor Panel
-------------------------------------------------------
-
-ns.lootEditor = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-ns.lootEditor:SetFrameStrata("MEDIUM")
-ns.lootEditor:SetClampedToScreen(true)
-ns.lootEditor:SetBackdrop(BACKDROP)
-ns.lootEditor:SetBackdropColor(0, 0, 0, 0.97)
-ns.lootEditor:SetBackdropBorderColor(unpack(C_BORDER_RGB))
-ns.lootEditor:EnableMouse(true)
-ns.lootEditor:Hide()
-ns.lootEditor.rows = {}
-ns.lootEditor.charKey = nil
-
--- Title
-local lootTitle = ns.lootEditor:CreateFontString(nil, "OVERLAY")
-lootTitle:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-lootTitle:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 8, -8)
-lootTitle:SetTextColor(0.25, 0.78, 0.92)
-ns.lootEditor.title = lootTitle
-
--- Syncing overlay
-local syncOverlay = CreateFrame("Frame", nil, ns.lootEditor)
-syncOverlay:SetAllPoints()
-syncOverlay:SetFrameLevel(ns.lootEditor:GetFrameLevel() + 10)
-syncOverlay:EnableMouse(true) -- block clicks through
-syncOverlay:Hide()
-local syncBg = syncOverlay:CreateTexture(nil, "BACKGROUND")
-syncBg:SetAllPoints()
-syncBg:SetColorTexture(0, 0, 0, 0.7)
-local syncText = syncOverlay:CreateFontString(nil, "OVERLAY")
-syncText:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-syncText:SetPoint("CENTER", 0, 0)
-syncText:SetText("|cff59c7eaLoot sync in progress...|r")
-ns.lootEditor.syncOverlay = syncOverlay
-
--- Close button
-local lootClose = CreateFrame("Button", nil, ns.lootEditor)
-lootClose:SetSize(16, 16)
-lootClose:SetPoint("TOPRIGHT", -4, -4)
-local lootCloseTex = lootClose:CreateFontString(nil, "OVERLAY")
-lootCloseTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-lootCloseTex:SetAllPoints()
-lootCloseTex:SetText("|cffff4444×|r")
-local lootCloseHl = lootClose:CreateTexture(nil, "HIGHLIGHT")
-lootCloseHl:SetAllPoints()
-lootCloseHl:SetColorTexture(1, 0.3, 0.3, 0.15)
-lootClose:SetScript("OnClick", function() ns.lootEditor:Hide() end)
-
-local LOOT_ROW_HEIGHT = 22
-local LOOT_EDITOR_WIDTH = 320
-
--- Build sorted list of all tracked item IDs (sorted by name, then quality tier)
-local function BuildSortedLootList()
-    local items = {}
-    for id in pairs(ns.TRACKED_LOOT) do
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
-        local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
-        items[#items + 1] = { id = id, name = name, quality = quality }
-    end
-    table.sort(items, function(a, b)
-        if a.name ~= b.name then return a.name < b.name end
-        return a.quality < b.quality
-    end)
-    return items
-end
-
--- Inner function that actually populates the editor (called after items are cached)
-local function PopulateLootEditor(anchor, charKey)
-    ns.lootEditor.charKey = charKey
-    if anchor ~= ns.lootEditor then
-        ns.lootEditor._anchor = anchor
-    end
-    local charData = MajesticBeastTrackerDB.chars[charKey]
-    if not charData then return end
-
-    -- Ensure loot structure
-    if not charData.loot then
-        charData.loot = { thisReset = {}, allTime = {}, resetTime = GetServerTime() }
-    end
-    local loot = ns.GetCharLoot(charData)
-
-    ns.lootEditor.title:SetText(ns.GetDemoName(charKey) .. " - Edit Loot")
-
-    local sortedItems = BuildSortedLootList()
-
-    local yOff = -24
-    for idx, entry in ipairs(sortedItems) do
-        local itemID = entry.id
-        local row = ns.lootEditor.rows[idx]
-        if not row then
-            row = CreateFrame("Frame", nil, ns.lootEditor)
-            row:SetHeight(LOOT_ROW_HEIGHT)
-            row:EnableMouse(true)
-
-            -- Item icon
-            local icon = row:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(18, 18)
-            icon:SetPoint("LEFT", 8, 0)
-            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            row.icon = icon
-
-            -- Item name
-            local name = row:CreateFontString(nil, "OVERLAY")
-            name:SetFont(STANDARD_TEXT_FONT, 10)
-            name:SetPoint("LEFT", icon, "RIGHT", 5, 0)
-            name:SetWidth(150)
-            name:SetJustifyH("LEFT")
-            name:SetWordWrap(false)
-            row.nameText = name
-
-            -- Count display (clickable to edit)
-            local countBtn = CreateFrame("Button", nil, row)
-            countBtn:SetSize(50, LOOT_ROW_HEIGHT)
-            countBtn:SetPoint("RIGHT", row, "RIGHT", -56, 0)
-            local countLabel = countBtn:CreateFontString(nil, "OVERLAY")
-            countLabel:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-            countLabel:SetAllPoints()
-            countLabel:SetJustifyH("RIGHT")
-            row.countLabel = countLabel
-            row.countBtn = countBtn
-
-            -- Inline EditBox (hidden by default)
-            local editBox = CreateFrame("EditBox", nil, row, "BackdropTemplate")
-            editBox:SetSize(36, 16)
-            editBox:SetPoint("RIGHT", row, "RIGHT", -58, 0)
-            editBox:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
-            editBox:SetJustifyH("CENTER")
-            editBox:SetAutoFocus(false)
-            editBox:SetNumeric(true)
-            editBox:SetMaxLetters(5)
-            editBox:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 8, insets = { left = 2, right = 2, top = 2, bottom = 2 } })
-            editBox:SetBackdropColor(0, 0, 0, 0.9)
-            editBox:SetBackdropBorderColor(0.25, 0.78, 0.92, 0.6)
-            editBox:SetTextColor(1, 0.84, 0)
-            editBox:Hide()
-            row.editBox = editBox
-
-            -- Minus button
-            local minusBtn = CreateFrame("Button", nil, row)
-            minusBtn:SetSize(18, 18)
-            minusBtn:SetPoint("RIGHT", row, "RIGHT", -30, 0)
-            local minusTex = minusBtn:CreateFontString(nil, "OVERLAY")
-            minusTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-            minusTex:SetAllPoints()
-            minusTex:SetText("|cffff4444-|r")
-            local minusHl = minusBtn:CreateTexture(nil, "HIGHLIGHT")
-            minusHl:SetAllPoints()
-            minusHl:SetColorTexture(1, 0.3, 0.3, 0.15)
-            row.minusBtn = minusBtn
-
-            -- Plus button
-            local plusBtn = CreateFrame("Button", nil, row)
-            plusBtn:SetSize(18, 18)
-            plusBtn:SetPoint("RIGHT", row, "RIGHT", -8, 0)
-            local plusTex = plusBtn:CreateFontString(nil, "OVERLAY")
-            plusTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-            plusTex:SetAllPoints()
-            plusTex:SetText("|cff44ff44+|r")
-            local plusHl = plusBtn:CreateTexture(nil, "HIGHLIGHT")
-            plusHl:SetAllPoints()
-            plusHl:SetColorTexture(0.3, 1, 0.3, 0.15)
-            row.plusBtn = plusBtn
-
-            ns.lootEditor.rows[idx] = row
-        end
-
-        row:SetPoint("TOPLEFT", ns.lootEditor, "TOPLEFT", 0, yOff)
-        row:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", 0, yOff)
-
-        -- Set item data
-        local tex = C_Item.GetItemIconByID(itemID)
-        if tex then row.icon:SetTexture(tex) end
-        local itemName = C_Item.GetItemNameByID(itemID) or ("Item " .. itemID)
-        if entry.quality and entry.quality > 0 then
-            itemName = itemName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. entry.quality .. ":17:15::1|a"
-        end
-        row.nameText:SetText(itemName)
-        row.nameText:SetTextColor(0.9, 0.9, 0.9)
-
-        local resetCount = loot.thisReset[itemID] or 0
-        local allCount = loot.allTime[itemID] or 0
-        row.countLabel:SetText("|cffffd700" .. resetCount .. "|r / " .. allCount)
-        row.editBox:Hide()
-        row.countBtn:Show()
-
-        -- Item tooltip on hover
-        local capturedID = itemID
-        row:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT", 4, 0)
-            GameTooltip:SetItemByID(capturedID)
-            GameTooltip:Show()
-        end)
-        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        -- Capture for closures
-        local capturedIdx = idx
-
-        -- Helper: update display after any edit
-        local function RefreshRow()
-            local cl = ns.GetCharLoot(charData)
-            local rc = cl.thisReset[capturedID] or 0
-            local ac = cl.allTime[capturedID] or 0
-            ns.lootEditor.rows[capturedIdx].countLabel:SetText("|cffffd700" .. rc .. "|r / " .. ac)
-            if ns.UpdateUI then ns.UpdateUI() end
-        end
-
-        -- Click count to type a value
-        row.countBtn:SetScript("OnClick", function()
-            local cl = ns.GetCharLoot(charData)
-            row.countBtn:Hide()
-            row.editBox:SetText(tostring(cl.thisReset[capturedID] or 0))
-            row.editBox:Show()
-            row.editBox:SetFocus()
-            row.editBox:HighlightText()
-        end)
-
-        -- EditBox: commit on Enter, cancel on Escape
-        local function CommitEdit()
-            local val = tonumber(row.editBox:GetText()) or 0
-            local cl = ns.GetCharLoot(charData)
-            local oldReset = cl.thisReset[capturedID] or 0
-            local delta = val - oldReset
-            cl.thisReset[capturedID] = val > 0 and val or nil
-            cl.allTime[capturedID] = math.max((cl.allTime[capturedID] or 0) + delta, 0)
-            if cl.allTime[capturedID] <= 0 then cl.allTime[capturedID] = nil end
-            row.editBox:Hide()
-            row.countBtn:Show()
-            RefreshRow()
-        end
-        row.editBox:SetScript("OnEnterPressed", CommitEdit)
-        row.editBox:SetScript("OnEscapePressed", function()
-            row.editBox:Hide()
-            row.countBtn:Show()
-        end)
-        row.editBox:SetScript("OnEditFocusLost", function()
-            row.editBox:Hide()
-            row.countBtn:Show()
-        end)
-
-        row.minusBtn:SetScript("OnClick", function()
-            local cl = ns.GetCharLoot(charData)
-            if cl.thisReset[capturedID] and cl.thisReset[capturedID] > 0 then
-                cl.thisReset[capturedID] = cl.thisReset[capturedID] - 1
-                if cl.thisReset[capturedID] <= 0 then cl.thisReset[capturedID] = nil end
-            end
-            if cl.allTime[capturedID] and cl.allTime[capturedID] > 0 then
-                cl.allTime[capturedID] = cl.allTime[capturedID] - 1
-                if cl.allTime[capturedID] <= 0 then cl.allTime[capturedID] = nil end
-            end
-            RefreshRow()
-        end)
-
-        row.plusBtn:SetScript("OnClick", function()
-            local cl = ns.GetCharLoot(charData)
-            cl.thisReset[capturedID] = (cl.thisReset[capturedID] or 0) + 1
-            cl.allTime[capturedID] = (cl.allTime[capturedID] or 0) + 1
-            RefreshRow()
-        end)
-
-        row:Show()
-        yOff = yOff - LOOT_ROW_HEIGHT
-    end
-
-    -- Hide unused rows
-    for i = #sortedItems + 1, #ns.lootEditor.rows do
-        ns.lootEditor.rows[i]:Hide()
-    end
-
-    ns.lootEditor:SetSize(LOOT_EDITOR_WIDTH, math.abs(yOff) + 8)
-    ns.lootEditor:ClearAllPoints()
-    ns.lootEditor:SetPoint("TOPLEFT", ns.lootEditor._anchor or anchor, "TOPRIGHT", 4, 0)
-    ns.lootEditor:Show()
-
-    -- Show syncing overlay when loot sync is active
-    if ns.isSyncingLoot then
-        ns.lootEditor.syncOverlay:Show()
-    else
-        ns.lootEditor.syncOverlay:Hide()
-    end
-end
-
--- Preload item data then open editor
-ns.ShowLootEditor = function(anchor, charKey)
-    local pending = 0
-    local allCached = true
-    for id in pairs(ns.TRACKED_LOOT) do
-        if not C_Item.GetItemNameByID(id) then
-            allCached = false
-            pending = pending + 1
-            C_Item.RequestLoadItemDataByID(id, function()
-                pending = pending - 1
-                if pending <= 0 then
-                    PopulateLootEditor(anchor, charKey)
-                end
-            end)
-        end
-    end
-    if allCached then
-        PopulateLootEditor(anchor, charKey)
-    end
-end
-
-------------------------------------------------------
 -- Update
 ------------------------------------------------------
 
@@ -2031,6 +1565,7 @@ local function UpdateLockVisual()
     ns.EnsureDB()
     lockIcon[MajesticBeastTrackerDB.settings.locked and "Show" or "Hide"](lockIcon)
 end
+ns.UpdateLockVisual = UpdateLockVisual
 
 function ns.UpdateUI()
     local uiOk, uiErr = pcall(function()
@@ -2145,18 +1680,32 @@ function ns.UpdateUI()
                 headerIcons[i]:Hide()
             else
                 headerIcons[i]:ClearAllPoints()
+                -- Center lure icons vertically relative to header area
+                local lureY = contentTop - 2 - reagentExtra
+                if not showReagents then
+                    -- No reagents: center lures relative to cons+travel height
+                    local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
+                    local lureH = ICON_SIZE + ZONE_LABEL_HEIGHT + 2
+                    local vPad = math.max((consTravelH - lureH) / 2, 0)
+                    lureY = contentTop - 2 - vPad
+                end
                 headerIcons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
                     PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH + (COL_WIDTH - ICON_SIZE) / 2,
-                    contentTop - 2 - reagentExtra)
+                    lureY)
                 zoneLabels[i]:ClearAllPoints()
                 zoneLabels[i]:SetPoint("TOP", headerIcons[i], "BOTTOM", 0, -1)
             end
         end
+        -- Position consumable box at contentTop
+        ns.consumableBox:ClearAllPoints()
+        ns.consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2)
+        -- iconSep: below whichever is taller (lure icons or consumable+travel)
+        local lureSepY = contentTop - reagentExtra - ICON_ROW_HEIGHT - 2
+        local consSepY = contentTop - 2 - ns.CONS_BOX_HEIGHT - 2 - TRAVEL_ICON_SIZE - 8 - 4
+        local sepY = math.min(lureSepY, consSepY)
         ns.iconSep:ClearAllPoints()
-        ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, contentTop - reagentExtra - ICON_ROW_HEIGHT - 2)
+        ns.iconSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, sepY)
         ns.iconSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-        consumableBox:ClearAllPoints()
-        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, contentTop - 2 - reagentExtra + 4)
     end
 
 
@@ -2176,7 +1725,11 @@ function ns.UpdateUI()
                     if not skipForLevel then
                         local ts = cData.lures[LURES[li].name]
                         if not ts or ns.IsLureReady(ts) then
-                            charsNeedLure[li] = charsNeedLure[li] + 1
+                            -- Don't count if character already has lure in bags
+                            local hasBagged = cData.lureBags and cData.lureBags[LURES[li].name]
+                            if not hasBagged then
+                                charsNeedLure[li] = charsNeedLure[li] + 1
+                            end
                         end
                     end
                 end
@@ -2191,7 +1744,7 @@ function ns.UpdateUI()
 
     -- Update autohide button visual
     local ahEnabled = MajesticBeastTrackerDB.settings.autoHide
-    autoHideIcon:SetDesaturated(not ahEnabled)
+    autoHideIcon:SetTexture(MEDIA_PATH .. (ahEnabled and "Icon_Show" or "Icon_Hide"))
     autoHideIcon:SetAlpha(ahEnabled and 1.0 or 0.4)
 
     -- Update coin toggle button (desaturated when TSM not installed or disabled)
@@ -2203,32 +1756,32 @@ function ns.UpdateUI()
 
     -- Update global goblin button (desaturated when loot tracking is off)
     local lootTrackingOn = MajesticBeastTrackerDB.settings.lootTracking ~= false
-    globalGoblinIcon:SetDesaturated(not lootTrackingOn)
-    globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
-    globalGoblinBtn:ClearAllPoints()
-    globalGoblinBtn:SetPoint("RIGHT", coinBtn, "LEFT", -4, 0)
-    globalGoblinBtn:Show()
+    ns.globalGoblinIcon:SetDesaturated(not lootTrackingOn)
+    ns.globalGoblinIcon:SetAlpha(lootTrackingOn and 1.0 or 0.4)
+    ns.globalGoblinBtn:ClearAllPoints()
+    ns.globalGoblinBtn:SetPoint("RIGHT", coinBtn, "LEFT", -2, 0)
+    ns.globalGoblinBtn:Show()
 
     -- Dynamic button chain: globalGoblin ← auctionator ← warbank (right to left)
-    local lastBtn = globalGoblinBtn
+    local lastBtn = ns.globalGoblinBtn
 
     -- Auctionator button: show only when Auctionator is loaded
     if C_AddOns.IsAddOnLoaded("Auctionator") then
-        auctionatorBtn:ClearAllPoints()
-        auctionatorBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
-        auctionatorBtn:Show()
-        lastBtn = auctionatorBtn
+        ns.auctionatorBtn:ClearAllPoints()
+        ns.auctionatorBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
+        ns.auctionatorBtn:Show()
+        lastBtn = ns.auctionatorBtn
     else
-        auctionatorBtn:Hide()
+        ns.auctionatorBtn:Hide()
     end
 
     -- Warband bank deposit button: show only when bank open + setting enabled
     if ns.isBankOpen and MajesticBeastTrackerDB.settings.warbankDeposit then
-        warbankBtn:ClearAllPoints()
-        warbankBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
-        warbankBtn:Show()
+        ns.warbankBtn:ClearAllPoints()
+        ns.warbankBtn:SetPoint("RIGHT", lastBtn, "LEFT", -2, 0)
+        ns.warbankBtn:Show()
     else
-        warbankBtn:Hide()
+        ns.warbankBtn:Hide()
     end
 
     for i, lure in ipairs(LURES) do
@@ -2424,22 +1977,28 @@ function ns.UpdateUI()
     end
 
     -- Update lure column boxes
+    local showLureBorders = MajesticBeastTrackerDB.settings.showLureBorders ~= false
     for i, lure in ipairs(LURES) do
         local box = lureBoxes[i]
-        if lureToCol[i] == -1 then
+        if not showLureBorders or lureToCol[i] == -1 then
             box:Hide()
-        elseif showReagents and lure.reagents and #lure.reagents > 0 then
-            -- Position border box around reagent icons + lure icon
+        else
             local boxPad = 3
             local colX = PAD + 4 + NAME_COL_WIDTH + lureToCol[i] * COL_WIDTH
             local boxTop = contentTop - 2 + boxPad
-            local boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
+            local boxBottom
+            if showReagents and lure.reagents and #lure.reagents > 0 then
+                -- Full height: reagents + lure icon
+                boxBottom = contentTop - 2 - reagentExtra - ICON_SIZE - boxPad
+            else
+                -- No reagents: match cons+travel height
+                local consTravelH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8
+                boxBottom = contentTop - 2 - consTravelH + boxPad
+            end
             box:ClearAllPoints()
             box:SetPoint("TOPLEFT", frame, "TOPLEFT", colX - boxPad, boxTop)
             box:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", colX + COL_WIDTH + boxPad, boxBottom)
             box:Show()
-        else
-            box:Hide()
         end
     end
 
@@ -2460,7 +2019,11 @@ function ns.UpdateUI()
 
     ns.HideAllRows()
 
-    local dynDataTop = contentTop - reagentExtra - ICON_ROW_HEIGHT - 5
+    -- Header height: max of (reagent+lure icons) vs (consumable+travel boxes)
+    local lureHeaderH = reagentExtra + ICON_ROW_HEIGHT + 5
+    local consHeaderH = ns.CONS_BOX_HEIGHT + 2 + TRAVEL_ICON_SIZE + 8 + 5
+    local headerH = math.max(lureHeaderH, consHeaderH)
+    local dynDataTop = contentTop - headerH
 
     for idx, key in ipairs(keys) do
         if not charRows[idx] then
@@ -2501,6 +2064,69 @@ function ns.UpdateUI()
         if isCharHidden then name = name .. " |cff666666(hidden)|r" end
 
         row.nameLabel:SetText(classColor .. name .. "|r")
+
+        -- Tool icon: show only for current char when Razorstone consumable is active
+        if row.toolIcon then
+            local showTool = false
+            if key == currentChar then
+                -- Check if Razorstone is toggled on in consumable settings
+                local razorID = 237372  -- Refulgent Razorstone itemID
+                local showKey = "consShow_" .. razorID
+                -- Only show if Razorstone is toggled on AND no enchant currently active
+                local enchantActive = ns.GetToolEnchantRemaining and ns.GetToolEnchantRemaining() and ns.GetToolEnchantRemaining() > 0
+                if MajesticBeastTrackerDB.settings[showKey] ~= false and not enchantActive then
+                    -- Get skinning tool slot and icon
+                    pcall(function()
+                        local prof1, prof2 = GetProfessions()
+                        local profID
+                        if prof1 then
+                            local _, _, _, _, _, _, sklID, _, _, _, _, pID = GetProfessionInfo(prof1)
+                            if sklID == 393 then profID = pID or Enum.Profession.Skinning end
+                        end
+                        if not profID and prof2 then
+                            local _, _, _, _, _, _, sklID, _, _, _, _, pID = GetProfessionInfo(prof2)
+                            if sklID == 393 then profID = pID or Enum.Profession.Skinning end
+                        end
+                        if profID then
+                            local s = C_TradeSkillUI.GetProfessionSlots(profID)
+                            if s and s[1] then
+                                local itemID = GetInventoryItemID("player", s[1])
+                                if itemID then
+                                    local tex = C_Item.GetItemIconByID(itemID)
+                                    if tex then
+                                        row.toolIcon.icon:SetTexture(tex)
+                                        row.toolIcon.slotID = s[1]
+                                        row.toolIcon._pendingSlot = s[1]
+                                        showTool = true
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+            if not InCombatLockdown() then
+                if showTool then
+                    if row.toolIcon._pendingSlot then
+                        row.toolIcon:SetAttribute("macrotext", "/use " .. row.toolIcon._pendingSlot)
+                        row.toolIcon._pendingSlot = nil
+                    end
+                    row.toolIcon:ClearAllPoints()
+                    row.toolIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
+                    row.toolIcon:Show()
+                    -- Shift name label right
+                    row.nameLabel:ClearAllPoints()
+                    row.nameLabel:SetPoint("LEFT", row.name, "LEFT", ROW_HEIGHT, 0)
+                    row.nameLabel:SetPoint("RIGHT", row.name, "RIGHT", 0, 0)
+                else
+                    row.toolIcon:Hide()
+                    row.nameLabel:ClearAllPoints()
+                    row.nameLabel:SetPoint("TOPLEFT", row.name, "TOPLEFT", 0, 0)
+                    row.nameLabel:SetPoint("BOTTOMRIGHT", row.name, "BOTTOMRIGHT", 0, 0)
+                end
+            end
+        end
+
         row.name:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
                 local isHidden = MajesticBeastTrackerDB.settings.hiddenChars[key]
@@ -2518,13 +2144,13 @@ function ns.UpdateUI()
                         StaticPopup_Show("MBT_REMOVE_CHAR", ns.GetDemoName(key), nil, key)
                     end },
                 }
-                ShowDropdown(self, items)
+                ns.ShowDropdown(self, items)
             else
-                if gearPopup:IsShown() and gearPopup.currentKey == key then
-                    gearPopup:Hide()
+                if ns.gearPopup:IsShown() and ns.gearPopup.currentKey == key then
+                    ns.gearPopup:Hide()
                 else
-                    gearPopup.currentKey = key
-                    ShowGearPopup(self, key)
+                    ns.gearPopup.currentKey = key
+                    ns.ShowGearPopup(self, key)
                 end
             end
         end)
@@ -2622,18 +2248,24 @@ function ns.UpdateUI()
                 local capturedKey = key
                 local capturedData = charData
                 goblin:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
-                    GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.25, 0.78, 0.92)
+                    self.icon:SetVertexColor(C_TOOLBAR_ICON_HOVER[1], C_TOOLBAR_ICON_HOVER[2], C_TOOLBAR_ICON_HOVER[3], 1)
                     local charLoot = ns.GetCharLoot(capturedData)
-                    if charLoot then
-                        ns.AddLootTooltipColumns(charLoot.thisReset, charLoot.allTime, charLoot.prices, charLoot.perBeast, charLoot.perBeastReset)
-                    end
-                    if not hasLoot then
+                    if charLoot and hasLoot then
+                        ns.ShowLootTooltip(self, ns.GetDemoName(capturedKey) .. " - Loot",
+                            charLoot.thisReset, charLoot.allTime, charLoot.prices)
+                    else
+                        GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
+                        GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
                         GameTooltip:AddLine("No loot data yet", 0.5, 0.5, 0.5)
+                        GameTooltip:AddLine(" ")
+                        GameTooltip:AddLine("Click to edit loot", 0.5, 0.8, 1)
+                        GameTooltip:Show()
                     end
-                    GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Click to edit loot", 0.5, 0.8, 1)
-                    GameTooltip:Show()
+                end)
+                goblin:SetScript("OnLeave", function(self)
+                    self.icon:SetVertexColor(C_TOOLBAR_ICON[1], C_TOOLBAR_ICON[2], C_TOOLBAR_ICON[3], 1)
+                    ns.HideLootTooltip()
+                    GameTooltip:Hide()
                 end)
                 goblin:Show()
             end
@@ -2643,30 +2275,73 @@ function ns.UpdateUI()
     -- Update consumable status
     ns.RefreshConsumableLabels()
     local playerLevel = UnitLevel("player")
+
+    -- Count visible consumables first for even spacing
+    local totalVisibleCons = 0
+    for _, cons in ipairs(CONSUMABLES) do
+        local showKey = "consShow_" .. (cons.itemID or cons.spellID)
+        if MajesticBeastTrackerDB.settings[showKey] ~= false then
+            totalVisibleCons = totalVisibleCons + 1
+        end
+    end
+    local consSpacing = totalVisibleCons > 0 and math.max(BASE_NAME_COL_WIDTH / totalVisibleCons, ns.CONS_ITEM_WIDTH) or ns.CONS_ITEM_WIDTH
+
+    local visibleConsIdx = 0
     for i, cons in ipairs(CONSUMABLES) do
         local meetsLevel = not cons.minLevel or playerLevel >= cons.minLevel
-        consumableIcons[i].icon:SetDesaturated(not meetsLevel)
-        consumableIcons[i].icon:SetAlpha(meetsLevel and 1.0 or 0.4)
+        ns.consumableIcons[i].icon:SetDesaturated(not meetsLevel)
+        ns.consumableIcons[i].icon:SetAlpha(meetsLevel and 1.0 or 0.4)
 
         -- Update icon texture
-        local tex = C_Item.GetItemIconByID(cons.itemID)
-        if tex then consumableIcons[i].icon:SetTexture(tex) end
+        if cons.isSpell then
+            local spellInfo = C_Spell.GetSpellInfo(cons.spellID)
+            if spellInfo and spellInfo.iconID then
+                ns.consumableIcons[i].icon:SetTexture(spellInfo.iconID)
+            end
+        elseif cons.itemID then
+            local tex = C_Item.GetItemIconByID(cons.itemID)
+            if tex then ns.consumableIcons[i].icon:SetTexture(tex) end
+        end
 
-        -- Position button in consumable box
+        -- Position button in consumable box (respect show/hide setting)
         if not InCombatLockdown() then
-            local btn = consumableButtons[i]
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", consumableBox, "TOPLEFT",
-                CONS_PAD + (i - 1) * CONS_ITEM_WIDTH, -(CONS_BOX_HEIGHT - CONS_ICON_SIZE) / 2)
-            consumableLabels[i]:ClearAllPoints()
-            consumableLabels[i]:SetPoint("LEFT", btn, "RIGHT", 2, 0)
-            if frame:IsShown() then
+            local btn = ns.consumableButtons[i]
+            local showKey = "consShow_" .. (cons.itemID or cons.spellID)
+            local isVisible = MajesticBeastTrackerDB.settings[showKey] ~= false
+            if isVisible and frame:IsShown() then
+                btn:ClearAllPoints()
+                local xOffset = visibleConsIdx * consSpacing + (consSpacing - ns.CONS_ICON_SIZE) / 2
+                btn:SetPoint("TOPLEFT", ns.consumableBox, "TOPLEFT",
+                    xOffset, -ns.CONS_PAD)
+                ns.consumableLabels[i]:ClearAllPoints()
+                ns.consumableLabels[i]:SetPoint("TOP", btn, "BOTTOM", 0, -1)
+                ns.consumableLabels[i]:SetJustifyH("CENTER")
                 btn:Show()
-                consumableBox:Show()
+                ns.consumableLabels[i]:Show()
+                visibleConsIdx = visibleConsIdx + 1
             else
                 btn:Hide()
-                consumableBox:Hide()
+                ns.consumableLabels[i]:Hide()
             end
+        end
+    end
+
+    -- Resize consumable box and adapt NAME_COL_WIDTH dynamically
+    local consWidth = totalVisibleCons * consSpacing
+    NAME_COL_WIDTH = math.max(BASE_NAME_COL_WIDTH, consWidth)
+    local showConsBorders = MajesticBeastTrackerDB.settings.showConsBorders ~= false
+    if not InCombatLockdown() then
+        if visibleConsIdx > 0 and frame:IsShown() then
+            ns.consumableBox:SetWidth(NAME_COL_WIDTH)
+            ns.consumableBox:SetBackdrop(showConsBorders and BACKDROP or nil)
+            if showConsBorders then
+                ns.consumableBox:SetBackdropColor(0, 0, 0, 0.9)
+                ns.consumableBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
+            end
+            ns.consumableBox:Show()
+        else
+            NAME_COL_WIDTH = BASE_NAME_COL_WIDTH
+            ns.consumableBox:Hide()
         end
     end
 
@@ -2675,78 +2350,103 @@ function ns.UpdateUI()
     for _, btn in ipairs(travelButtons) do
         activeTravelBtns[#activeTravelBtns + 1] = btn
     end
-    -- Wormhole: show only if player has Engineering + item in bags
+    -- Wormhole: show only if player has Engineering + toy known
     local showWormhole = ns.HasEngineering() and PlayerHasToy(WORMHOLE_ITEM.itemID)
     if showWormhole then
         activeTravelBtns[#activeTravelBtns + 1] = wormholeBtn
+    end
+    -- Mage Teleport: show only for Mage (classID 8)
+    local _, _, playerClassID = UnitClass("player")
+    if playerClassID == 8 then
+        activeTravelBtns[#activeTravelBtns + 1] = mageTeleportBtn
+    end
+    -- Vulpera Return to Camp: show only for Vulpera (raceID 35)
+    local _, _, playerRaceID = UnitRace("player")
+    if playerRaceID == 35 then
+        activeTravelBtns[#activeTravelBtns + 1] = vulperaReturnBtn
     end
 
     -- Resize
     local n = math.max(#keys, 1)
     local statsExtra = 0  -- stats now shares row with consumable box
-    local tsmTotalExtra = (showTSM and TSM_API) and 14 or 0
     local hasTravelBtns = #activeTravelBtns > 0
-    local travelRowExtra = hasTravelBtns and (TRAVEL_ICON_SIZE + 4) or 0
-    local consExtra = CONS_BOX_HEIGHT + 2 + travelRowExtra
-    local h = TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + consExtra + statsExtra + tsmTotalExtra + PAD + 4
+    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + statsExtra + BOTTOM_BAR_HEIGHT + PAD + 10
     local goblinColWidth = 18  -- always reserve space for goblin column
     local w = PAD * 2 + 8 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + goblinColWidth
     -- All frame layout operations guarded against combat lockdown
-    local divY = -(TITLE_HEIGHT + 2 + reagentExtra + ICON_ROW_HEIGHT + 5 + n * ROW_HEIGHT + 2)
+    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + 2)
 
     if not InCombatLockdown() then
         frame:SetSize(w, h)
 
-        -- Position title branding (adapt to available space)
-        title:ClearAllPoints()
-        if showReagents then
-            title:SetFont(STANDARD_TEXT_FONT, 20, "OUTLINE")
-            title:SetText("|cff3FC7EBMajestic|r\n|cff3FC7EBBeast|r\n|cff3FC7EBTracker|r")
-        else
-            title:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-            title:SetText("|cff3FC7EBMajestic Beast|r\n|cff3FC7EBTracker|r")
-        end
-        title:SetPoint("TOP", frame, "TOPLEFT", PAD + 4 + NAME_COL_WIDTH / 2, contentTop - 2)
+        -- Title moved to toolbar (MBT vX)
 
-        -- Position consumable box below divider
-        consumableBox:ClearAllPoints()
-        consumableBox:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, divY - 4)
-        -- Divider between char rows and bottom bar
-        ns.travelSep:ClearAllPoints()
-        ns.travelSep:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 4, divY)
-        ns.travelSep:SetPoint("RIGHT", frame, "RIGHT", -(PAD + 4), 0)
-        ns.travelSep:Show()
+        -- consumableBox already positioned above
+        -- Travel separator hidden (travel buttons moved to header)
+        ns.travelSep:Hide()
 
         -- Hide all first
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
+        mageTeleportBtn:Hide()
+        vulperaReturnBtn:Hide()
 
-        -- Show + position active ones (below consumable box)
-        local travelStartX = PAD + 4
-        local travelY = divY - CONS_BOX_HEIGHT - 6
+        -- Show + position active ones (below consumable box in header area)
+        -- Position travel box below consumable box (anchored to it)
+        local numTravel = #activeTravelBtns
+        ns.travelBox:ClearAllPoints()
+        ns.travelBox:SetPoint("TOPLEFT", ns.consumableBox, "BOTTOMLEFT", 0, -2)
+        ns.travelBox:SetWidth(NAME_COL_WIDTH)
+        ns.travelBox:SetHeight(TRAVEL_ICON_SIZE + 8)
+
+        local travelSpacing = numTravel > 0 and math.max(NAME_COL_WIDTH / numTravel, TRAVEL_ICON_SIZE + TRAVEL_SPACING) or 0
         for idx, btn in ipairs(activeTravelBtns) do
-            local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
-            if tex then btn.icon:SetTexture(tex) end
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                travelStartX + (idx - 1) * (TRAVEL_ICON_SIZE + TRAVEL_SPACING),
-                travelY)
-            -- Update cooldown sweep
-            local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
-            if start and duration and duration > 0 then
-                btn.cooldown:SetCooldown(start, duration)
+            if btn.itemInfo.isSpell then
+                local spellInfo = C_Spell.GetSpellInfo(btn.itemInfo.spellID)
+                if spellInfo and spellInfo.iconID then btn.icon:SetTexture(spellInfo.iconID) end
             else
-                btn.cooldown:Clear()
+                local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
+                if tex then btn.icon:SetTexture(tex) end
+            end
+            btn:ClearAllPoints()
+            btn:SetParent(ns.travelBox)
+            local xOff = (idx - 1) * travelSpacing + (travelSpacing - TRAVEL_ICON_SIZE) / 2
+            btn:SetPoint("TOPLEFT", ns.travelBox, "TOPLEFT", xOff, -4)
+            -- Update cooldown sweep
+            if btn.itemInfo.isSpell then
+                local cdInfo = C_Spell.GetSpellCooldown(btn.itemInfo.spellID)
+                if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
+                    btn.cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration)
+                else
+                    btn.cooldown:Clear()
+                end
+            else
+                local start, duration, enable = C_Item.GetItemCooldown(btn.itemInfo.itemID)
+                if start and duration and duration > 0 then
+                    btn.cooldown:SetCooldown(start, duration)
+                else
+                    btn.cooldown:Clear()
+                end
             end
             if frame:IsShown() then
                 btn:Show()
             end
         end
+        if numTravel > 0 and frame:IsShown() then
+            ns.travelBox:SetBackdrop(showConsBorders and BACKDROP or nil)
+            if showConsBorders then
+                ns.travelBox:SetBackdropColor(0, 0, 0, 0.9)
+                ns.travelBox:SetBackdropBorderColor(C_BORDER_RGB[1], C_BORDER_RGB[2], C_BORDER_RGB[3], 0.7)
+            end
+            ns.travelBox:Show()
+        else
+            ns.travelBox:Hide()
+        end
 
         -- Position stats on the right side of bottom row (2-row layout when narrow)
         local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
         local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
-        local statsY = divY - 4 - CONS_BOX_HEIGHT / 2
+        local statsY = divY - 4
         if hasAnyStats then
             -- Collect visible stats
             local visibleStats = {}
@@ -2765,7 +2465,7 @@ function ns.UpdateUI()
                 totalStatsWidth = totalStatsWidth + statsTexts[si]:GetStringWidth() + 6
             end
             -- Available space: frame width minus consumable box
-            local availableWidth = w - CONS_BOX_WIDTH - PAD * 2 - 16
+            local availableWidth = w - ns.CONS_BOX_WIDTH - PAD * 2 - 16
             local useTwoRows = totalStatsWidth > availableWidth and #visibleStats > 2
             if useTwoRows then
                 -- Two rows: top row = first half, bottom row = second half
@@ -2773,7 +2473,7 @@ function ns.UpdateUI()
                 local rowHeight = 7
                 -- Top row: first half (Skl, Per)
                 local statsX = w - PAD - 4
-                local topRowY = divY - 4 - CONS_BOX_HEIGHT / 2 + rowHeight
+                local topRowY = divY - 4 + rowHeight
                 for ri = half, 1, -1 do
                     local si = visibleStats[ri]
                     statsTexts[si]:ClearAllPoints()
@@ -2783,7 +2483,7 @@ function ns.UpdateUI()
                 end
                 -- Bottom row: second half (Fin, Dft)
                 statsX = w - PAD - 4
-                local bottomRowY = divY - 4 - CONS_BOX_HEIGHT / 2 - rowHeight
+                local bottomRowY = divY - 4 - rowHeight
                 statsY = bottomRowY
                 for ri = #visibleStats, half + 1, -1 do
                     local si = visibleStats[ri]
@@ -2835,10 +2535,7 @@ function ns.UpdateUI()
             if allPriced and grandTotal > 0 then
                 local goldText = ns.FormatGold(grandTotal)
                 ns.tsmTotalLabel:SetText("Total needed: " .. goldText)
-                ns.tsmTotalLabel:ClearAllPoints()
-                ns.tsmTotalLabel:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, statsY - 12)
                 ns.tsmTotalLabel:Show()
-                statsY = statsY - 12
             else
                 ns.tsmTotalLabel:Hide()
             end
@@ -2901,6 +2598,18 @@ function ns.UpdateUI()
         end
     end
 
+    -- Timer display (always visible)
+    if ns.IsTimerRunning() then
+        timerLabel:SetText("|cff00ff00" .. ns.FormatTimerElapsed() .. "|r")
+    elseif ns.GetTimerElapsed() > 0 then
+        timerLabel:SetText("|cff888888" .. ns.FormatTimerElapsed() .. "|r")
+    else
+        timerLabel:SetText("|cff555555" .. ns.FormatTimerElapsed() .. "|r")
+    end
+    timerLabel:Show()
+    timerBtn:SetWidth(math.max(timerLabel:GetStringWidth() + 4, 50))
+    timerBtn:Show()
+
     if #keys == 0 then
         if not charRows[1] then charRows[1] = CreateCharRow(1) end
         charRows[1].nameLabel:SetText(C_ACCENT:WrapTextInColorCode("No skinners found"))
@@ -2940,8 +2649,20 @@ frame:SetScript("OnMouseDown", function(self, button)
     if button == "RightButton" then
         ns.EnsureDB()
         local lockText = MajesticBeastTrackerDB.settings.locked and "Unlock Frame" or "Lock Frame"
+        local timerRunning = ns.IsTimerRunning()
+        local timerText = timerRunning and ("|cff00ff00Stop Timer|r (" .. ns.FormatTimerElapsed() .. ")") or "Start Timer"
         ShowDropdown(self, {
             { text = "Majestic Beast Tracker", isTitle = true },
+            { text = timerText, func = function()
+                if ns.IsTimerRunning() then
+                    ns.StopTimer()
+                else
+                    ns.StartTimer()
+                end
+            end },
+            { text = "Reset Timer", func = function()
+                ns.ResetTimer()
+            end, disabled = timerRunning },
             { text = lockText, func = function()
                 MajesticBeastTrackerDB.settings.locked = not MajesticBeastTrackerDB.settings.locked
                 UpdateLockVisual()
@@ -2986,7 +2707,7 @@ combatFrame:SetScript("OnEvent", function(_, event)
         if frame:IsShown() then
             frame._hiddenByCombat = true
             frame:Hide()
-            consumableBox:Hide()
+            ns.consumableBox:Hide()
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if frame._hiddenByCombat then
@@ -3058,6 +2779,10 @@ end)
 ------------------------------------------------------
 
 function ns.ShowFrame()
+    if ns.isInInstance then
+        print("|cff3FC7EB[MBT]|r Disabled in instances. Change in Settings > Display.")
+        return
+    end
     if not InCombatLockdown() then
         frame:Show()
     end
@@ -3072,14 +2797,17 @@ function ns.HideFrame()
         frame:Hide()
     end
     if ns.lootEditor then ns.lootEditor:Hide() end
+    if ns.lootSummary then ns.lootSummary:Hide() end
     ns.EnsureDB()
     MajesticBeastTrackerDB.settings.showFrame = false
     -- Hide consumable buttons and box
     if not InCombatLockdown() then
-        for _, btn in ipairs(consumableButtons) do btn:Hide() end
-        consumableBox:Hide()
+        for _, btn in ipairs(ns.consumableButtons) do btn:Hide() end
+        ns.consumableBox:Hide()
         for _, btn in ipairs(travelButtons) do btn:Hide() end
         wormholeBtn:Hide()
+        mageTeleportBtn:Hide()
+        vulperaReturnBtn:Hide()
     end
 end
 
@@ -3128,521 +2856,16 @@ local function InitMinimapIcon()
     icon:Register("MajesticBeastTracker", dataObj, MajesticBeastTrackerDB.settings.minimap)
 end
 
-------------------------------------------------------
--- Settings Panel (Interface > AddOns)
-------------------------------------------------------
-
--- Remove character confirm popup
-StaticPopupDialogs["MBT_REMOVE_CHAR"] = {
-    text = "Remove %s from Majestic Beast Tracker?",
-    button1 = YES,
-    button2 = NO,
-    whileDead = true,
-    hideOnEscape = true,
-    OnAccept = function(_, data)
-        if data and MajesticBeastTrackerDB and MajesticBeastTrackerDB.chars then
-            MajesticBeastTrackerDB.chars[data] = nil
-            print("|cff3FC7EB[MBT]|r Removed " .. data)
-            if ns.UpdateUI then ns.UpdateUI() end
-        end
-    end,
-}
-
--- URL copy popup
-StaticPopupDialogs["MBT_URL"] = {
-    text = "Copy URL (Ctrl+C):",
-    button1 = CLOSE,
-    whileDead = true,
-    hasEditBox = true,
-    editBoxWidth = 240,
-    OnShow = function(dialog, data)
-        local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
-        editBox:SetText(data)
-        editBox:SetAutoFocus(true)
-        editBox:HighlightText()
-        editBox:SetScript("OnEscapePressed", function() dialog:Hide() end)
-        editBox:SetScript("OnTextChanged", function()
-            editBox:SetText(data)
-            editBox:HighlightText()
-        end)
-    end,
-    OnHide = function(dialog)
-        local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
-        editBox:SetScript("OnEscapePressed", nil)
-        editBox:SetScript("OnTextChanged", nil)
-    end,
-}
-
-local function InitSettings()
-    ns.EnsureDB()
-    local category, layout = Settings.RegisterVerticalLayoutCategory("Majestic Beast Tracker")
-    Settings.RegisterAddOnCategory(category)
-    ns.settingsCategoryID = category:GetID()
-
-    local dbIcon = LibStub("LibDBIcon-1.0")
-
-    -- Text mixin for custom text rows
-    LureTracker_SettingsTextMixin = {}
-    function LureTracker_SettingsTextMixin:Init(initializer)
-        local data = initializer:GetData()
-        self.LeftText:SetTextToFit(data.leftText or "")
-        self.RightText:SetTextToFit(data.rightText or "")
-    end
-
-    -- Route order row mixin (arrow up/down buttons)
-    LureTracker_SettingsRouteRowMixin = {}
-    function LureTracker_SettingsRouteRowMixin:Init(initializer)
-        local data = initializer:GetData()
-        -- Store frame reference for direct label updates after swap
-        ns.routeRowFrames = ns.routeRowFrames or {}
-        ns.routeRowFrames[data.pos] = self
-        self.Label:SetText(data.getLabel())
-        self.UpButton:SetScript("OnClick", function()
-            data.onMoveUp()
-        end)
-        self.DownButton:SetScript("OnClick", function()
-            data.onMoveDown()
-        end)
-        -- Dim arrows at boundaries
-        local canUp = data.pos > 1
-        local canDown = data.pos < data.total
-        self.UpButton:SetEnabled(canUp)
-        self.DownButton:SetEnabled(canDown)
-        self.UpButton.Arrow:SetAlpha(canUp and 1.0 or 0.2)
-        self.DownButton.Arrow:SetAlpha(canDown and 1.0 or 0.2)
-    end
-
-    -- Expand mixin for collapsible sections
-    LureTracker_SettingsExpandMixin = CreateFromMixins(SettingsExpandableSectionMixin)
-    function LureTracker_SettingsExpandMixin:Init(initializer)
-        SettingsExpandableSectionMixin.Init(self, initializer)
-        self.data = initializer.data
-    end
-    function LureTracker_SettingsExpandMixin:OnExpandedChanged(expanded)
-        self:EvaluateVisibility(expanded)
-        SettingsInbound.RepairDisplay()
-    end
-    function LureTracker_SettingsExpandMixin:CalculateHeight()
-        return 24
-    end
-    function LureTracker_SettingsExpandMixin:EvaluateVisibility(expanded)
-        if expanded then
-            self.Button.Right:SetAtlas("Options_ListExpand_Right_Expanded", TextureKitConstants.UseAtlasSize)
-        else
-            self.Button.Right:SetAtlas("Options_ListExpand_Right", TextureKitConstants.UseAtlasSize)
-        end
-    end
-
-    -- Helper for expandable sections
-    local function createExpandableSection(lay, sectionName)
-        local initializer = CreateFromMixins(SettingsExpandableSectionInitializer)
-        local expandData = { name = sectionName, expanded = false }
-        initializer:Init("LureTracker_SettingsExpandTemplate", expandData)
-        initializer.GetExtent = ScrollBoxFactoryInitializerMixin.GetExtent
-        lay:AddInitializer(initializer)
-        return initializer, function() return initializer.data.expanded end
-    end
-
-    -- Version
-    local version = C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"
-    local data = { leftText = "Version: |cffFFFFFF" .. version }
-    local text = layout:AddInitializer(Settings.CreateElementInitializer("LureTracker_SettingsText", data))
-    function text:GetExtent() return 14 end
-
-    -- Support button
-    layout:AddInitializer(CreateSettingsButtonInitializer("Support", "Buy Me a Coffee", function()
-        StaticPopup_Show("MBT_URL", nil, nil, "https://buymeacoffee.com/vichob")
-    end, "Developing this addon takes a significant amount of time and effort.\nPlease consider financially supporting the developer.", true))
-
-    -- GitHub button
-    layout:AddInitializer(CreateSettingsButtonInitializer("Feedback & Help", "GitHub", function()
-        StaticPopup_Show("MBT_URL", nil, nil, "https://github.com/VichobAddons/MajesticBeastTracker")
-    end, "Report bugs or give feedback on GitHub.", true))
-
-    --------------------------------------------------------
-    -- General (always visible)
-    --------------------------------------------------------
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("General"))
-
-    local s1 = Settings.RegisterAddOnSetting(category, "MBT_showMinimap", "showMinimap",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Minimap Icon", true)
-    Settings.CreateCheckbox(category, s1, "Show or hide the minimap button.")
-    s1:SetValueChangedCallback(function()
-        MajesticBeastTrackerDB.settings.minimap.hide = not MajesticBeastTrackerDB.settings.showMinimap
-        if MajesticBeastTrackerDB.settings.showMinimap then
-            dbIcon:Show("MajesticBeastTracker")
-        else
-            dbIcon:Hide("MajesticBeastTracker")
-        end
-    end)
-
-    local s2 = Settings.RegisterAddOnSetting(category, "MBT_chatNotify", "chatNotify",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Chat Notifications", true)
-    Settings.CreateCheckbox(category, s2, "Show [MBT] messages in chat (waypoints, mark/clear, buff warnings).")
-
-    local s2a = Settings.RegisterAddOnSetting(category, "MBT_hideNonSkinner", "hideNonSkinner",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide on Non-Skinners", true)
-    Settings.CreateCheckbox(category, s2a, "Don't show the tracker automatically on characters without Skinning.")
-
-    --------------------------------------------------------
-    -- Expandable: Route (NEW)
-    --------------------------------------------------------
-    local _, isRouteExpanded = createExpandableSection(layout, "Route")
-
-    -- Ensure routeSkip table exists
-    if type(MajesticBeastTrackerDB.settings.routeSkip) ~= "table" then
-        MajesticBeastTrackerDB.settings.routeSkip = {}
-    end
-
-    -- "Skip from Route" sub-header
-    local skipHeader = CreateSettingsListSectionHeaderInitializer("Skip from Route")
-    skipHeader:AddShownPredicate(isRouteExpanded)
-    layout:AddInitializer(skipHeader)
-
-    -- Per-beast skip toggles
-    for _, lure in ipairs(LURES) do
-        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
-        if MajesticBeastTrackerDB.settings[skipKey] == nil then
-            MajesticBeastTrackerDB.settings[skipKey] = MajesticBeastTrackerDB.settings.routeSkip[lure.name] or false
-        end
-        local sSkip = Settings.RegisterAddOnSetting(category, "MBT_" .. skipKey, skipKey,
-            MajesticBeastTrackerDB.settings, Settings.VarType.Boolean,
-            lure.color .. "Skip " .. lure.name .. "|r", false)
-        local cbSkip = Settings.CreateCheckbox(category, sSkip, "Skip " .. lure.name .. " in your daily route. Shows 'Skip' in the tracker and excludes from reagent cost.")
-        sSkip:SetValueChangedCallback(function()
-            MajesticBeastTrackerDB.settings.routeSkip[lure.name] = MajesticBeastTrackerDB.settings[skipKey]
-            ns.UpdateUI()
-            if ns.refreshRouteLabels then ns.refreshRouteLabels() end
-        end)
-        cbSkip:AddShownPredicate(isRouteExpanded)
-    end
-
-    -- Harandar minimum level slider
-    local sHarandarLvl = Settings.RegisterAddOnSetting(category, "MBT_routeHarandarMinLevel", "routeHarandarMinLevel",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Harandar Min Level", 80)
-    local lvlOpts = Settings.CreateSliderOptions(80, 90, 1)
-    lvlOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
-        return tostring(math.floor(val))
-    end)
-    local slHarandar = Settings.CreateSlider(category, sHarandarLvl, lvlOpts, "Skip Harandar for characters below this level. Harandar mobs are high level and time-consuming for lower level characters.")
-    sHarandarLvl:SetValueChangedCallback(function()
-        ns.UpdateUI()
-    end)
-    slHarandar:AddShownPredicate(isRouteExpanded)
-
-    local sHideSkipped = Settings.RegisterAddOnSetting(category, "MBT_routeHideSkipped", "routeHideSkipped",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide Skipped Columns", false)
-    local cbHideSkipped = Settings.CreateCheckbox(category, sHideSkipped, "Completely hide skipped beast columns from the tracker instead of showing 'Skip'.")
-    sHideSkipped:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cbHideSkipped:AddShownPredicate(isRouteExpanded)
-
-    local sAutoWP = Settings.RegisterAddOnSetting(category, "MBT_autoRouteWaypoint", "autoRouteWaypoint",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto-Waypoint Next Beast", false)
-    local cbAutoWP = Settings.CreateCheckbox(category, sAutoWP, "Automatically set a map waypoint to the next beast in your route after a kill. Clears waypoint when route is complete.")
-    cbAutoWP:AddShownPredicate(isRouteExpanded)
-
-    -- Route Order sub-header
-    local routeOrderHeader = CreateSettingsListSectionHeaderInitializer("Route Order")
-    routeOrderHeader:AddShownPredicate(isRouteExpanded)
-    layout:AddInitializer(routeOrderHeader)
-
-    -- Ensure routeOrder is initialized
-    if not MajesticBeastTrackerDB.settings.routeOrder or #MajesticBeastTrackerDB.settings.routeOrder ~= #LURES then
-        MajesticBeastTrackerDB.settings.routeOrder = {}
-        for i = 1, #LURES do MajesticBeastTrackerDB.settings.routeOrder[i] = i end
-    end
-
-    local function getOrder() return MajesticBeastTrackerDB.settings.routeOrder end
-    local function isLureSkipped(li)
-        local lure = LURES[li]
-        local skipKey = "routeSkip_" .. lure.name:gsub("[%s']", "")
-        local routeSkipTbl = MajesticBeastTrackerDB.settings.routeSkip or {}
-        return routeSkipTbl[lure.name] or MajesticBeastTrackerDB.settings[skipKey] or false
-    end
-    local function getRouteLabel(pos)
-        local o = getOrder()
-        local li = o[pos]
-        if isLureSkipped(li) then
-            return "|cff666666#" .. pos .. "  " .. LURES[li].name .. " (skip)|r"
-        end
-        return "#" .. pos .. "  " .. LURES[li].color .. LURES[li].name .. "|r"
-    end
-
-    local function refreshRouteLabels()
-        if not ns.routeRowFrames then return end
-        for pos = 1, #LURES do
-            local f = ns.routeRowFrames[pos]
-            if f and f.Label then
-                f.Label:SetText(getRouteLabel(pos))
-            end
-        end
-    end
-    ns.refreshRouteLabels = refreshRouteLabels
-
-    local function swapRoute(posA, posB)
-        local o = getOrder()
-        o[posA], o[posB] = o[posB], o[posA]
-        MajesticBeastTrackerDB.settings.routeOrder = o
-        ns.UpdateUI()
-        refreshRouteLabels()
-    end
-
-    for pos = 1, #LURES do
-        local routeInit = Settings.CreateElementInitializer("LureTracker_SettingsRouteRow", {
-            pos = pos,
-            total = #LURES,
-            getLabel = function() return getRouteLabel(pos) end,
-            onMoveUp = function() if pos > 1 then swapRoute(pos, pos - 1) end end,
-            onMoveDown = function() if pos < #LURES then swapRoute(pos, pos + 1) end end,
-        })
-        routeInit:AddShownPredicate(isRouteExpanded)
-        layout:AddInitializer(routeInit)
-    end
-
-    --------------------------------------------------------
-    -- Expandable: Reagents & AH
-    --------------------------------------------------------
-    local _, isReagentsExpanded = createExpandableSection(layout, "Reagents & Auction House")
-
-    local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
-    local cb2c = Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
-    s2c:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cb2c:AddShownPredicate(isReagentsExpanded)
-
-    local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Count for All Characters", true)
-    local cb2e = Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
-    s2e:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cb2e:AddShownPredicate(isReagentsExpanded)
-
-    local sMissing = Settings.RegisterAddOnSetting(category, "MBT_showMissingCount", "showMissingCount",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Missing Count", false)
-    local cbMissing = Settings.CreateCheckbox(category, sMissing, "ON: Show how many reagents you're missing (e.g. -56). OFF: Show have/need (e.g. 16/72).")
-    sMissing:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cbMissing:AddShownPredicate(isReagentsExpanded)
-
-    local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Autofill AH Quantity", true)
-    local cbAHFill = Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")
-    cbAHFill:AddShownPredicate(isReagentsExpanded)
-
-    -- Per-consumable stock targets
-    if type(MajesticBeastTrackerDB.settings.consumableStock) ~= "table" then
-        MajesticBeastTrackerDB.settings.consumableStock = {}
-    end
-    for _, cons in ipairs(CONSUMABLES) do
-        local flatKey = "consStock_" .. cons.itemID
-        if MajesticBeastTrackerDB.settings[flatKey] == nil then
-            MajesticBeastTrackerDB.settings[flatKey] = MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] or 0
-        end
-    end
-    for _, cons in ipairs(CONSUMABLES) do
-        local flatKey = "consStock_" .. cons.itemID
-        local ok, err = pcall(function()
-            local sStock = Settings.RegisterAddOnSetting(category,
-                "MBT_" .. flatKey, flatKey,
-                MajesticBeastTrackerDB.settings, Settings.VarType.Number,
-                "Stock: " .. cons.name, 0)
-            local stockOpts = Settings.CreateSliderOptions(0, 200, 5)
-            stockOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
-                return tostring(math.floor(val))
-            end)
-            local slStock = Settings.CreateSlider(category, sStock, stockOpts,
-                "Number of " .. cons.name .. " to keep in stock. Used for Auctionator shopping list. 0 = exclude.")
-            sStock:SetValueChangedCallback(function(setting, val)
-                MajesticBeastTrackerDB.settings.consumableStock[cons.itemID] = val
-            end)
-            slStock:AddShownPredicate(isReagentsExpanded)
-        end)
-        if not ok then
-            print("|cff3FC7EB[MBT]|r Settings error for " .. cons.name .. ": " .. tostring(err))
-        end
-    end
-
-    --------------------------------------------------------
-    -- Expandable: Loot Goblin
-    --------------------------------------------------------
-    local _, isLootExpanded = createExpandableSection(layout, "Loot Goblin")
-
-    local sLoot = Settings.RegisterAddOnSetting(category, "MBT_lootTracking", "lootTracking",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Loot Tracking", true)
-    local cbLoot = Settings.CreateCheckbox(category, sLoot, "Track skinning loot from Majestic Beasts. Shows goblin icons on character rows.")
-    sLoot:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cbLoot:AddShownPredicate(isLootExpanded)
-
-    local sLootTSM = Settings.RegisterAddOnSetting(category, "MBT_tsmIntegration", "tsmIntegration",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Integrate TSM", false)
-    local cbLootTSM = Settings.CreateCheckbox(category, sLootTSM, "Show estimated reagent cost and loot value using TradeSkillMaster price data. Requires TSM addon.")
-    sLootTSM:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cbLootTSM:AddShownPredicate(isLootExpanded)
-
-    --------------------------------------------------------
-    -- Expandable: Warband Bank
-    --------------------------------------------------------
-    local _, isWarbankExpanded = createExpandableSection(layout, "Warband Bank")
-
-    local sWarbank = Settings.RegisterAddOnSetting(category, "MBT_warbankDeposit", "warbankDeposit",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Warband Bank Deposit", false)
-    local cbWarbank = Settings.CreateCheckbox(category, sWarbank, "Show a deposit button on the tracker when the Warband Bank is open. Click to deposit all tracked skinning reagents.")
-    cbWarbank:AddShownPredicate(isWarbankExpanded)
-
-    local sWarbankAuto = Settings.RegisterAddOnSetting(category, "MBT_warbankAutoDeposit", "warbankAutoDeposit",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Automatically Deposit on Bank Open", false)
-    local cbWarbankAuto = Settings.CreateCheckbox(category, sWarbankAuto, "Automatically deposit tracked reagents when you open the Warband Bank.")
-    cbWarbankAuto:AddShownPredicate(isWarbankExpanded)
-
-    local sWarbankRewards = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositRewards", "warbankDepositRewards",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Beast Rewards", true)
-    local cbWarbankRewards = Settings.CreateCheckbox(category, sWarbankRewards, "Include skinning loot from beast kills (hides, leather, plating, scales, etc.)")
-    cbWarbankRewards:AddShownPredicate(isWarbankExpanded)
-
-    local sWarbankReagents = Settings.RegisterAddOnSetting(category, "MBT_warbankDepositReagents", "warbankDepositReagents",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Deposit Lure Reagents", true)
-    local cbWarbankReagents = Settings.CreateCheckbox(category, sWarbankReagents, "Include fish used to craft lures (Arcane Wyrmfish, Gore Guppy, Ominous Octopus, etc.)")
-    cbWarbankReagents:AddShownPredicate(isWarbankExpanded)
-
-    --------------------------------------------------------
-    -- Expandable: Display
-    --------------------------------------------------------
-    local _, isDisplayExpanded = createExpandableSection(layout, "Display")
-
-    local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
-    local cb2d = Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
-    s2d:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cb2d:AddShownPredicate(isDisplayExpanded)
-
-    local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide in Combat", false)
-    local cb2b = Settings.CreateCheckbox(category, s2b, "Automatically hide the tracker window during combat.")
-    cb2b:AddShownPredicate(isDisplayExpanded)
-
-    local sAutoHide = Settings.RegisterAddOnSetting(category, "MBT_autoHide", "autoHide",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto Hide", false)
-    local cbAutoHide = Settings.CreateCheckbox(category, sAutoHide, "Fade out the tracker when the mouse is not hovering over it. Hover to show.")
-    sAutoHide:SetValueChangedCallback(function() ns.RefreshAutoHide() end)
-    cbAutoHide:AddShownPredicate(isDisplayExpanded)
-
-    local s3 = Settings.RegisterAddOnSetting(category, "MBT_locked", "locked",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Lock Frame Position", false)
-    local cb3 = Settings.CreateCheckbox(category, s3, "Prevent the tracker window from being dragged.")
-    s3:SetValueChangedCallback(function() UpdateLockVisual() end)
-    cb3:AddShownPredicate(isDisplayExpanded)
-
-    local s4 = Settings.RegisterAddOnSetting(category, "MBT_windowScale", "windowScale",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Window Scale", 1.0)
-    local scaleOpts = Settings.CreateSliderOptions(0.5, 2.0, 0.05)
-    scaleOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
-        return string.format("%d%%", val * 100)
-    end)
-    local sl4 = Settings.CreateSlider(category, s4, scaleOpts, "Scale the tracker window (50% - 200%).")
-    s4:SetValueChangedCallback(function()
-        frame:SetScale(MajesticBeastTrackerDB.settings.windowScale)
-    end)
-    sl4:AddShownPredicate(isDisplayExpanded)
-
-    --------------------------------------------------------
-    -- Expandable: Data Management
-    --------------------------------------------------------
-    local _, isDataExpanded = createExpandableSection(layout, "Data Management")
-
-    local sShowHidden = Settings.RegisterAddOnSetting(category, "MBT_showHiddenChars", "showHiddenChars",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Hidden Characters", false)
-    local cbShowHidden = Settings.CreateCheckbox(category, sShowHidden, "Temporarily show characters that have been hidden via right-click menu.")
-    sShowHidden:SetValueChangedCallback(function() ns.UpdateUI() end)
-    cbShowHidden:AddShownPredicate(isDataExpanded)
-
-    local clearCharInit = CreateSettingsButtonInitializer("Clear Current Character", "Clear", function()
-        StaticPopupDialogs["MBT_CLEAR_CHAR"] = {
-            text = "Clear lure data for |cff3FC7EB" .. (ns.GetCharKey() or "?") .. "|r?",
-            button1 = YES,
-            button2 = NO,
-            OnAccept = function()
-                ns.EnsureDB()
-                local key = ns.GetCharKey()
-                if key and MajesticBeastTrackerDB.chars[key] then
-                    MajesticBeastTrackerDB.chars[key].lures = {}
-                    ns.UpdateUI()
-                    print("|cff3FC7EB[MBT]|r " .. key .. " data cleared.")
-                end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true,
-        }
-        StaticPopup_Show("MBT_CLEAR_CHAR")
-    end, "Clear all lure cooldown data for your current character.", true)
-    clearCharInit:AddShownPredicate(isDataExpanded)
-    layout:AddInitializer(clearCharInit)
-
-    local clearAllInit = CreateSettingsButtonInitializer("|cffff6666Clear ALL Characters|r", "Clear All", function()
-        StaticPopupDialogs["MBT_CLEAR_ALL"] = {
-            text = "|cffff6666WARNING:|r This will delete ALL tracking data for ALL characters.\n\nAre you sure?",
-            button1 = YES,
-            button2 = NO,
-            OnAccept = function()
-                ns.EnsureDB()
-                MajesticBeastTrackerDB = { chars = {}, settings = MajesticBeastTrackerDB.settings }
-                ns.EnsureDB()
-                ns.UpdateUI()
-                print("|cff3FC7EB[MBT]|r ALL data cleared.")
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,
-        }
-        StaticPopup_Show("MBT_CLEAR_ALL")
-    end, "|cffff6666Permanently delete all tracking data for every character.|r", true)
-    clearAllInit:AddShownPredicate(isDataExpanded)
-    layout:AddInitializer(clearAllInit)
-
-    --------------------------------------------------------
-    -- Expandable: Slash Commands
-    --------------------------------------------------------
-    local _, isSlashExpanded = createExpandableSection(layout, "Slash Commands")
-
-    local cmdData = {
-        leftText = "|cffFFFFFF"
-            .. "/mbt\n\n"
-            .. "/mbt hide\n\n"
-            .. "/mbt lock\n\n"
-            .. "/mbt settings\n\n"
-            .. "/mbt talent |cff3FC7EBN|r|cffFFFFFF\n\n"
-            .. "/mbt remove |cff3FC7EBName-Realm|r|cffFFFFFF\n\n"
-            .. "/mbt nuke\n\n"
-            .. "/mbt nuke all\n\n"
-            .. "/mbt debug |cff3FC7EBcalc|stats|gear|r",
-        rightText =
-            "Show tracker\n\n"
-            .. "Hide tracker\n\n"
-            .. "Toggle frame lock\n\n"
-            .. "Open settings\n\n"
-            .. "Override talent points (0-40)\n\n"
-            .. "Remove a character\n\n"
-            .. "Clear current character\n\n"
-            .. "Clear ALL data\n\n"
-            .. "Debug tools (stats breakdown)",
-    }
-    local cmdText = layout:AddInitializer(Settings.CreateElementInitializer("LureTracker_SettingsText", cmdData))
-    function cmdText:GetExtent()
-        return 28 + select(2, string.gsub(cmdData.leftText, "\n", "")) * 12
-    end
-    cmdText:AddShownPredicate(isSlashExpanded)
-end
-
-function ns.OpenSettings()
-    if ns.settingsCategoryID then
-        Settings.OpenToCategory(ns.settingsCategoryID)
-    end
-end
-
--- Init on login
+-- Init on login (Settings moved to Settings.lua)
 local minimapInit = CreateFrame("Frame")
 minimapInit:RegisterEvent("PLAYER_LOGIN")
 minimapInit:SetScript("OnEvent", function()
     InitMinimapIcon()
-    local ok, err = pcall(InitSettings)
+    local ok, err = pcall(ns.InitSettings)
     if not ok then
         print("|cffff3333[MBT] Settings error:|r " .. tostring(err))
     end
-    -- Apply saved scale
     ns.EnsureDB()
     frame:SetScale(MajesticBeastTrackerDB.settings.windowScale)
 end)
+
