@@ -1310,7 +1310,20 @@ lsExportBtn:SetScript("OnClick", function()
     end
 
     local hasTSM = TSM_API ~= nil
-    local csv = "Date,Character,Beast,Item ID,Item,Quality,Reset Count,All Time Count,Unit Price (gold),Reset Value (gold),All Time Value (gold),Active Buffs\n"
+    local csvLines = {}
+
+    -- Characters section
+    csvLines[#csvLines + 1] = "#Characters"
+    csvLines[#csvLines + 1] = "Character,Class,Level"
+    for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if charData.hasSkinning then
+            csvLines[#csvLines + 1] = string.format("%s,%s,%d",
+                charKey:gsub(",", ";"), charData.class or "UNKNOWN", charData.level or 0)
+        end
+    end
+    csvLines[#csvLines + 1] = ""
+    csvLines[#csvLines + 1] = "#Loot"
+    csvLines[#csvLines + 1] = "Date,Character,Beast,Item ID,Item,Quality,Count,Unit Price (gold),Value (gold),Active Buffs"
 
     -- Helper: get quality tier for an item
     local function getQuality(id)
@@ -1319,7 +1332,7 @@ lsExportBtn:SetScript("OnClick", function()
     end
 
     -- Helper: format one CSV row
-    local function addRow(dateStr, charName, beast, id, rc, ac, prices, buffsStr)
+    local function addRow(dateStr, charName, beast, id, count, unused, prices, buffsStr)
         local name = (C_Item.GetItemNameByID(id) or ("Item " .. id)):gsub(",", ";")
         local quality = getQuality(id)
         local unitPrice = 0
@@ -1327,48 +1340,92 @@ lsExportBtn:SetScript("OnClick", function()
             local price = prices and prices[id] or ns.GetTSMPrice(id)
             if price then unitPrice = math.floor(price / 10000 + 0.5) end
         end
-        local rv = rc * unitPrice
-        local av = ac * unitPrice
-        csv = csv .. string.format("%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d,%s\n",
-            dateStr, charName, beast, id, name, quality, rc, ac, unitPrice, rv, av, buffsStr or "")
+        local value = count * unitPrice
+        csvLines[#csvLines + 1] = string.format("%s,%s,%s,%d,%s,%d,%d,%d,%d,%s",
+            dateStr, charName, beast, id, name, quality, count, unitPrice, value, buffsStr or "")
     end
 
-    -- Per-character export
-    for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
-        if charData.loot then
-            local loot = ns.GetCharLoot(charData)
-            if loot then
-                local charName = charKey:gsub(",", ";")
-                local prices = loot.prices or {}
-
-                -- Summary: all items for this character
-                local allIDs = {}
-                local idSet = {}
-                for id in pairs(loot.allTime or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-                for id in pairs(loot.thisReset or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
-                table.sort(allIDs)
-                for _, id in ipairs(allIDs) do
-                    local rc = loot.thisReset and loot.thisReset[id] or 0
-                    local ac = loot.allTime and loot.allTime[id] or 0
-                    addRow(resetDateStr, charName, "All", id, rc, ac, prices)
+    -- Helper: export one day's loot for a character
+    local function exportDay(charName, dateStr, items, perBeast, prices, killBuffs)
+        if not items or not next(items) then return end
+        -- Per-beast breakdown
+        if perBeast then
+            for _, lure in ipairs(LURES) do
+                local beastItems = perBeast[lure.name]
+                if beastItems and next(beastItems) then
+                    local beastIDs = {}
+                    for id in pairs(beastItems) do beastIDs[#beastIDs + 1] = id end
+                    table.sort(beastIDs)
+                    local buffsStr = killBuffs and killBuffs[lure.name] and table.concat(killBuffs[lure.name], "; ") or ""
+                    for _, id in ipairs(beastIDs) do
+                        addRow(dateStr, charName, lure.name, id, beastItems[id] or 0, 0, prices, buffsStr)
+                    end
                 end
+            end
+        else
+            -- No per-beast data, export as "All"
+            local allIDs = {}
+            for id in pairs(items) do allIDs[#allIDs + 1] = id end
+            table.sort(allIDs)
+            for _, id in ipairs(allIDs) do
+                addRow(dateStr, charName, "All", id, items[id] or 0, 0, prices)
+            end
+        end
+    end
 
-                -- Per-beast breakdown
-                local killBuffs = loot.killBuffsReset or {}
-                for _, lure in ipairs(LURES) do
-                    local resetBl = loot.perBeastReset and loot.perBeastReset[lure.name]
-                    local allBl = loot.perBeast and loot.perBeast[lure.name]
-                    if (resetBl and next(resetBl)) or (allBl and next(allBl)) then
-                        local beastIDs = {}
-                        local beastSet = {}
-                        for id in pairs(allBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
-                        for id in pairs(resetBl or {}) do if not beastSet[id] then beastSet[id] = true; beastIDs[#beastIDs + 1] = id end end
-                        table.sort(beastIDs)
-                        local buffsStr = killBuffs[lure.name] and table.concat(killBuffs[lure.name], "; ") or ""
-                        for _, id in ipairs(beastIDs) do
-                            local rc = resetBl and resetBl[id] or 0
-                            local ac = allBl and allBl[id] or 0
-                            addRow(resetDateStr, charName, lure.name, id, rc, ac, prices, buffsStr)
+    if ns.lootSummaryHistoryMode and ns.lootSummaryHistoryPage > 0 then
+        -- History mode: export only the selected day
+        for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
+            if charData.loot and charData.loot.history then
+                local entry = charData.loot.history[ns.lootSummaryHistoryPage]
+                if entry then
+                    exportDay(charKey:gsub(",", ";"), entry.date, entry.items, entry.perBeast, entry.prices, entry.killBuffs)
+                end
+            end
+        end
+    else
+        -- Full export: all history days + current reset, per character
+        for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
+            if charData.loot then
+                local loot = ns.GetCharLoot(charData)
+                if loot then
+                    local charName = charKey:gsub(",", ";")
+                    -- History days (oldest first)
+                    if loot.history then
+                        for i = #loot.history, 1, -1 do
+                            local entry = loot.history[i]
+                            exportDay(charName, entry.date, entry.items, entry.perBeast, entry.prices, entry.killBuffs)
+                        end
+                    end
+                    -- Current reset
+                    if loot.thisReset and next(loot.thisReset) then
+                        exportDay(charName, resetDateStr, loot.thisReset, loot.perBeastReset, loot.prices, loot.killBuffsReset)
+                    end
+                    -- All Time remainder (allTime minus sum of history + thisReset)
+                    if loot.allTime and next(loot.allTime) then
+                        -- Sum all historied + current reset counts per item
+                        local historied = {}
+                        if loot.history then
+                            for _, entry in ipairs(loot.history) do
+                                for id, cnt in pairs(entry.items or {}) do
+                                    historied[id] = (historied[id] or 0) + cnt
+                                end
+                            end
+                        end
+                        if loot.thisReset then
+                            for id, cnt in pairs(loot.thisReset) do
+                                historied[id] = (historied[id] or 0) + cnt
+                            end
+                        end
+                        -- Export only the untracked remainder
+                        local allIDs = {}
+                        for id in pairs(loot.allTime) do allIDs[#allIDs + 1] = id end
+                        table.sort(allIDs)
+                        for _, id in ipairs(allIDs) do
+                            local remainder = (loot.allTime[id] or 0) - (historied[id] or 0)
+                            if remainder > 0 then
+                                addRow("AllTime", charName, "All", id, remainder, 0, loot.prices)
+                            end
                         end
                     end
                 end
@@ -1376,7 +1433,8 @@ lsExportBtn:SetScript("OnClick", function()
         end
     end
     -- Show in scrollable copy window
-    if not ns._exportFrame then
+    if not ns._exportFrame or not ns._exportFrame.importBtn then
+        if ns._exportFrame then ns._exportFrame:Hide(); ns._exportFrame = nil end
         local ef = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
         ef:SetSize(500, 300)
         ef:SetPoint("CENTER")
@@ -1391,19 +1449,36 @@ lsExportBtn:SetScript("OnClick", function()
         ef:SetScript("OnDragStop", function(s) s:StopMovingOrSizing() end)
         ef:Hide()
 
-        local title = ef:CreateFontString(nil, "OVERLAY")
-        title:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
-        title:SetPoint("TOPLEFT", 8, -8)
-        title:SetText("|cffD1B559Export CSV — Select All (Ctrl+A) then Copy (Ctrl+C)|r")
+        -- Toolbar
+        local toolbar = CreateFrame("Frame", nil, ef)
+        toolbar:SetPoint("TOPLEFT", ef, "TOPLEFT", 4, -4)
+        toolbar:SetPoint("TOPRIGHT", ef, "TOPRIGHT", -4, -4)
+        toolbar:SetHeight(20)
+        local toolbarBg = toolbar:CreateTexture(nil, "BACKGROUND")
+        toolbarBg:SetAllPoints()
+        toolbarBg:SetColorTexture(0, 0, 0, 0.4)
+        local toolbarSep = toolbar:CreateTexture(nil, "ARTWORK")
+        toolbarSep:SetHeight(1)
+        toolbarSep:SetPoint("BOTTOMLEFT", toolbar, "BOTTOMLEFT")
+        toolbarSep:SetPoint("BOTTOMRIGHT", toolbar, "BOTTOMRIGHT")
+        toolbarSep:SetColorTexture(ns.C_BORDER_RGB[1], ns.C_BORDER_RGB[2], ns.C_BORDER_RGB[3], 0.3)
 
-        local closeBtn = CreateFrame("Button", nil, ef)
-        closeBtn:SetSize(16, 16)
-        closeBtn:SetPoint("TOPRIGHT", -6, -6)
+        local title = toolbar:CreateFontString(nil, "OVERLAY")
+        title:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+        title:SetPoint("LEFT", toolbar, "LEFT", 4, 0)
+        title:SetTextColor(0.82, 0.71, 0.35)
+        title:SetText("Export CSV")
+
+        local closeBtn = CreateFrame("Button", nil, toolbar)
+        closeBtn:SetSize(20, 20)
+        closeBtn:SetPoint("RIGHT", toolbar, "RIGHT", -2, 0)
         local closeTex = closeBtn:CreateFontString(nil, "OVERLAY")
         closeTex:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
         closeTex:SetAllPoints()
         closeTex:SetText("|cffff4444×|r")
         closeBtn:SetScript("OnClick", function() ef:Hide() end)
+        closeBtn:SetScript("OnEnter", function() closeTex:SetTextColor(1, 0.3, 0.3) end)
+        closeBtn:SetScript("OnLeave", function() closeTex:SetTextColor(0.82, 0.71, 0.35) end)
 
         local scroll = CreateFrame("ScrollFrame", nil, ef, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 8, -28)
@@ -1418,8 +1493,114 @@ lsExportBtn:SetScript("OnClick", function()
         editBox:SetScript("OnEscapePressed", function() ef:Hide() end)
         scroll:SetScrollChild(editBox)
 
+        -- Import button
+        local importBtn = CreateFrame("Button", nil, toolbar)
+        importBtn:SetSize(60, 20)
+        importBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+        local importBtnText = importBtn:CreateFontString(nil, "OVERLAY")
+        importBtnText:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+        importBtnText:SetAllPoints()
+        importBtnText:SetText("|cffD1B559Import|r")
+        local importHl = importBtn:CreateTexture(nil, "HIGHLIGHT")
+        importHl:SetAllPoints()
+        importHl:SetColorTexture(1, 1, 1, 0.1)
+        ef.importBtn = importBtn
+        ef.importBtnText = importBtnText
+        ef.title = title
+
+        -- Back button (visible only in import mode)
+        local backBtn = CreateFrame("Button", nil, toolbar)
+        backBtn:SetSize(50, 20)
+        backBtn:SetPoint("LEFT", toolbar, "LEFT", 2, 0)
+        local backBtnText = backBtn:CreateFontString(nil, "OVERLAY")
+        backBtnText:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+        backBtnText:SetAllPoints()
+        backBtnText:SetText("|cffD1B559< Back|r")
+        local backHl = backBtn:CreateTexture(nil, "HIGHLIGHT")
+        backHl:SetAllPoints()
+        backHl:SetColorTexture(1, 1, 1, 0.1)
+        backBtn:Hide()
+        ef.backBtn = backBtn
+
+        -- Append toggle (visible in import mode, below toolbar)
+        local appendCheck = CreateFrame("CheckButton", nil, ef, "UICheckButtonTemplate")
+        appendCheck:SetSize(20, 20)
+        appendCheck:SetPoint("TOPLEFT", ef, "TOPLEFT", 8, -26)
+        appendCheck:SetChecked(false)
+        appendCheck:Hide()
+        local appendLabel = ef:CreateFontString(nil, "OVERLAY")
+        appendLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+        appendLabel:SetPoint("LEFT", appendCheck, "RIGHT", 2, 0)
+        appendLabel:SetText("|cffD1B559Append mode|r |cff888888(add to existing data instead of skip)|r")
+        appendLabel:Hide()
+        ef.appendCheck = appendCheck
+        ef.appendLabel = appendLabel
+
+        -- Import mode toggle
+        ef._importMode = false
+        ef._lastExportCSV = ""
+
+        local function ShowExportMode()
+            ef._importMode = false
+            importBtnText:SetText("|cffD1B559Import|r")
+            title:SetText("Export CSV — Ctrl+A, Ctrl+C")
+            title:ClearAllPoints()
+            title:SetPoint("LEFT", toolbar, "LEFT", 4, 0)
+            backBtn:Hide()
+            appendCheck:Hide()
+            appendLabel:Hide()
+            scroll:SetPoint("TOPLEFT", 8, -28)
+            if ef._lastExportCSV and #ef._lastExportCSV > 0 then
+                editBox:SetText(ef._lastExportCSV)
+                editBox:SetFocus()
+                editBox:HighlightText()
+            end
+        end
+
+        backBtn:SetScript("OnClick", ShowExportMode)
+
+        importBtn:SetScript("OnClick", function()
+            if not ef._importMode then
+                -- Switch to import mode
+                ef._importMode = true
+                title:SetText("Import CSV — Paste data, click Run Import")
+                title:ClearAllPoints()
+                title:SetPoint("LEFT", backBtn, "RIGHT", 4, 0)
+                importBtnText:SetText("|cff00ff00Run Import|r")
+                backBtn:Show()
+                appendCheck:Show()
+                appendLabel:Show()
+                scroll:SetPoint("TOPLEFT", 8, -46)
+                editBox:SetText("")
+                editBox:SetFocus()
+            else
+                -- Run import
+                local text = editBox:GetText()
+                if text and #text > 10 then
+                    local appendMode = appendCheck:GetChecked()
+                    local imported, skipped = ns.ImportCSV(text, appendMode)
+                    title:SetText("Import done: " .. imported .. " imported, " .. skipped .. " skipped")
+                    if ns.UpdateUI then ns.UpdateUI() end
+                else
+                    ShowExportMode()
+                end
+            end
+        end)
+
         ef.editBox = editBox
         ns._exportFrame = ef
+    end
+    local csv = table.concat(csvLines, "\n")
+    ns._exportFrame._lastExportCSV = csv
+    ns._exportFrame._importMode = false
+    if ns._exportFrame.importBtnText then
+        ns._exportFrame.importBtnText:SetText("|cffD1B559Import|r")
+    end
+    if ns._exportFrame.title then
+        ns._exportFrame.title:SetText("Export CSV — Ctrl+A, Ctrl+C")
+    end
+    if ns._exportFrame.backBtn then
+        ns._exportFrame.backBtn:Hide()
     end
     ns._exportFrame.editBox:SetText(csv)
     ns._exportFrame:Show()
@@ -2091,4 +2272,169 @@ function ns.ToggleLootSummary()
         RepositionLootSummary()
         ns.lootSummary:Show()
     end
+end
+
+------------------------------------------------------
+-- CSV Import
+-- Format: Date,Character,Beast,Item ID,Item,Quality,Count,Unit Price,Value,Active Buffs
+-- Only fills empty data — does NOT overwrite existing values
+------------------------------------------------------
+
+function ns.ImportCSV(text, appendMode)
+    if not text then return 0, 0 end
+    ns.EnsureDB()
+
+    local imported, skipped = 0, 0
+    local lines = { strsplit("\n", text) }
+
+    -- Build beast name lookup
+    local beastNames = {}
+    for _, lure in ipairs(LURES) do
+        beastNames[lure.name] = true
+    end
+
+    local section = "loot"  -- "characters" or "loot"
+
+    for _, line in ipairs(lines) do
+        if line == "#Characters" then section = "characters"
+        elseif line == "#Loot" then section = "loot"
+        elseif section == "characters" and line and #line > 3 and not line:match("^Character,") then
+            -- Parse character metadata: Character,Class,Level
+            local fields = { strsplit(",", line) }
+            local charKey = fields[1]
+            local class = fields[2]
+            local level = tonumber(fields[3]) or 0
+            if charKey and class then
+                if not MajesticBeastTrackerDB.chars[charKey] then
+                    MajesticBeastTrackerDB.chars[charKey] = {
+                        hasSkinning = true,
+                        class = class,
+                        level = level,
+                        talentPoints = 0,
+                        lures = {},
+                        loot = { thisReset = {}, allTime = {}, resetTime = 0 },
+                    }
+                    imported = imported + 1
+                else
+                    -- Update class/level if UNKNOWN
+                    local cd = MajesticBeastTrackerDB.chars[charKey]
+                    if cd.class == "UNKNOWN" and class ~= "UNKNOWN" then cd.class = class end
+                    if (cd.level or 0) == 0 and level > 0 then cd.level = level end
+                end
+            end
+        elseif section == "loot" and line and #line > 10 and not line:match("^Date,") then
+            local fields = { strsplit(",", line) }
+            local dateStr = fields[1]
+            local charKey = fields[2]
+            local beast = fields[3]
+            local itemID = tonumber(fields[4])
+            local count = tonumber(fields[7])
+
+            if dateStr and charKey and itemID and count and count > 0 then
+                -- Ensure character exists in DB
+                if not MajesticBeastTrackerDB.chars[charKey] then
+                    MajesticBeastTrackerDB.chars[charKey] = {
+                        hasSkinning = true,
+                        class = "UNKNOWN",
+                        level = 0,
+                        talentPoints = 0,
+                        lures = {},
+                        loot = { thisReset = {}, allTime = {}, resetTime = 0 },
+                    }
+                end
+                local charData = MajesticBeastTrackerDB.chars[charKey]
+                if not charData.loot then
+                    charData.loot = { thisReset = {}, allTime = {}, resetTime = 0 }
+                end
+
+                local resetDate = ns.GetResetDate()
+
+                if dateStr == "AllTime" then
+                    -- AllTime remainder: exported as (allTime - sum of history)
+                    -- Always add to allTime — this represents untracked pre-history data
+                    charData.loot.allTime = charData.loot.allTime or {}
+                    charData.loot.allTime[itemID] = (charData.loot.allTime[itemID] or 0) + count
+                    imported = imported + 1
+                elseif dateStr == resetDate then
+                    -- Current reset: import into thisReset
+                    if not charData.loot.thisReset then charData.loot.thisReset = {} end
+                    local existing = charData.loot.thisReset[itemID] or 0
+                    if existing == 0 or appendMode then
+                        charData.loot.thisReset[itemID] = (appendMode and existing or 0) + count
+                        charData.loot.allTime[itemID] = (charData.loot.allTime[itemID] or 0) + count
+                        -- Per-beast if applicable
+                        if beast and beast ~= "All" and beastNames[beast] then
+                            if not charData.loot.perBeastReset then charData.loot.perBeastReset = {} end
+                            if not charData.loot.perBeastReset[beast] then charData.loot.perBeastReset[beast] = {} end
+                            if (charData.loot.perBeastReset[beast][itemID] or 0) == 0 then
+                                charData.loot.perBeastReset[beast][itemID] = count
+                            end
+                            if not charData.loot.perBeast then charData.loot.perBeast = {} end
+                            if not charData.loot.perBeast[beast] then charData.loot.perBeast[beast] = {} end
+                            charData.loot.perBeast[beast][itemID] = (charData.loot.perBeast[beast][itemID] or 0) + count
+                        end
+                        imported = imported + 1
+                    else
+                        skipped = skipped + 1
+                    end
+                else
+                    -- Historical: find or create history entry for this date
+                    if not charData.loot.history then charData.loot.history = {} end
+                    local histEntry
+                    for _, entry in ipairs(charData.loot.history) do
+                        if entry.date == dateStr then
+                            histEntry = entry
+                            break
+                        end
+                    end
+                    if not histEntry then
+                        histEntry = { date = dateStr, items = {}, perBeast = {} }
+                        -- Insert in chronological order (newest first)
+                        local inserted = false
+                        for idx, entry in ipairs(charData.loot.history) do
+                            if dateStr > entry.date then
+                                table.insert(charData.loot.history, idx, histEntry)
+                                inserted = true
+                                break
+                            end
+                        end
+                        if not inserted then
+                            table.insert(charData.loot.history, histEntry)
+                        end
+                    end
+
+                    -- Only fill if empty (0 or nil), or append if appendMode
+                    local existingHist = histEntry.items[itemID] or 0
+                    if existingHist == 0 or appendMode then
+                        histEntry.items[itemID] = (appendMode and existingHist or 0) + count
+                        -- Per-beast
+                        if beast and beast ~= "All" and beastNames[beast] then
+                            if not histEntry.perBeast then histEntry.perBeast = {} end
+                            if not histEntry.perBeast[beast] then histEntry.perBeast[beast] = {} end
+                            if (histEntry.perBeast[beast][itemID] or 0) == 0 then
+                                histEntry.perBeast[beast][itemID] = count
+                            end
+                        end
+                        -- Also add to allTime
+                        charData.loot.allTime = charData.loot.allTime or {}
+                        charData.loot.allTime[itemID] = (charData.loot.allTime[itemID] or 0) + count
+                        imported = imported + 1
+                    else
+                        skipped = skipped + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Trim history to 90 days
+    for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+        if charData.loot and charData.loot.history then
+            while #charData.loot.history > 90 do
+                table.remove(charData.loot.history)
+            end
+        end
+    end
+
+    return imported, skipped
 end
