@@ -38,31 +38,11 @@ for i, cons in ipairs(CONSUMABLES) do
         btn:SetAttribute("type", "spell")
         btn:SetAttribute("spell", cons.spellID)
     elseif cons.isToolEnchant then
-        -- Click uses razorstone + opens skinning profession window for easy tool click
         btn:SetAttribute("type", "item")
-        btn:SetAttribute("item", cons.itemName or "")
-        C_Item.RequestLoadItemDataByID(cons.itemID)
-        local ticker
-        ticker = C_Timer.NewTicker(1, function()
-            local name = C_Item.GetItemNameByID(cons.itemID)
-            if name and not InCombatLockdown() then
-                btn:SetAttribute("item", name)
-                ticker:Cancel()
-            end
-        end, 10)
+        btn:SetAttribute("item", "item:" .. cons.itemID)
     else
         btn:SetAttribute("type", "item")
-        btn:SetAttribute("item", cons.itemName or "")
-        -- Cache item name async
-        C_Item.RequestLoadItemDataByID(cons.itemID)
-        local ticker
-        ticker = C_Timer.NewTicker(1, function()
-            local name = C_Item.GetItemNameByID(cons.itemID)
-            if name and not InCombatLockdown() then
-                btn:SetAttribute("item", name)
-                ticker:Cancel()
-            end
-        end, 10)
+        btn:SetAttribute("item", "item:" .. cons.itemID)
     end
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
@@ -155,12 +135,22 @@ for i, cons in ipairs(CONSUMABLES) do
             self:SetAttribute("type", nil)
             return
         end
+        -- Prioritize item: use primary itemID, fallback to altItemID if primary not in bags
+        if cons.itemID and cons.altItemID and not cons.isSpell then
+            local primaryCount = C_Item.GetItemCount(cons.itemID)
+            if primaryCount > 0 then
+                self:SetAttribute("item", "item:" .. cons.itemID)
+            else
+                local altCount = C_Item.GetItemCount(cons.altItemID)
+                if altCount > 0 then
+                    self:SetAttribute("item", "item:" .. cons.altItemID)
+                end
+            end
+        end
         -- Block if buff still has >20% duration left (skip for stackable, spells, and tool enchants)
         if not cons.stackable and not cons.isSpell and not cons.isToolEnchant then
-            local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-            if not buffInfo and cons.itemName ~= cons.buffName then
-                buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
-            end
+            local buffName = cons.buffSpellID and C_Spell.GetSpellName(cons.buffSpellID) or cons.name
+            local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL")
             if buffInfo and buffInfo.duration and buffInfo.duration > 0 and buffInfo.expirationTime then
                 local remaining = buffInfo.expirationTime - GetTime()
                 if remaining / buffInfo.duration > 0.2 then
@@ -214,7 +204,7 @@ function ns.RefreshConsumableLabels()
 
         -- Tool enchant type: scan skinning tool tooltip for remaining time
         if cons.isToolEnchant then
-            local count = C_Item.GetItemCount(cons.itemName or cons.itemID)
+            local count = C_Item.GetItemCount(cons.itemID)
             if not meetsLevel then
                 consumableLabels[i]:SetText("Lv" .. cons.minLevel)
                 consumableLabels[i]:SetTextColor(0.4, 0.4, 0.4)
@@ -313,12 +303,13 @@ function ns.RefreshConsumableLabels()
             end
         else
 
-        -- Item type: existing logic
-        local count = C_Item.GetItemCount(cons.itemName or cons.itemID)
-        local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.buffName, "HELPFUL")
-        if not buffInfo and cons.spellID then
-            buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", cons.itemName, "HELPFUL")
+        -- Item type: existing logic (locale-safe via itemID and buffSpellID)
+        local count = C_Item.GetItemCount(cons.itemID)
+        if cons.altItemID then
+            count = count + C_Item.GetItemCount(cons.altItemID)
         end
+        local buffName = cons.buffSpellID and C_Spell.GetSpellName(cons.buffSpellID) or cons.name
+        local buffInfo = buffName and C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL") or nil
         local remaining = buffInfo and buffInfo.expirationTime and (buffInfo.expirationTime - GetTime()) or 0
         if not meetsLevel then
             consumableLabels[i]:SetText("Lv" .. cons.minLevel)

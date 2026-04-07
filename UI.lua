@@ -29,10 +29,10 @@ local PAD = 8
 
 -- Consumables to track (test with Holiday Cheesewheel)
 local CONSUMABLES = {
-    { itemID = 242299, name = "Sanguithorn Tea", buffName = "Relaxed", itemName = "Sanguithorn Tea", minLevel = 80 },
-    { itemID = 241317, name = "Haranir Phial of Perception", buffName = "Haranir Phial of Perception", spellID = 1236763, itemName = "Haranir Phial of Perception", minLevel = 81 },
-    { itemID = 238367, name = "Root Crab", buffName = "Midnight Perception", spellID = 1235216, itemName = "Root Crab", minLevel = 80, stackable = true },
-    { itemID = 237372, name = "Refulgent Razorstone", itemName = "Refulgent Razorstone", minLevel = 80, isToolEnchant = true },
+    { itemID = 242299, name = "Sanguithorn Tea", buffSpellID = 1269152, minLevel = 80 },
+    { itemID = 241317, name = "Haranir Phial of Perception", buffSpellID = 1236763, altItemID = 241316, minLevel = 81 },
+    { itemID = 238367, name = "Root Crab", buffSpellID = 1235216, minLevel = 80, stackable = true },
+    { itemID = 237372, name = "Refulgent Razorstone", minLevel = 80, isToolEnchant = true },
     { spellID = 1223388, name = "Sharpen Your Knife", isSpell = true, minLevel = 80 },
 }
 local NUM_EXTRA_COLS = #CONSUMABLES
@@ -2693,6 +2693,10 @@ auraFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
 auraFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "UNIT_AURA" and unit ~= "player" then return end
+    -- Invalidate stats cache on relevant changes
+    if event == "TRAIT_CONFIG_UPDATED" or event == "SKILL_LINES_CHANGED" or event == "UNIT_AURA" then
+        if ns.InvalidateProfStatsCache then ns.InvalidateProfStatsCache() end
+    end
     ns.UpdateUI()
 end)
 

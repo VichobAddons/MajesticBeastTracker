@@ -49,6 +49,95 @@ local ALL_PATHS = {
 }
 
 ------------------------------------------------------
+-- Perk bonuses: fixed stat grants at specific perkNode IDs
+-- Data from skinning.json — each perk gives stats when unlocked
+------------------------------------------------------
+local PERK_BONUSES = {
+    -- Superb Scales (106087): +Skill/+Deftness scaled creatures
+    [106067] = { Deftness = 5 },   -- 5pts
+    [106066] = { Skill = 5 },      -- 10pts
+    [106065] = { Deftness = 5 },   -- 15pts
+    [106064] = { Skill = 10 },     -- 20pts
+    [106063] = { Deftness = 10 },  -- 25pts
+    [106062] = { Skill = 15 },     -- 30pts
+    [106061] = { Deftness = 10 },  -- 35pts
+    [106060] = { Skill = 20, Perception = 30 },  -- 40pts (major)
+    [106068] = { Skill = 5 },      -- unlock
+
+    -- Lasting Leather (106088): +Skill/+Deftness leathery creatures
+    [106076] = { Deftness = 5 },
+    [106075] = { Skill = 5 },
+    [106074] = { Deftness = 5 },
+    [106073] = { Skill = 10 },
+    [106072] = { Deftness = 10 },
+    [106071] = { Skill = 15 },
+    [106070] = { Deftness = 10 },
+    [106069] = { Skill = 20, Perception = 30 },  -- major
+    [106077] = { Skill = 5 },      -- unlock
+
+    -- Thorough Tanning root (106089): +Skill perks
+    [106085] = { Skill = 5 },
+    [106083] = { Skill = 5 },
+    [106081] = { Skill = 5 },
+    [106079] = { Skill = 5 },
+    [106086] = {},  -- unlock: Sharpen Your Knife (no stat)
+
+    -- Dedicated Diffuser (106056): diffuser perks (no direct stats tracked)
+    -- Trophy Taker (106057): +Perception
+    [106042] = { Perception = 5 },
+    [106041] = { Perception = 5 },
+    [106040] = { Perception = 10 },
+    [106039] = { Perception = 10 },
+    [106038] = { Perception = 10 },
+    [106037] = { Perception = 10 },
+    [106036] = { Perception = 15, Deftness = 30 },  -- major
+    [106043] = { Perception = 5 },  -- unlock
+
+    -- Careful Carving (106058): +Perception
+    [106033] = { Perception = 5 },
+    [106032] = { Perception = 5 },
+    [106031] = { Perception = 10 },
+    [106030] = { Perception = 10 },
+    [106029] = { Perception = 10 },
+    [106028] = { Perception = 10 },
+    [106035] = { Perception = 15, Deftness = 30 },  -- major (40pts perk, recheck ID)
+    [106034] = { Perception = 5 },  -- unlock
+
+    -- Gainful Gathering root (106059): +Deftness perks
+    [106054] = { Deftness = 5 },
+    [106052] = { Deftness = 5 },
+    [106050] = { Deftness = 5 },
+    [106048] = { Deftness = 5 },
+    [106055] = {},  -- unlock (species-specific reagents, no stat)
+
+    -- Component Collector (106117): +Finesse renowned beasts
+    [106097] = { Finesse = 5 },
+    [106096] = { Finesse = 5 },
+    [106095] = { Finesse = 10 },
+    [106094] = { Finesse = 10 },
+    [106093] = { Finesse = 10 },
+    [106092] = { Finesse = 10 },
+    [106091] = { Finesse = 15, Deftness = 30 },  -- major
+    [106098] = { Finesse = 5 },  -- unlock
+
+    -- Majestic Materials (106118): +Perception renowned beasts
+    [106104] = { Perception = 5 },
+    [106103] = { Perception = 5 },
+    [106102] = { Perception = 10 },
+    [106101] = { Perception = 10 },
+    [106100] = { Perception = 10 },
+    [106099] = { Perception = 15, Skill = 30 },  -- major
+    [106105] = { Perception = 5 },  -- unlock
+
+    -- Talented Tracker root (106119): +Skill perks
+    [106115] = { Skill = 5 },
+    [106113] = { Skill = 5 },
+    [106111] = { Skill = 10 },
+    [106109] = { Skill = 15 },
+    [106116] = {},  -- unlock: Eversong Lure (no stat)
+}
+
+------------------------------------------------------
 -- API: Get invested points for a single node
 ------------------------------------------------------
 
@@ -95,6 +184,26 @@ local function GetTreePoints(configID, rootNodeID)
         return points
     end)
     return ok and total or 0
+end
+
+------------------------------------------------------
+-- PUBLIC API: Get stat bonuses from unlocked perks
+-- Returns: { Skill = N, Perception = N, Finesse = N, Deftness = N }
+------------------------------------------------------
+
+function ns.GetPerkBonusStats()
+    local configID = GetConfigID()
+    if not configID then return nil end
+    local stats = { Skill = 0, Perception = 0, Finesse = 0, Deftness = 0 }
+    for perkNodeID, bonuses in pairs(PERK_BONUSES) do
+        local ok, info = pcall(C_Traits.GetNodeInfo, configID, perkNodeID)
+        if ok and info and info.activeRank and info.activeRank > 0 then
+            for stat, amount in pairs(bonuses) do
+                stats[stat] = (stats[stat] or 0) + amount
+            end
+        end
+    end
+    return stats
 end
 
 ------------------------------------------------------
