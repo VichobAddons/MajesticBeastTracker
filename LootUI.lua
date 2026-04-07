@@ -1312,13 +1312,15 @@ lsExportBtn:SetScript("OnClick", function()
     local hasTSM = TSM_API ~= nil
     local csvLines = {}
 
-    -- Characters section
+    -- Characters section (all chars, with hidden status)
+    local hiddenChars = MajesticBeastTrackerDB.settings.hiddenChars or {}
     csvLines[#csvLines + 1] = "#Characters"
-    csvLines[#csvLines + 1] = "Character,Class,Level"
+    csvLines[#csvLines + 1] = "Character,Class,Level,Hidden"
     for charKey, charData in pairs(MajesticBeastTrackerDB.chars) do
         if charData.hasSkinning then
-            csvLines[#csvLines + 1] = string.format("%s,%s,%d",
-                charKey:gsub(",", ";"), charData.class or "UNKNOWN", charData.level or 0)
+            csvLines[#csvLines + 1] = string.format("%s,%s,%d,%s",
+                charKey:gsub(",", ";"), charData.class or "UNKNOWN", charData.level or 0,
+                hiddenChars[charKey] and "yes" or "no")
         end
     end
     csvLines[#csvLines + 1] = ""
@@ -2299,11 +2301,12 @@ function ns.ImportCSV(text, appendMode)
         if line == "#Characters" then section = "characters"
         elseif line == "#Loot" then section = "loot"
         elseif section == "characters" and line and #line > 3 and not line:match("^Character,") then
-            -- Parse character metadata: Character,Class,Level
+            -- Parse character metadata: Character,Class,Level,Hidden
             local fields = { strsplit(",", line) }
             local charKey = fields[1]
             local class = fields[2]
             local level = tonumber(fields[3]) or 0
+            local hidden = fields[4] == "yes"
             if charKey and class then
                 if not MajesticBeastTrackerDB.chars[charKey] then
                     MajesticBeastTrackerDB.chars[charKey] = {
@@ -2321,6 +2324,13 @@ function ns.ImportCSV(text, appendMode)
                     if cd.class == "UNKNOWN" and class ~= "UNKNOWN" then cd.class = class end
                     if (cd.level or 0) == 0 and level > 0 then cd.level = level end
                 end
+                -- Set hidden status
+                if hidden then
+                    if not MajesticBeastTrackerDB.settings.hiddenChars then
+                        MajesticBeastTrackerDB.settings.hiddenChars = {}
+                    end
+                    MajesticBeastTrackerDB.settings.hiddenChars[charKey] = true
+                end
             end
         elseif section == "loot" and line and #line > 10 and not line:match("^Date,") then
             local fields = { strsplit(",", line) }
@@ -2329,6 +2339,8 @@ function ns.ImportCSV(text, appendMode)
             local beast = fields[3]
             local itemID = tonumber(fields[4])
             local count = tonumber(fields[7])
+            local unitPriceGold = tonumber(fields[8]) or 0  -- gold, convert to copper
+            local unitPrice = unitPriceGold * 10000
 
             if dateStr and charKey and itemID and count and count > 0 then
                 -- Ensure character exists in DB
@@ -2362,6 +2374,13 @@ function ns.ImportCSV(text, appendMode)
                     if existing == 0 or appendMode then
                         charData.loot.thisReset[itemID] = (appendMode and existing or 0) + count
                         charData.loot.allTime[itemID] = (charData.loot.allTime[itemID] or 0) + count
+                        -- Import price if available and not already set
+                        if unitPrice > 0 then
+                            if not charData.loot.prices then charData.loot.prices = {} end
+                            if not charData.loot.prices[itemID] then
+                                charData.loot.prices[itemID] = unitPrice
+                            end
+                        end
                         -- Per-beast if applicable
                         if beast and beast ~= "All" and beastNames[beast] then
                             if not charData.loot.perBeastReset then charData.loot.perBeastReset = {} end
@@ -2418,6 +2437,13 @@ function ns.ImportCSV(text, appendMode)
                         -- Also add to allTime
                         charData.loot.allTime = charData.loot.allTime or {}
                         charData.loot.allTime[itemID] = (charData.loot.allTime[itemID] or 0) + count
+                        -- Import price into history entry
+                        if unitPrice > 0 then
+                            if not histEntry.prices then histEntry.prices = {} end
+                            if not histEntry.prices[itemID] then
+                                histEntry.prices[itemID] = unitPrice
+                            end
+                        end
                         imported = imported + 1
                     else
                         skipped = skipped + 1
