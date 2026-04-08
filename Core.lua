@@ -1162,9 +1162,21 @@ ns.TestGearStats = TestGearStats
 
 -- Check if skinning tool has temporary enchant (e.g. Razor Sharp from Razorstone)
 -- Returns: remainingSeconds (0 if not active), isActive
+-- Cached: result stored for 10 seconds (tooltip scan is expensive)
+local enchantCache = { time = 0, remaining = 0, active = false }
 function ns.GetToolEnchantRemaining()
+    local now = GetTime()
+    if now - enchantCache.time < 10 then
+        -- Adjust remaining by elapsed time
+        local elapsed = now - enchantCache.time
+        local rem = math.max(enchantCache.remaining - elapsed, 0)
+        return rem, enchantCache.active and rem > 0
+    end
     local gear = DetectSkinningGear()
-    if not gear or #gear == 0 then return 0, false end
+    if not gear or #gear == 0 then
+        enchantCache = { time = now, remaining = 0, active = false }
+        return 0, false
+    end
     local tip = MBT_EnchantScanTip
     tip:SetOwner(UIParent, "ANCHOR_NONE")
     for _, item in ipairs(gear) do
@@ -1184,6 +1196,7 @@ function ns.GetToolEnchantRemaining()
                             local secs = (tonumber(hours) or 0) * 3600 + (tonumber(mins) or 0) * 60
                             if secs > 0 then
                                 tip:Hide()
+                                enchantCache = { time = now, remaining = secs, active = true }
                                 return secs, true
                             end
                         end
@@ -1193,6 +1206,7 @@ function ns.GetToolEnchantRemaining()
         end
     end
     tip:Hide()
+    enchantCache = { time = now, remaining = 0, active = false }
     return 0, false
 end
 

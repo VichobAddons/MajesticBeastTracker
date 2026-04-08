@@ -1039,7 +1039,9 @@ end
 
 
 -- 1-second ticker for real-time consumable buff timers + route timer
-C_Timer.NewTicker(1, function()
+C_Timer.NewTicker(3, function()
+    if ns.isInInstance then return end
+    if InCombatLockdown() then return end
     if frame:IsShown() then
         ns.RefreshConsumableLabels()
         if ns.IsTimerRunning() then
@@ -1567,7 +1569,25 @@ local function UpdateLockVisual()
 end
 ns.UpdateLockVisual = UpdateLockVisual
 
+local lastUpdateUI = 0
+local updateUIPending = false
+
 function ns.UpdateUI()
+    -- Throttle: max once per 1s, coalesce rapid-fire calls
+    local now = GetTime()
+    if now - lastUpdateUI < 1 then
+        if not updateUIPending then
+            updateUIPending = true
+            C_Timer.After(1 - (now - lastUpdateUI), function()
+                updateUIPending = false
+                ns.UpdateUI()
+            end)
+        end
+        return
+    end
+    lastUpdateUI = now
+    -- Skip if frame is hidden (no point updating invisible UI)
+    if not frame:IsShown() then return end
     local uiOk, uiErr = pcall(function()
     ns.EnsureDB()
     local currentChar = ns.GetCharKey()
@@ -2272,8 +2292,7 @@ function ns.UpdateUI()
         end
     end
 
-    -- Update consumable status
-    ns.RefreshConsumableLabels()
+    -- Consumable labels handled by 3s ticker, not here
     local playerLevel = UnitLevel("player")
 
     -- Count visible consumables first for even spacing
@@ -2691,7 +2710,9 @@ auraFrame:RegisterEvent("UNIT_AURA")
 auraFrame:RegisterEvent("BAG_UPDATE")
 auraFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
+local lastAuraUpdate = 0
 auraFrame:SetScript("OnEvent", function(_, event, unit)
+    if ns.isInInstance then return end
     if event == "UNIT_AURA" and unit ~= "player" then return end
     -- Invalidate stats cache on relevant changes
     if event == "TRAIT_CONFIG_UPDATED" or event == "SKILL_LINES_CHANGED" or event == "UNIT_AURA" then
@@ -2708,27 +2729,34 @@ combatFrame:SetScript("OnEvent", function(_, event)
     ns.EnsureDB()
     if not MajesticBeastTrackerDB.settings.hideInCombat then return end
     if event == "PLAYER_REGEN_DISABLED" then
+        -- Unregister heavy events during combat
+        auraFrame:UnregisterEvent("UNIT_AURA")
+        auraFrame:UnregisterEvent("BAG_UPDATE")
+        if not MajesticBeastTrackerDB.settings.hideInCombat then return end
         if frame:IsShown() then
             frame._hiddenByCombat = true
             frame:Hide()
             ns.consumableBox:Hide()
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Re-register events after combat
+        auraFrame:RegisterEvent("UNIT_AURA")
+        auraFrame:RegisterEvent("BAG_UPDATE")
         if frame._hiddenByCombat then
             frame._hiddenByCombat = nil
             if MajesticBeastTrackerDB.settings.showFrame ~= false then
                 frame:Show()
-                ns.UpdateUI()
             end
         end
+        ns.UpdateUI()  -- refresh after combat regardless
     end
 end)
 
-local elapsed = 0
-frame:SetScript("OnUpdate", function(_, dt)
-    elapsed = elapsed + dt
-    if elapsed >= 30 then
-        elapsed = 0
+-- Periodic refresh (every 30s) via timer instead of OnUpdate (avoids per-frame overhead)
+C_Timer.NewTicker(30, function()
+    if ns.isInInstance then return end
+    if InCombatLockdown() then return end
+    if frame:IsShown() then
         ns.UpdateUI()
     end
 end)
