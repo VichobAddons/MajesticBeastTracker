@@ -195,6 +195,18 @@ f:RegisterEvent("BANKFRAME_CLOSED")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 ------------------------------------------------------
+-- Cached lookups (shared via ns)
+------------------------------------------------------
+
+local iconCache = {}
+function ns.GetItemIcon(id)
+    if not iconCache[id] then
+        iconCache[id] = C_Item.GetItemIconByID(id) or false
+    end
+    return iconCache[id] or nil
+end
+
+------------------------------------------------------
 -- Helpers
 ------------------------------------------------------
 
@@ -1097,7 +1109,7 @@ local function DetectSkinningGear()
         if itemID then
             local itemName = C_Item.GetItemNameByID(itemID)
             local itemLink = GetInventoryItemLink("player", slotID)
-            local icon = C_Item.GetItemIconByID(itemID)
+            local icon = ns.GetItemIcon(itemID)
             gear[#gear + 1] = {
                 slotID = slotID,
                 itemID = itemID,

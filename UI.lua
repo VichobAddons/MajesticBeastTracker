@@ -1176,7 +1176,7 @@ local function ApplyCustomHearthstone(toyItemID)
         hsBtn:SetAttribute("toy", toyItemID)
         hsBtn:SetAttribute("item", nil)
         hsBtn.itemInfo = { itemID = toyItemID, name = C_Item.GetItemNameByID(toyItemID) or "Hearthstone", isToy = true, isCustomHS = true }
-        local tex = C_Item.GetItemIconByID(toyItemID)
+        local tex = ns.GetItemIcon(toyItemID)
         if tex then hsBtn.icon:SetTexture(tex) end
     else
         -- Reset to default Hearthstone
@@ -1185,7 +1185,7 @@ local function ApplyCustomHearthstone(toyItemID)
         hsBtn:SetAttribute("item", "Hearthstone")
         hsBtn:SetAttribute("toy", nil)
         hsBtn.itemInfo = TRAVEL_ITEMS[1]
-        local tex = C_Item.GetItemIconByID(6948)
+        local tex = ns.GetItemIcon(6948)
         if tex then hsBtn.icon:SetTexture(tex) end
     end
 end
@@ -1624,7 +1624,7 @@ function ns.UpdateUI()
             if lureBoxes[i] then lureBoxes[i]:Hide() end
             if tsmPriceLabels[i] then tsmPriceLabels[i]:Hide() end
         else
-        local tex = C_Item.GetItemIconByID(lure.itemID)
+        local tex = ns.GetItemIcon(lure.itemID)
         if tex then headerIcons[i].icon:SetTexture(tex) end
 
         -- Check if current character can craft this lure
@@ -1808,7 +1808,7 @@ function ns.UpdateUI()
             for j, rBtn in ipairs(reagentIcons[i]) do
                 if lure.reagents[j] then
                     local reagent = lure.reagents[j]
-                    local tex = C_Item.GetItemIconByID(reagent.itemID)
+                    local tex = ns.GetItemIcon(reagent.itemID)
                     if tex then rBtn.icon:SetTexture(tex) end
 
                     local itemName = C_Item.GetItemNameByID(reagent.itemID)
@@ -2092,7 +2092,7 @@ function ns.UpdateUI()
                             if s and s[1] then
                                 local itemID = GetInventoryItemID("player", s[1])
                                 if itemID then
-                                    local tex = C_Item.GetItemIconByID(itemID)
+                                    local tex = ns.GetItemIcon(itemID)
                                     if tex then
                                         row.toolIcon.icon:SetTexture(tex)
                                         row.toolIcon.slotID = s[1]
@@ -2299,7 +2299,7 @@ function ns.UpdateUI()
                 ns.consumableIcons[i].icon:SetTexture(spellInfo.iconID)
             end
         elseif cons.itemID then
-            local tex = C_Item.GetItemIconByID(cons.itemID)
+            local tex = ns.GetItemIcon(cons.itemID)
             if tex then ns.consumableIcons[i].icon:SetTexture(tex) end
         end
 
@@ -2405,7 +2405,7 @@ function ns.UpdateUI()
                 local spellInfo = C_Spell.GetSpellInfo(btn.itemInfo.spellID)
                 if spellInfo and spellInfo.iconID then btn.icon:SetTexture(spellInfo.iconID) end
             else
-                local tex = C_Item.GetItemIconByID(btn.itemInfo.itemID)
+                local tex = ns.GetItemIcon(btn.itemInfo.itemID)
                 if tex then btn.icon:SetTexture(tex) end
             end
             btn:ClearAllPoints()

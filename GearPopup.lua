@@ -223,7 +223,7 @@ local function ShowGearPopup(anchor, charKey)
     for slot, row in ipairs(gearPopupRows) do
         local gear = charData.gear[slot]
         if gear then
-            local tex = gear.icon or C_Item.GetItemIconByID(gear.itemID)
+            local tex = gear.icon or ns.GetItemIcon(gear.itemID)
             if tex then row.icon:SetTexture(tex) end
             row.itemLink = gear.link
             local displayName = gear.name or ""

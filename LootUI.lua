@@ -6,6 +6,15 @@
 local addonName, ns = ...
 local LURES = ns.LURES
 
+-- Cached item name lookup (avoids repeated C_Item.GetItemNameByID calls)
+local itemNameCache = {}
+local function GetCachedItemName(id)
+    if not itemNameCache[id] then
+        itemNameCache[id] = C_Item.GetItemNameByID(id) or false
+    end
+    return itemNameCache[id] or ("Item " .. id)
+end
+
 -- Local aliases from shared ns constants (set by UI.lua)
 local MEDIA_PATH, BACKDROP, C_BORDER_RGB, C_TOOLBAR_ICON, C_TOOLBAR_ICON_HOVER, CreateToolbarButton
 
@@ -48,7 +57,7 @@ function ns.AddLootTooltipLines(lootTable, header, savedPrices)
     local items = {}
     for id, count in pairs(lootTable) do
         if count > 0 then
-            local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+            local name = GetCachedItemName(id)
             local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
             items[#items + 1] = { id = id, name = name, quality = quality, count = count }
         end
@@ -96,7 +105,7 @@ local function BuildItemList(lootTable, savedPrices)
     local hasTSM = TSM_API ~= nil
     for id, count in pairs(lootTable) do
         if count > 0 then
-            local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+            local name = GetCachedItemName(id)
             local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
             local displayName = name
             if quality > 0 then
@@ -421,7 +430,7 @@ function ns.AddPerBeastTooltipLines(perBeastReset, perBeastAllTime)
 
     -- Helper: format item name with quality icon
     local function formatItem(id)
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+        local name = GetCachedItemName(id)
         local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
         if quality and quality > 0 then
             name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
@@ -457,7 +466,7 @@ function ns.AddPerBeastTooltipLines(perBeastReset, perBeastAllTime)
             for id in pairs(allTimeBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
             for id in pairs(resetBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
             table.sort(allIDs, function(a, b)
-                return (C_Item.GetItemNameByID(a) or "") < (C_Item.GetItemNameByID(b) or "")
+                return GetCachedItemName(a) < GetCachedItemName(b)
             end)
 
             for _, id in ipairs(allIDs) do
@@ -746,7 +755,7 @@ ns.lootEditor.syncOverlay = syncOverlay
 local function BuildSortedLootList()
     local items = {}
     for id in pairs(ns.TRACKED_LOOT) do
-        local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+        local name = GetCachedItemName(id)
         local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id) or 0
         items[#items + 1] = { id = id, name = name, quality = quality }
     end
@@ -921,9 +930,9 @@ local function PopulateLootEditor(anchor, charKey)
         row:SetPoint("TOPRIGHT", ns.lootEditor, "TOPRIGHT", 0, yOff)
 
         -- Set item data
-        local tex = C_Item.GetItemIconByID(itemID)
+        local tex = ns.GetItemIcon(itemID)
         if tex then row.icon:SetTexture(tex) end
-        local itemName = C_Item.GetItemNameByID(itemID) or ("Item " .. itemID)
+        local itemName = GetCachedItemName(itemID)
         if entry.quality and entry.quality > 0 then
             itemName = itemName .. " |A:Professions-ChatIcon-Quality-12-Tier" .. entry.quality .. ":17:15::1|a"
         end
@@ -1128,7 +1137,7 @@ ns.ShowLootEditor = function(anchor, charKey)
     local pending = 0
     local allCached = true
     for id in pairs(ns.TRACKED_LOOT) do
-        if not C_Item.GetItemNameByID(id) then
+        if not itemNameCache[id] and not C_Item.GetItemNameByID(id) then
             allCached = false
             pending = pending + 1
             C_Item.RequestLoadItemDataByID(id, function()
@@ -1335,7 +1344,7 @@ lsExportBtn:SetScript("OnClick", function()
 
     -- Helper: format one CSV row
     local function addRow(dateStr, charName, beast, id, count, unused, prices, buffsStr)
-        local name = (C_Item.GetItemNameByID(id) or ("Item " .. id)):gsub(",", ";")
+        local name = (GetCachedItemName(id)):gsub(",", ";")
         local quality = getQuality(id)
         local unitPrice = 0
         if hasTSM then
@@ -2186,11 +2195,11 @@ local function PopulateLootSummary()
                 for id in pairs(allTimeBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
                 for id in pairs(resetBl or {}) do if not idSet[id] then idSet[id] = true; allIDs[#allIDs + 1] = id end end
                 table.sort(allIDs, function(a, b)
-                    return (C_Item.GetItemNameByID(a) or "") < (C_Item.GetItemNameByID(b) or "")
+                    return GetCachedItemName(a) < GetCachedItemName(b)
                 end)
 
                 for _, id in ipairs(allIDs) do
-                    local name = C_Item.GetItemNameByID(id) or ("Item " .. id)
+                    local name = GetCachedItemName(id)
                     local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(id)
                     if quality and quality > 0 then
                         name = name .. " |A:Professions-ChatIcon-Quality-12-Tier" .. quality .. ":12:12::1|a"
