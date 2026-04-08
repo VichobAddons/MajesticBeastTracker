@@ -1,20 +1,22 @@
 ---
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
+name: Feature Request
+about: Suggest an idea for Majestic Beast Tracker
+title: '[Feature] '
+labels: enhancement
 assignees: ''
-
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**What would you like to see?**
+A clear description of the feature or improvement.
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+**Why is this useful?**
+How would this help your skinning workflow? e.g. "I have 12 skinners and..."
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+**How should it work?**
+If you have a specific idea, describe how it should look or behave.
+
+**Screenshots / Examples**
+If applicable, add screenshots or examples from other addons.
 
 **Additional context**
-Add any other context or screenshots about the feature request here.
+Any other context about the feature request.
