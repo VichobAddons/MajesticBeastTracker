@@ -1570,24 +1570,30 @@ end
 ns.UpdateLockVisual = UpdateLockVisual
 
 local lastUpdateUI = 0
-local updateUIPending = false
+local updateUIDirty = false
+
+-- Periodic check: if dirty flag set, run UpdateUI
+C_Timer.NewTicker(2, function()
+    if updateUIDirty and not ns.isInInstance and not InCombatLockdown() and frame:IsShown() then
+        updateUIDirty = false
+        lastUpdateUI = GetTime()
+        ns._doUpdateUI()
+    end
+end)
 
 function ns.UpdateUI()
-    -- Throttle: max once per 1s, coalesce rapid-fire calls
+    -- Throttle: max once per 2s
     local now = GetTime()
-    if now - lastUpdateUI < 1 then
-        if not updateUIPending then
-            updateUIPending = true
-            C_Timer.After(1 - (now - lastUpdateUI), function()
-                updateUIPending = false
-                ns.UpdateUI()
-            end)
-        end
+    if now - lastUpdateUI < 2 then
+        updateUIDirty = true  -- will be picked up by ticker
         return
     end
     lastUpdateUI = now
-    -- Skip if frame is hidden (no point updating invisible UI)
     if not frame:IsShown() then return end
+    ns._doUpdateUI()
+end
+
+function ns._doUpdateUI()
     local uiOk, uiErr = pcall(function()
     ns.EnsureDB()
     local currentChar = ns.GetCharKey()
@@ -2713,9 +2719,14 @@ auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
 local lastAuraUpdate = 0
 auraFrame:SetScript("OnEvent", function(_, event, unit)
     if ns.isInInstance then return end
-    if event == "UNIT_AURA" and unit ~= "player" then return end
-    -- Invalidate stats cache on relevant changes
-    if event == "TRAIT_CONFIG_UPDATED" or event == "SKILL_LINES_CHANGED" or event == "UNIT_AURA" then
+    if event == "UNIT_AURA" then
+        if unit ~= "player" then return end
+        -- Only invalidate stats cache, don't trigger full UpdateUI
+        if ns.InvalidateProfStatsCache then ns.InvalidateProfStatsCache() end
+        return
+    end
+    -- BAG_UPDATE, TRAIT_CONFIG_UPDATED, SKILL_LINES_CHANGED trigger full update
+    if event == "TRAIT_CONFIG_UPDATED" or event == "SKILL_LINES_CHANGED" then
         if ns.InvalidateProfStatsCache then ns.InvalidateProfStatsCache() end
     end
     ns.UpdateUI()
