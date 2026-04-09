@@ -12,11 +12,11 @@ libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 Core.lua
-TalentData.lua
+Components\TalentData.lua
 Templates.xml
 UI.lua
 Components\ConsumableBar.lua
-CalendarPicker.lua
+Components\CalendarPicker.lua
 LootUI.lua
-GearPopup.lua
+Components\GearPopup.lua
 Settings.lua

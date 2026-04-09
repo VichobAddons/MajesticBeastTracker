@@ -1569,31 +1569,38 @@ local function UpdateLockVisual()
 end
 ns.UpdateLockVisual = UpdateLockVisual
 
-local lastUpdateUI = 0
-local updateUIDirty = false
+-- Layout state: shared between LayoutUI and RefreshStatus
+local layoutState = {
+    currentChar = nil,
+    keys = {},              -- sorted char key list
+    lureToCol = {},         -- lure index → visible column index
+    lureSkipped = {},       -- lure index → is skipped
+    numVisibleLures = 0,
+    dynDataTop = 0,
+    showReagents = false,
+    showTSM = false,
+    hideSkipped = false,
+    headerH = 0,
+    divY = 0,
+    w = 0,
+    h = 0,
+}
+ns._layoutDirty = true  -- force initial layout
 
--- Periodic check: if dirty flag set, run UpdateUI
-C_Timer.NewTicker(2, function()
-    if updateUIDirty and not ns.isInInstance and not InCombatLockdown() and frame:IsShown() then
-        updateUIDirty = false
-        lastUpdateUI = GetTime()
-        ns._doUpdateUI()
-    end
-end)
+function ns.InvalidateLayout()
+    ns._layoutDirty = true
+    ns.UpdateUI()
+end
 
 function ns.UpdateUI()
-    -- Throttle: max once per 2s
-    local now = GetTime()
-    if now - lastUpdateUI < 2 then
-        updateUIDirty = true  -- will be picked up by ticker
-        return
-    end
-    lastUpdateUI = now
     if not frame:IsShown() then return end
+    if ns.isInInstance then return end
     ns._doUpdateUI()
 end
 
 function ns._doUpdateUI()
+    local doLayout = ns._layoutDirty
+    if doLayout then ns._layoutDirty = false end
     local uiOk, uiErr = pcall(function()
     ns.EnsureDB()
     local currentChar = ns.GetCharKey()
@@ -1700,7 +1707,7 @@ function ns._doUpdateUI()
     end
 
     -- Reposition lure icons and separator based on reagent visibility + route order
-    if not InCombatLockdown() then
+    if doLayout and not InCombatLockdown() then
         for i = 1, #LURES do
             if lureToCol[i] == -1 then
                 headerIcons[i]:Hide()
@@ -2043,7 +2050,7 @@ function ns._doUpdateUI()
         return a < b
     end)
 
-    ns.HideAllRows()
+    if doLayout then ns.HideAllRows() end
 
     -- Header height: max of (reagent+lure icons) vs (consumable+travel boxes)
     local lureHeaderH = reagentExtra + ICON_ROW_HEIGHT + 5
@@ -2401,7 +2408,7 @@ function ns._doUpdateUI()
     -- All frame layout operations guarded against combat lockdown
     local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + 2)
 
-    if not InCombatLockdown() then
+    if doLayout and not InCombatLockdown() then
         frame:SetSize(w, h)
 
         -- Title moved to toolbar (MBT vX)
@@ -2738,13 +2745,12 @@ combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(_, event)
     ns.EnsureDB()
-    if not MajesticBeastTrackerDB.settings.hideInCombat then return end
     if event == "PLAYER_REGEN_DISABLED" then
         -- Unregister heavy events during combat
         auraFrame:UnregisterEvent("UNIT_AURA")
         auraFrame:UnregisterEvent("BAG_UPDATE")
-        if not MajesticBeastTrackerDB.settings.hideInCombat then return end
-        if frame:IsShown() then
+        -- Hide frame if setting enabled
+        if MajesticBeastTrackerDB.settings.hideInCombat and frame:IsShown() then
             frame._hiddenByCombat = true
             frame:Hide()
             ns.consumableBox:Hide()
@@ -2753,13 +2759,14 @@ combatFrame:SetScript("OnEvent", function(_, event)
         -- Re-register events after combat
         auraFrame:RegisterEvent("UNIT_AURA")
         auraFrame:RegisterEvent("BAG_UPDATE")
+        -- Restore frame if hidden by combat
         if frame._hiddenByCombat then
             frame._hiddenByCombat = nil
             if MajesticBeastTrackerDB.settings.showFrame ~= false then
                 frame:Show()
             end
         end
-        ns.UpdateUI()  -- refresh after combat regardless
+        ns.UpdateUI()
     end
 end)
 
