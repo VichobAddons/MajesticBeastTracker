@@ -151,7 +151,7 @@ for i, cons in ipairs(CONSUMABLES) do
         if not cons.stackable and not cons.isSpell and not cons.isToolEnchant then
             local buffName = cons.buffSpellID and C_Spell.GetSpellName(cons.buffSpellID) or cons.name
             local buffInfo = C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL")
-            if buffInfo and buffInfo.duration and buffInfo.duration > 0 and buffInfo.expirationTime then
+            if buffInfo and buffInfo.duration and not issecretvalue(buffInfo.duration) and buffInfo.duration > 0 and buffInfo.expirationTime then
                 local remaining = buffInfo.expirationTime - GetTime()
                 if remaining / buffInfo.duration > 0.2 then
                     self:SetAttribute("type", nil)
@@ -167,9 +167,13 @@ for i, cons in ipairs(CONSUMABLES) do
         end
     end)
     btn:SetScript("PostClick", function(self)
-        -- Restore type attribute
+        -- Restore correct type attribute
         if not InCombatLockdown() then
-            self:SetAttribute("type", "item")
+            if cons.isSpell then
+                self:SetAttribute("type", "spell")
+            else
+                self:SetAttribute("type", "item")
+            end
         end
         if IsShiftKeyDown() then
             if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
@@ -213,12 +217,11 @@ function ns.RefreshConsumableLabels()
                 local remaining, isActive = ns.GetToolEnchantRemaining()
                 if isActive and remaining > 0 then
                     local timeText
-                    if remaining >= 3600 then
-                        local h = math.floor(remaining / 3600)
-                        local m = math.floor((remaining % 3600) / 60)
-                        timeText = m > 0 and (h .. "h " .. m .. "m") or (h .. "h")
-                    elseif remaining >= 60 then
-                        timeText = math.ceil(remaining / 60) .. "m"
+                    local totalMin = math.floor(remaining / 60)
+                    if totalMin > 30 then
+                        timeText = "Active"
+                    elseif totalMin > 0 then
+                        timeText = totalMin .. "m"
                     else
                         timeText = math.floor(remaining) .. "s"
                     end
@@ -259,7 +262,7 @@ function ns.RefreshConsumableLabels()
                         end
                     else
                         local cdInfo = C_Spell.GetSpellCooldown(cons.spellID)
-                        if cdInfo and cdInfo.duration and cdInfo.duration > 0 then
+                        if cdInfo and cdInfo.duration and not issecretvalue(cdInfo.duration) and cdInfo.duration > 0 then
                             cdRemaining = (cdInfo.startTime + cdInfo.duration) - GetTime()
                             cdStartTime = cdInfo.startTime
                             cdDuration = cdInfo.duration

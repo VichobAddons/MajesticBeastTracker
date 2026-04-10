@@ -22,7 +22,7 @@ StaticPopupDialogs["MBT_REMOVE_CHAR"] = {
         if data and MajesticBeastTrackerDB and MajesticBeastTrackerDB.chars then
             MajesticBeastTrackerDB.chars[data] = nil
             print("|cff3FC7EB[MBT]|r Removed " .. data)
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         end
     end,
 }
@@ -194,7 +194,7 @@ local function InitSettings()
         local cbSkip = Settings.CreateCheckbox(category, sSkip, "Skip " .. lure.name .. " in your daily route. Shows 'Skip' in the tracker and excludes from reagent cost.")
         sSkip:SetValueChangedCallback(function()
             MajesticBeastTrackerDB.settings.routeSkip[lure.name] = MajesticBeastTrackerDB.settings[skipKey]
-            ns.UpdateUI()
+            ns.InvalidateLayout()
             if ns.refreshRouteLabels then ns.refreshRouteLabels() end
         end)
         cbSkip:AddShownPredicate(isRouteExpanded)
@@ -209,14 +209,14 @@ local function InitSettings()
     end)
     local slHarandar = Settings.CreateSlider(category, sHarandarLvl, lvlOpts, "Skip Harandar for characters below this level. Harandar mobs are high level and time-consuming for lower level characters.")
     sHarandarLvl:SetValueChangedCallback(function()
-        ns.UpdateUI()
+        ns.InvalidateLayout()
     end)
     slHarandar:AddShownPredicate(isRouteExpanded)
 
     local sHideSkipped = Settings.RegisterAddOnSetting(category, "MBT_routeHideSkipped", "routeHideSkipped",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide Skipped Columns", false)
     local cbHideSkipped = Settings.CreateCheckbox(category, sHideSkipped, "Completely hide skipped beast columns from the tracker instead of showing 'Skip'.")
-    sHideSkipped:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sHideSkipped:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbHideSkipped:AddShownPredicate(isRouteExpanded)
 
     local sAutoWP = Settings.RegisterAddOnSetting(category, "MBT_autoRouteWaypoint", "autoRouteWaypoint",
@@ -266,7 +266,7 @@ local function InitSettings()
         local o = getOrder()
         o[posA], o[posB] = o[posB], o[posA]
         MajesticBeastTrackerDB.settings.routeOrder = o
-        ns.UpdateUI()
+        ns.InvalidateLayout()
         refreshRouteLabels()
     end
 
@@ -290,19 +290,19 @@ local function InitSettings()
     local s2c = Settings.RegisterAddOnSetting(category, "MBT_showReagents", "showReagents",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Reagent Icons", true)
     local cb2c = Settings.CreateCheckbox(category, s2c, "Show reagent icons above each lure column header.")
-    s2c:SetValueChangedCallback(function() ns.UpdateUI() end)
+    s2c:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cb2c:AddShownPredicate(isReagentsExpanded)
 
     local s2e = Settings.RegisterAddOnSetting(category, "MBT_reagentAllChars", "reagentAllChars",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Count for All Characters", true)
     local cb2e = Settings.CreateCheckbox(category, s2e, "ON: Count reagents needed for all characters. OFF: Count for a single lure only.")
-    s2e:SetValueChangedCallback(function() ns.UpdateUI() end)
+    s2e:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cb2e:AddShownPredicate(isReagentsExpanded)
 
     local sMissing = Settings.RegisterAddOnSetting(category, "MBT_showMissingCount", "showMissingCount",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Missing Count", false)
     local cbMissing = Settings.CreateCheckbox(category, sMissing, "ON: Show how many reagents you're missing (e.g. -56). OFF: Show have/need (e.g. 16/72).")
-    sMissing:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sMissing:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbMissing:AddShownPredicate(isReagentsExpanded)
 
     local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
@@ -338,9 +338,7 @@ local function InitSettings()
             CONS_DEFAULTS[cons.itemID] ~= nil and CONS_DEFAULTS[cons.itemID] or true)
         local cbShow = Settings.CreateCheckbox(category, sShow, "Show " .. cons.name .. " in the consumable tracking bar.")
         sShow:SetValueChangedCallback(function()
-            ns.UpdateUI()
-            -- Double call: first sets NAME_COL_WIDTH, second applies it to layout
-            C_Timer.After(0, function() ns.UpdateUI() end)
+            ns.InvalidateLayout()
             SettingsInbound.RepairDisplay()
         end)
         cbShow:AddShownPredicate(isConsExpanded)
@@ -356,7 +354,7 @@ local function InitSettings()
                 "MBT_" .. flatKey, flatKey,
                 MajesticBeastTrackerDB.settings, Settings.VarType.Number,
                 "Stock: " .. cons.name, 0)
-            local stockOpts = Settings.CreateSliderOptions(0, 200, 5)
+            local stockOpts = Settings.CreateSliderOptions(0, cons.stockMax or 200, cons.stockStep or 5)
             stockOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
                 return tostring(math.floor(val))
             end)
@@ -382,13 +380,13 @@ local function InitSettings()
     local sLoot = Settings.RegisterAddOnSetting(category, "MBT_lootTracking", "lootTracking",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Enable Loot Tracking", true)
     local cbLoot = Settings.CreateCheckbox(category, sLoot, "Track skinning loot from Majestic Beasts. Shows goblin icons on character rows.")
-    sLoot:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sLoot:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbLoot:AddShownPredicate(isLootExpanded)
 
     local sLootTSM = Settings.RegisterAddOnSetting(category, "MBT_tsmIntegration", "tsmIntegration",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Integrate TSM", false)
     local cbLootTSM = Settings.CreateCheckbox(category, sLootTSM, "Show estimated reagent cost and loot value using TradeSkillMaster price data. Requires TSM addon.")
-    sLootTSM:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sLootTSM:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbLootTSM:AddShownPredicate(isLootExpanded)
 
     --------------------------------------------------------
@@ -429,7 +427,7 @@ local function InitSettings()
     local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
     local cb2d = Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
-    s2d:SetValueChangedCallback(function() ns.UpdateUI() end)
+    s2d:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cb2d:AddShownPredicate(isDisplayExpanded)
 
     local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
@@ -464,13 +462,13 @@ local function InitSettings()
     local sBorderLure = Settings.RegisterAddOnSetting(category, "MBT_showLureBorders", "showLureBorders",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Borders — Lure + Reagents", true)
     local cbBorderLure = Settings.CreateCheckbox(category, sBorderLure, "Show gold borders around lure and reagent icon columns.")
-    sBorderLure:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sBorderLure:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbBorderLure:AddShownPredicate(isDisplayExpanded)
 
     local sBorderCons = Settings.RegisterAddOnSetting(category, "MBT_showConsBorders", "showConsBorders",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Borders — Travel + Consumables", true)
     local cbBorderCons = Settings.CreateCheckbox(category, sBorderCons, "Show gold borders around the travel and consumable boxes.")
-    sBorderCons:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sBorderCons:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbBorderCons:AddShownPredicate(isDisplayExpanded)
 
     --------------------------------------------------------
@@ -481,7 +479,7 @@ local function InitSettings()
     local sShowHidden = Settings.RegisterAddOnSetting(category, "MBT_showHiddenChars", "showHiddenChars",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Hidden Characters", false)
     local cbShowHidden = Settings.CreateCheckbox(category, sShowHidden, "Temporarily show characters that have been hidden via right-click menu.")
-    sShowHidden:SetValueChangedCallback(function() ns.UpdateUI() end)
+    sShowHidden:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbShowHidden:AddShownPredicate(isDataExpanded)
 
     local clearCharInit = CreateSettingsButtonInitializer("Clear Current Character", "Clear", function()
@@ -494,7 +492,7 @@ local function InitSettings()
                 local key = ns.GetCharKey()
                 if key and MajesticBeastTrackerDB.chars[key] then
                     MajesticBeastTrackerDB.chars[key].lures = {}
-                    ns.UpdateUI()
+                    ns.InvalidateLayout()
                     print("|cff3FC7EB[MBT]|r " .. key .. " data cleared.")
                 end
             end,
@@ -514,7 +512,7 @@ local function InitSettings()
                 ns.EnsureDB()
                 MajesticBeastTrackerDB = { chars = {}, settings = MajesticBeastTrackerDB.settings }
                 ns.EnsureDB()
-                ns.UpdateUI()
+                ns.InvalidateLayout()
                 print("|cff3FC7EB[MBT]|r ALL data cleared.")
             end,
             timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true,

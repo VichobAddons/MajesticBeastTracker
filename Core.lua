@@ -1733,62 +1733,96 @@ function ns.CreateAuctionatorShoppingList()
     if not loaded then return false end
 
     EnsureDB()
-    local searchStrings = {}
 
-    -- Missing lure reagents
+    -- Collect all itemIDs we need names for
+    local pendingItems = {}  -- { {itemID, count}, ... } for reagents
     local missingReagents = ns.GetMissingReagents()
     for itemID, count in pairs(missingReagents) do
-        local itemName = C_Item.GetItemNameByID(itemID)
-        if itemName and count > 0 then
-            table.insert(searchStrings, Auctionator.API.v1.ConvertToSearchString(
-                "MajesticBeastTracker",
-                { searchString = itemName, isExact = true, categoryKey = "", tier = "", quantity = count }
-            ))
+        if count > 0 then
+            pendingItems[#pendingItems + 1] = { itemID = itemID, count = count }
+            C_Item.RequestLoadItemDataByID(itemID)
         end
     end
 
-    -- Missing consumables (per-item stock target - bag count only, not bank/warbank)
+    -- Consumable stock items
+    local pendingCons = {}
     local stockTargets = type(MajesticBeastTrackerDB.settings.consumableStock) == "table" and MajesticBeastTrackerDB.settings.consumableStock or {}
     if ns.CONSUMABLE_ITEMS then
         for _, cons in ipairs(ns.CONSUMABLE_ITEMS) do
-            local target = stockTargets[cons.itemID] or MajesticBeastTrackerDB.settings["consStock_" .. cons.itemID] or 0
-            if target > 0 then
-                local itemName = C_Item.GetItemNameByID(cons.itemID)
-                local have = 0
-                if itemName then
-                    have = C_Item.GetItemCount(itemName, false, false, false, false)
-                else
-                    have = C_Item.GetItemCount(cons.itemID, false, false, false, false)
+            if not cons.itemID then break end  -- spell-only (Sharpen Your Knife), skip rest
+            local showKey = "consShow_" .. cons.itemID
+            if MajesticBeastTrackerDB.settings[showKey] ~= false then
+                local target = stockTargets[cons.itemID] or MajesticBeastTrackerDB.settings["consStock_" .. cons.itemID] or 0
+                if target > 0 then
+                    pendingCons[#pendingCons + 1] = { itemID = cons.itemID, target = target }
+                    C_Item.RequestLoadItemDataByID(cons.itemID)
                 end
-                local need = math.max(target - have, 0)
-                if need > 0 and itemName then
+            end
+        end
+    end
+
+    -- Build list after item data is loaded (retry until all names resolve or timeout)
+    local attempts = 0
+    local function BuildList()
+        attempts = attempts + 1
+        local searchStrings = {}
+        local allResolved = true
+
+        for _, entry in ipairs(pendingItems) do
+            local itemName = C_Item.GetItemNameByID(entry.itemID)
+            if itemName then
+                table.insert(searchStrings, Auctionator.API.v1.ConvertToSearchString(
+                    "MajesticBeastTracker",
+                    { searchString = itemName, isExact = true, categoryKey = "", tier = "", quantity = entry.count }
+                ))
+            else
+                allResolved = false
+            end
+        end
+
+        for _, entry in ipairs(pendingCons) do
+            local itemName = C_Item.GetItemNameByID(entry.itemID)
+            if itemName then
+                local have = C_Item.GetItemCount(itemName, false, false, false, false)
+                local need = math.max(entry.target - have, 0)
+                if need > 0 then
                     table.insert(searchStrings, Auctionator.API.v1.ConvertToSearchString(
                         "MajesticBeastTracker",
                         { searchString = itemName, isExact = true, categoryKey = "", tier = "", quantity = need }
                     ))
                 end
+            else
+                allResolved = false
+            end
+        end
+
+        -- Retry if items not yet cached (max 5 attempts, 0.2s apart)
+        if not allResolved and attempts < 5 then
+            C_Timer.After(0.2, BuildList)
+            return
+        end
+
+        if #searchStrings > 0 then
+            Auctionator.API.v1.CreateShoppingList("MajesticBeastTracker", "MBT Reagents", searchStrings)
+            if MajesticBeastTrackerDB.settings.chatNotify then
+                print("|cff3FC7EB[MBT]|r Auctionator shopping list updated (" .. #searchStrings .. " items).")
+            end
+        else
+            -- Nothing missing, clean up list if it exists
+            if Auctionator.Shopping and Auctionator.Shopping.ListManager then
+                if Auctionator.Shopping.ListManager:GetIndexForName("MBT Reagents") then
+                    Auctionator.Shopping.ListManager:Delete("MBT Reagents")
+                end
+            end
+            if MajesticBeastTrackerDB.settings.chatNotify then
+                print("|cff3FC7EB[MBT]|r All reagents ready — no shopping list needed.")
             end
         end
     end
 
-    if #searchStrings > 0 then
-        Auctionator.API.v1.CreateShoppingList("MajesticBeastTracker", "MBT Reagents", searchStrings)
-        if MajesticBeastTrackerDB.settings.chatNotify then
-            print("|cff3FC7EB[MBT]|r Auctionator shopping list updated (" .. #searchStrings .. " items).")
-        end
-        return true
-    else
-        -- Nothing missing, clean up list if it exists
-        if Auctionator.Shopping and Auctionator.Shopping.ListManager then
-            if Auctionator.Shopping.ListManager:GetIndexForName("MBT Reagents") then
-                Auctionator.Shopping.ListManager:Delete("MBT Reagents")
-            end
-        end
-        if MajesticBeastTrackerDB.settings.chatNotify then
-            print("|cff3FC7EB[MBT]|r All reagents ready — no shopping list needed.")
-        end
-        return true
-    end
+    -- Start building (first attempt immediate, retries with delay)
+    BuildList()
+    return true
 end
 
 ------------------------------------------------------
@@ -1848,13 +1882,13 @@ f:SetScript("OnEvent", function(_, event, ...)
                     if ns.UpdateUI then ns.UpdateUI() end
                 end
             end)
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         end
         -- Weekly knowledge quest
         if weeklyQuestIDs[questID] then
             C_Timer.After(1, function()
                 RefreshWeeklies()
-                if ns.UpdateUI then ns.UpdateUI() end
+                if ns.UpdateUI then ns.InvalidateLayout() end
             end)
         end
         return
@@ -1867,7 +1901,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         if pendingLootBeast and (GetTime() - pendingLootTime) > 15 then
             FinalizePendingLoot()
         end
-        if ns.UpdateUI then ns.UpdateUI() end
+        if ns.UpdateUI then ns.InvalidateLayout() end
         return
     elseif event == "LOOT_CLOSED" then
         -- Check quest flags after loot window closes (catches skinning kills)
@@ -1879,10 +1913,10 @@ f:SetScript("OnEvent", function(_, event, ...)
                 AccumulatePendingLoot()
             end)
         end
-        if ns.UpdateUI then ns.UpdateUI() end
+        if ns.UpdateUI then ns.InvalidateLayout() end
         C_Timer.After(2, function()
             if SyncKillsFromQuests(true) then
-                if ns.UpdateUI then ns.UpdateUI() end
+                if ns.UpdateUI then ns.InvalidateLayout() end
             end
         end)
         return
@@ -1890,7 +1924,7 @@ f:SetScript("OnEvent", function(_, event, ...)
         -- Profession learned/unlearned mid-session
         if charKey then
             DetectSkinningAndTalent()
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         end
         return
     elseif event == "PLAYER_LOGOUT" then
@@ -1909,7 +1943,7 @@ f:SetScript("OnEvent", function(_, event, ...)
             DetectSkinningAndTalent()
             SyncKillsFromQuests()
             SaveLureBagCounts()
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         end)
         -- MechanicLib integration
         local MechanicLib = LibStub and LibStub("MechanicLib-1.0", true)
@@ -1949,12 +1983,12 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         EnsureChar(charKey)
         DetectSkinningAndTalent()
         print("|cff3FC7EB[MBT]|r ALL data cleared.")
-        if ns.UpdateUI then ns.UpdateUI() end
+        if ns.UpdateUI then ns.InvalidateLayout() end
     elseif msg == "nuke" then
         EnsureChar(charKey)
         MajesticBeastTrackerDB.chars[charKey].lures = {}
         print("|cff3FC7EB[MBT]|r " .. charKey .. " data cleared.")
-        if ns.UpdateUI then ns.UpdateUI() end
+        if ns.UpdateUI then ns.InvalidateLayout() end
     elseif msg:find("^talent ") then
         local points = tonumber(msg:match("^talent (%d+)"))
         if points and points >= 0 and points <= 40 then
@@ -1964,7 +1998,7 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
                 MajesticBeastTrackerDB.chars[charKey].hasSkinning = true
             end
             print("|cff3FC7EB[MBT]|r Talented Tracker set to " .. points .. " points.")
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         else
             print("|cff3FC7EB[MBT]|r Usage: /mbt talent 0-40")
         end
@@ -2004,7 +2038,7 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         elseif sub == "demo" then
             ns.demoMode = not ns.demoMode
             print("|cff3FC7EB[MBT]|r Demo mode: " .. (ns.demoMode and "|cff00ff00ON|r (names masked)" or "|cffff3333OFF|r"))
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         else
             print("|cff3FC7EB[MBT]|r Debug commands: stats, gear, calc, demo")
         end
@@ -2021,7 +2055,7 @@ SlashCmdList["MAJESTICBEASTTRACKER"] = function(msg)
         if found then
             MajesticBeastTrackerDB.chars[found] = nil
             print("|cff3FC7EB[MBT]|r Removed " .. found)
-            if ns.UpdateUI then ns.UpdateUI() end
+            if ns.UpdateUI then ns.InvalidateLayout() end
         else
             print("|cff3FC7EB[MBT]|r Character not found: " .. target)
         end

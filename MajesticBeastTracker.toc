@@ -16,6 +16,10 @@ Core.lua
 Components\TalentData.lua
 Templates.xml
 UI.lua
+UI\LureIcons.lua
+UI\TravelBar.lua
+UI\SettingsDropdown.lua
+UI\UpdateUI.lua
 Components\ConsumableBar.lua
 Components\CalendarPicker.lua
 LootUI.lua
