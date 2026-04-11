@@ -68,7 +68,7 @@ function ns.GetStatusText(charData, lureName)
 end
 
 local function CreateCharRow(index)
-    local frame = ns.frame
+    local frame = ns.charScrollChild or ns.frame
     local C_ROW_ALT = { 0.1, 0.1, 0.14, 0.4 }
     local C_TOOLBAR_ICON = ns.C_TOOLBAR_ICON
     local row = {}
@@ -195,6 +195,13 @@ function ns.HideAllRows()
         if row.goblinBtn then row.goblinBtn:Hide() end
     end
 end
+
+-- Pre-create character rows at load time (avoids spike during LayoutUI)
+C_Timer.After(0, function()
+    for i = 1, 20 do
+        if not charRows[i] then charRows[i] = CreateCharRow(i) end
+    end
+end)
 
 ------------------------------------------------------
 -- Layout state
@@ -336,10 +343,12 @@ local function computeState()
 
     -- Frame dimensions
     local n = math.max(#keys, 1)
+    local MAX_VISIBLE_ROWS = ns.MAX_VISIBLE_ROWS or 15
+    local visibleRows = math.min(n, MAX_VISIBLE_ROWS)
     local goblinColWidth = 18
     local w = PAD * 2 + 8 + dynamicNameColWidth + numVisibleLures * COL_WIDTH + goblinColWidth
-    local h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + 0 + BOTTOM_BAR_HEIGHT + PAD + 10
-    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + n * ROW_HEIGHT + 2)
+    local h -- set after actualBarH is computed
+    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + visibleRows * ROW_HEIGHT + 2)
 
     -- Travel buttons list
     local activeTravelBtns = {}
@@ -358,6 +367,39 @@ local function computeState()
     if playerRaceID == 35 then
         activeTravelBtns[#activeTravelBtns + 1] = ns.vulperaReturnBtn
     end
+
+    -- Compute TSM grand total (used by both LayoutUI for bar height and RefreshStatus for label)
+    local grandTotal = 0
+    local allPriced = true
+    if showTSM and TSM_API and ns.GetTSMPrice then
+        for li, lure in ipairs(LURES) do
+            if not lureSkipped[li] and lure.reagents and charsNeedCraft[li] > 0 then
+                local reagentAllChars = MajesticBeastTrackerDB.settings.reagentAllChars ~= false
+                local numNeed = reagentAllChars and charsNeedCraft[li] or 1
+                for _, reagent in ipairs(lure.reagents) do
+                    local itemName = C_Item.GetItemNameByID(reagent.itemID)
+                    local have = itemName and C_Item.GetItemCount(itemName, true, false, true, true) or 0
+                    local totalNeed = reagent.count * numNeed
+                    local missing = math.max(totalNeed - have, 0)
+                    if missing > 0 then
+                        local price = ns.GetTSMPrice(reagent.itemID)
+                        if price then
+                            grandTotal = grandTotal + price * missing
+                        else
+                            allPriced = false
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local hasTSMTotal = allPriced and grandTotal > 0
+
+    -- Bottom bar height: compute hasAnyStats + actualBarH
+    local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
+    local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
+    local actualBarH = (hasAnyStats and hasTSMTotal) and 36 or 20
+    h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + visibleRows * ROW_HEIGHT + actualBarH + PAD + 10
 
     -- Loot tracking state
     local lootTrackingOn = MajesticBeastTrackerDB.settings.lootTracking ~= false
@@ -391,6 +433,10 @@ local function computeState()
         n                 = n,
         activeTravelBtns  = activeTravelBtns,
         lootTrackingOn    = lootTrackingOn,
+        hasTSMTotal       = hasTSMTotal,
+        grandTotal        = grandTotal,
+        hasAnyStats       = hasAnyStats,
+        actualBarH        = actualBarH,
         showConsBorders   = showConsBorders,
         showLureBorders   = showLureBorders,
         playerLevel       = UnitLevel("player"),
@@ -418,6 +464,7 @@ function ns.LayoutUI(state)
     local numVisibleLures = state.numVisibleLures
     local keys           = state.keys
     local dynDataTop     = state.dynDataTop
+    local headerH        = state.headerH
     local w              = state.w
     local h              = state.h
     local divY           = state.divY
@@ -465,20 +512,21 @@ function ns.LayoutUI(state)
     -- Hide all rows, then create/position visible ones
     ns.HideAllRows()
 
+    local scrollParent = ns.charScrollChild or frame
     for idx, key in ipairs(keys) do
         if not charRows[idx] then
             charRows[idx] = CreateCharRow(idx)
         end
         local row = charRows[idx]
-        local yOff = dynDataTop - (idx - 1) * ROW_HEIGHT
+        local yOff = -(idx - 1) * ROW_HEIGHT  -- relative to scroll child top
 
-        -- Row positioning
+        -- Row positioning (relative to scroll child)
         row.name:ClearAllPoints()
-        row.name:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
+        row.name:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", PAD + 6, yOff)
         if row.bg then
             row.bg:ClearAllPoints()
-            row.bg:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, yOff)
-            row.bg:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
+            row.bg:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", 5, yOff)
+            row.bg:SetPoint("RIGHT", scrollParent, "RIGHT", -5, 0)
         end
 
         -- Cell positioning based on lureToCol
@@ -487,7 +535,7 @@ function ns.LayoutUI(state)
                 local col = lureToCol[ci]
                 if col and col >= 0 then
                     row.cells[ci]:ClearAllPoints()
-                    row.cells[ci]:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                    row.cells[ci]:SetPoint("TOPLEFT", scrollParent, "TOPLEFT",
                         PAD + 4 + NAME_COL_WIDTH + col * COL_WIDTH, yOff)
                 end
             end
@@ -497,7 +545,7 @@ function ns.LayoutUI(state)
         if row.goblinBtn then
             row.goblinBtn:ClearAllPoints()
             local goblinX = PAD + 4 + NAME_COL_WIDTH + numVisibleLures * COL_WIDTH + 4
-            row.goblinBtn:SetPoint("LEFT", frame, "TOPLEFT", goblinX, yOff - ROW_HEIGHT / 2)
+            row.goblinBtn:SetPoint("LEFT", scrollParent, "TOPLEFT", goblinX, yOff - ROW_HEIGHT / 2)
         end
 
         -- Tool icon layout (SecureActionButton — combat guard is caller's responsibility)
@@ -543,7 +591,7 @@ function ns.LayoutUI(state)
                     row.toolIcon._pendingSlot = nil
                 end
                 row.toolIcon:ClearAllPoints()
-                row.toolIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 6, yOff)
+                row.toolIcon:SetPoint("TOPLEFT", scrollParent, "TOPLEFT", PAD + 6, yOff)
                 row.toolIcon:Show()
                 row.nameLabel:ClearAllPoints()
                 row.nameLabel:SetPoint("LEFT", row.name, "LEFT", ROW_HEIGHT, 0)
@@ -614,8 +662,43 @@ function ns.LayoutUI(state)
         ns.consumableBox:Hide()
     end
 
-    -- Frame resize
+    -- Row counts for scroll + frame sizing
+    local totalRows = math.max(#keys, 1)
+    local MAX_VIS = ns.MAX_VISIBLE_ROWS or 15
+    local visRows = math.min(totalRows, MAX_VIS)
+
+    -- Bottom bar height from state (single source of truth)
+    local bottomBar = ns.tsmTotalLabel:GetParent()
+    bottomBar:SetHeight(state.actualBarH)
     frame:SetSize(w, h)
+
+    -- Scroll area for character rows
+    local scrollTop = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH)
+    local scrollBottom = state.actualBarH + PAD + 6
+    if ns.charScroll then
+        ns.charScroll:ClearAllPoints()
+        ns.charScroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, scrollTop)
+        ns.charScroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, scrollBottom)
+        ns.charScrollChild:SetWidth(w - 12)
+        ns.charScrollChild:SetHeight(totalRows * ROW_HEIGHT + 4)
+        ns.charScrollbar:ClearAllPoints()
+        ns.charScrollbar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, scrollTop)
+        ns.charScrollbar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, scrollBottom)
+        -- Update scrollbar
+        local viewH = visRows * ROW_HEIGHT
+        local contentH = totalRows * ROW_HEIGHT
+        if contentH > viewH then
+            ns.charScrollbar:SetMinMaxValues(0, contentH - viewH)
+            ns.charScrollbar:SetValueStep(ROW_HEIGHT * 3)
+            local ratio = viewH / contentH
+            ns.charScrollbar.thumb:SetHeight(math.max(viewH * ratio, 20))
+            ns.charScrollbar:Show()
+        else
+            ns.charScroll:SetVerticalScroll(0)
+            ns.charScrollbar:SetValue(0)
+            ns.charScrollbar:Hide()
+        end
+    end
 
     -- Travel separator hidden
     ns.travelSep:Hide()
@@ -654,14 +737,15 @@ function ns.LayoutUI(state)
         ns.travelBox:Hide()
     end
 
-    -- Stats positioning
+    -- Stats + TSM total inside bottom bar (center stack component)
     local statsTexts = ns.statsTexts
     local STAT_LABELS = ns.STAT_LABELS
     local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
-    local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
-    local statsY = divY - 4
+    local hasAnyStats = state.hasAnyStats
 
-    if hasAnyStats then
+    -- Stats centered inside bottom bar
+    local statsOffsetY = state.hasTSMTotal and 8 or 0
+    if hasAnyStats and profStats then
         local visibleStats = {}
         for i, stat in ipairs(STAT_LABELS) do
             local val = profStats[stat.key] or 0
@@ -672,12 +756,17 @@ function ns.LayoutUI(state)
                 statsTexts[i]:Hide()
             end
         end
-        -- Always single row, right-aligned
-        local statsX = w - PAD - 4
-        for ri = #visibleStats, 1, -1 do
+        -- Measure total width first
+        local totalW = 0
+        for _, si in ipairs(visibleStats) do
+            totalW = totalW + statsTexts[si]:GetStringWidth() + 6
+        end
+        -- Center the block horizontally in bottom bar
+        local statsX = totalW / 2
+        for ri = 1, #visibleStats do
             local si = visibleStats[ri]
             statsTexts[si]:ClearAllPoints()
-            statsTexts[si]:SetPoint("RIGHT", frame, "TOPLEFT", statsX, statsY)
+            statsTexts[si]:SetPoint("LEFT", bottomBar, "CENTER", -statsX, statsOffsetY)
             statsX = statsX - statsTexts[si]:GetStringWidth() - 6
             statsTexts[si]:Show()
         end
@@ -1229,7 +1318,8 @@ function ns.RefreshStatus(state)
                     local charLoot = ns.GetCharLoot(capturedData)
                     if charLoot and hasLoot then
                         ns.ShowLootTooltip(self, ns.GetDemoName(capturedKey) .. " - Loot",
-                            charLoot.thisReset, charLoot.allTime, charLoot.prices)
+                            charLoot.thisReset, charLoot.allTime, charLoot.prices,
+                            charLoot.trackedKills, charLoot.trackedPerBeast)
                     else
                         GameTooltip:SetOwner(self, "ANCHOR_LEFT", -4, 0)
                         GameTooltip:AddLine(ns.GetDemoName(capturedKey) .. " - Loot", 0.82, 0.71, 0.35)
@@ -1266,36 +1356,25 @@ function ns.RefreshStatus(state)
         end
     end
 
-    -- TSM total label (uses rBtn._missing set above)
-    local showTSM = state.showTSM
-    if showTSM then
-        local grandTotal = 0
-        local allPriced = true
-        for i, lure in ipairs(LURES) do
-            if not state.lureSkipped[i] and lure.reagents and reagentIcons[i] then
-                for j, rBtn in ipairs(reagentIcons[i]) do
-                    if lure.reagents[j] then
-                        local missing = rBtn._missing or 0
-                        if missing > 0 then
-                            local price = ns.GetTSMPrice(lure.reagents[j].itemID)
-                            if price then
-                                grandTotal = grandTotal + price * missing
-                            else
-                                allPriced = false
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        if allPriced and grandTotal > 0 then
-            ns.tsmTotalLabel:SetText("Total needed: " .. ns.FormatGold(grandTotal))
-            ns.tsmTotalLabel:Show()
-        else
-            ns.tsmTotalLabel:Hide()
-        end
+    -- TSM total label (uses pre-computed grandTotal from computeState)
+    if state.hasTSMTotal then
+        ns.tsmTotalLabel:SetText("Total needed: " .. ns.FormatGold(state.grandTotal))
+        ns.tsmTotalLabel:ClearAllPoints()
+        ns.tsmTotalLabel:SetPoint("CENTER", ns.tsmTotalLabel:GetParent(), "CENTER", 0, -8)
+        ns.tsmTotalLabel:Show()
     else
         ns.tsmTotalLabel:Hide()
+    end
+
+    -- Deferred bar height correction (catches stale bag counts)
+    local bottomBar = ns.tsmTotalLabel:GetParent()
+    local expectedBarH = (state.hasAnyStats and ns.tsmTotalLabel:IsShown()) and 36 or 20
+    if math.floor(bottomBar:GetHeight() + 0.5) ~= expectedBarH and not ns._barHeightPending then
+        ns._barHeightPending = true
+        C_Timer.After(0.1, function()
+            ns._barHeightPending = nil
+            ns.InvalidateLayout()
+        end)
     end
 
     -- Travel button icon textures + cooldown sweeps

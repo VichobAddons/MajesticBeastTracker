@@ -17,7 +17,7 @@ local NAME_COL_WIDTH = 150
 local BASE_NAME_COL_WIDTH = 150
 local ROW_HEIGHT = 18
 local TOOLBAR_HEIGHT = 22
-local BOTTOM_BAR_HEIGHT = 20
+local BOTTOM_BAR_HEIGHT = 20  -- base height, grows dynamically when stats+TSM shown
 local TITLE_HEIGHT = 4  -- reduced after title moved to toolbar
 local ZONE_LABEL_HEIGHT = 10
 local ICON_ROW_HEIGHT = ICON_SIZE + 6 + ZONE_LABEL_HEIGHT
@@ -525,6 +525,46 @@ end)
 
 -- Separator under icons — created in UI/LureIcons.lua
 
+-- Scroll frame for character rows (between iconSep and bottomBar)
+local MAX_VISIBLE_ROWS = 10  -- default, overridden by settings on login
+local charScroll = CreateFrame("ScrollFrame", nil, frame)
+charScroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)  -- repositioned dynamically in LayoutUI
+charScroll:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
+local charScrollChild = CreateFrame("Frame", nil, charScroll)
+charScrollChild:SetPoint("TOPLEFT", charScroll, "TOPLEFT", 0, 0)
+charScrollChild:SetWidth(1)  -- set dynamically
+charScrollChild:SetHeight(1) -- set dynamically
+charScroll:SetScrollChild(charScrollChild)
+
+local charScrollbar = CreateFrame("Slider", nil, frame, "UISliderTemplate")
+charScrollbar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, 0)  -- repositioned dynamically
+charScrollbar:SetWidth(8)
+charScrollbar:SetMinMaxValues(0, 1)
+charScrollbar:SetValue(0)
+charScrollbar:SetValueStep(1)
+charScrollbar:SetOrientation("VERTICAL")
+charScrollbar:SetObeyStepOnDrag(true)
+charScrollbar.thumb = charScrollbar:GetThumbTexture()
+charScrollbar.thumb:SetPoint("CENTER")
+charScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.4)
+charScrollbar.thumb:SetWidth(8)
+if charScrollbar.NineSlice then charScrollbar.NineSlice:Hide() end
+charScrollbar:SetScript("OnValueChanged", function(_, value)
+    charScroll:SetVerticalScroll(value)
+end)
+charScrollbar:SetScript("OnEnter", function() charScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.7) end)
+charScrollbar:SetScript("OnLeave", function() charScrollbar.thumb:SetColorTexture(0.82, 0.71, 0.35, 0.4) end)
+charScroll:EnableMouseWheel(true)
+charScroll:SetScript("OnMouseWheel", function(_, delta)
+    charScrollbar:SetValue(charScrollbar:GetValue() - delta * ROW_HEIGHT * 3)
+end)
+charScrollbar:Hide()
+
+ns.charScroll = charScroll
+ns.charScrollChild = charScrollChild
+ns.charScrollbar = charScrollbar
+ns.MAX_VISIBLE_ROWS = MAX_VISIBLE_ROWS
+
 -- Travel buttons, box, and HS selector in UI/TravelBar.lua
 
 ------------------------------------------------------
@@ -552,7 +592,7 @@ ns.tsmTotalLabel = bottomBar:CreateFontString(nil, "OVERLAY")
 ns.tsmTotalLabel:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
 ns.tsmTotalLabel:SetTextColor(1, 0.84, 0)
 ns.tsmTotalLabel:SetJustifyH("CENTER")
-ns.tsmTotalLabel:SetPoint("CENTER", bottomBar, "CENTER", 0, 0)
+ns.tsmTotalLabel:SetPoint("CENTER", bottomBar, "CENTER", 0, 0)  -- repositioned dynamically
 ns.tsmTotalLabel:Hide()
 
 -- Weekly knowledge lines for main window (right-aligned, below stats)
@@ -620,6 +660,7 @@ end
 local auraFrame = CreateFrame("Frame")
 auraFrame:RegisterEvent("UNIT_AURA")
 auraFrame:RegisterEvent("BAG_UPDATE")
+auraFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 auraFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
 local lastAuraUpdate = 0
@@ -631,10 +672,18 @@ auraFrame:SetScript("OnEvent", function(_, event, unit)
         if ns.InvalidateProfStatsCache then ns.InvalidateProfStatsCache() end
         return
     end
+    if event == "UNIT_INVENTORY_CHANGED" then
+        if unit ~= "player" then return end
+        -- Tool enchant may have changed — invalidate cache and relayout
+        if ns.InvalidateEnchantCache then ns.InvalidateEnchantCache() end
+        ns.InvalidateLayout()
+        return
+    end
     -- BAG_UPDATE, TRAIT_CONFIG_UPDATED, SKILL_LINES_CHANGED trigger layout
     if event == "TRAIT_CONFIG_UPDATED" or event == "SKILL_LINES_CHANGED" then
         if ns.InvalidateProfStatsCache then ns.InvalidateProfStatsCache() end
     end
+    if ns.InvalidateEnchantCache then ns.InvalidateEnchantCache() end
     ns.InvalidateLayout()
 end)
 
@@ -686,6 +735,10 @@ local init = CreateFrame("Frame")
 init:RegisterEvent("PLAYER_LOGIN")
 init:SetScript("OnEvent", function()
     ns.EnsureDB()
+    -- Load max visible rows from settings
+    if MajesticBeastTrackerDB.settings.maxVisibleRows then
+        ns.MAX_VISIBLE_ROWS = MajesticBeastTrackerDB.settings.maxVisibleRows
+    end
     if MajesticBeastTrackerDB.settings.framePosition then
         local pos = MajesticBeastTrackerDB.settings.framePosition
         frame:ClearAllPoints()

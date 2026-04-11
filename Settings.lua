@@ -389,6 +389,19 @@ local function InitSettings()
     sLootTSM:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbLootTSM:AddShownPredicate(isLootExpanded)
 
+    local sDropPct = Settings.RegisterAddOnSetting(category, "MBT_showDropPercent", "showDropPercent",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Drop %", false)
+    local cbDropPct = Settings.CreateCheckbox(category, sDropPct, "Show personal drop percentage column in Loot Summary. Tracking starts from when this feature is first enabled — older loot data is not included.")
+    sDropPct:SetValueChangedCallback(function() ns.InvalidateLayout() end)
+    cbDropPct:AddShownPredicate(isLootExpanded)
+
+    local sDropFormat = Settings.RegisterAddOnSetting(category, "MBT_dropPercentFormat", "dropPercentFormat",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Drop Rate: Per Kill format", false)
+    local cbDropFormat = Settings.CreateCheckbox(category, sDropFormat, "OFF = percentage (max 100%). ON = average per kill (e.g. 2.3/kill).")
+    sDropFormat:SetValueChangedCallback(function() ns.InvalidateLayout() end)
+    cbDropFormat:AddShownPredicate(isLootExpanded)
+    cbDropFormat:AddShownPredicate(function() return MajesticBeastTrackerDB.settings.showDropPercent end)
+
     --------------------------------------------------------
     -- Expandable: Warband Bank
     --------------------------------------------------------
@@ -470,6 +483,24 @@ local function InitSettings()
     local cbBorderCons = Settings.CreateCheckbox(category, sBorderCons, "Show gold borders around the travel and consumable boxes.")
     sBorderCons:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbBorderCons:AddShownPredicate(isDisplayExpanded)
+
+    -- Max visible character rows (scroll after this)
+    if MajesticBeastTrackerDB.settings.maxVisibleRows == nil then
+        MajesticBeastTrackerDB.settings.maxVisibleRows = 10
+    end
+    local sMaxRows = Settings.RegisterAddOnSetting(category, "MBT_maxVisibleRows", "maxVisibleRows",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Number, "Max Visible Rows", 10)
+    local maxRowsOpts = Settings.CreateSliderOptions(5, 30, 1)
+    maxRowsOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(val)
+        return tostring(math.floor(val))
+    end)
+    local slMaxRows = Settings.CreateSlider(category, sMaxRows, maxRowsOpts,
+        "Maximum number of character rows visible before scrolling. Lower = smaller window.")
+    sMaxRows:SetValueChangedCallback(function(_, val)
+        ns.MAX_VISIBLE_ROWS = math.floor(val)
+        ns.InvalidateLayout()
+    end)
+    slMaxRows:AddShownPredicate(isDisplayExpanded)
 
     --------------------------------------------------------
     -- Expandable: Data Management

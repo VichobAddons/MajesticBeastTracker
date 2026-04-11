@@ -77,6 +77,8 @@ local function DefineCategories()
         return {
             { text = "Enable Loot Tracking", get = function() return s.lootTracking ~= false end, set = function() s.lootTracking = not (s.lootTracking ~= false) end },
             { text = "Integrate TSM Prices", get = function() return s.tsmIntegration ~= false end, set = function() s.tsmIntegration = not (s.tsmIntegration ~= false) end },
+            { text = "Show Drop %", get = function() return s.showDropPercent end, set = function() s.showDropPercent = not s.showDropPercent end },
+            { text = "Drop Rate: Per Kill", get = function() return s.dropPercentFormat end, set = function() s.dropPercentFormat = not s.dropPercentFormat end },
         }
     end }
 

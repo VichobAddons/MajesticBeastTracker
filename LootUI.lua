@@ -6,6 +6,19 @@
 local addonName, ns = ...
 local LURES = ns.LURES
 
+local LS_COL_DROP = 70  -- Drop % column width (shared by tooltip + summary)
+
+-- Format drop rate: % mode (capped at 100%) or /kill mode
+local function FormatDropRate(pct)
+    if MajesticBeastTrackerDB.settings.dropPercentFormat then
+        -- Per kill format
+        return string.format("%.1f/kill", pct / 100)
+    else
+        -- Percentage format (capped at 100%)
+        return string.format("%.0f%%", math.min(pct, 100))
+    end
+end
+
 -- Cached item name lookup (avoids repeated C_Item.GetItemNameByID calls)
 local itemNameCache = {}
 local function GetCachedItemName(id)
@@ -126,7 +139,7 @@ local function BuildItemList(lootTable, savedPrices)
                 local color = ITEM_QUALITY_COLORS[itemQuality]
                 if color then r, g, b = color.r, color.g, color.b end
             end
-            items[#items + 1] = { name = displayName, count = count, priceText = priceText, r = r, g = g, b = b, sortKey = name .. string.format("%02d", quality) }
+            items[#items + 1] = { name = displayName, count = count, priceText = priceText, r = r, g = g, b = b, sortKey = name .. string.format("%02d", quality), itemID = id }
         end
     end
     table.sort(items, function(a, b) return a.sortKey < b.sortKey end)
@@ -187,10 +200,15 @@ local function CreateLootTooltipRow(parent)
     row.alltimeValue:SetPoint("LEFT", row, "LEFT", LT_ALLTIME_X + LT_COL_COUNT, 0)
     row.alltimeValue:SetWidth(LT_COL_VALUE)
     row.alltimeValue:SetJustifyH("LEFT")
+    row.dropPercent = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.dropPercent:SetFont(row.dropPercent:GetFont(), 9)
+    row.dropPercent:SetWidth(LS_COL_DROP)
+    row.dropPercent:SetJustifyH("RIGHT")
+    row.dropPercent:Hide()
     return row
 end
 
-function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices)
+function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices, trackedKills, trackedPerBeast)
     local resetItems, resetTotal = BuildItemList(resetTable, savedPrices)
     local allTimeItems, allTimeTotal = BuildItemList(allTimeTable, savedPrices)
     local hasTSM = TSM_API ~= nil
@@ -231,6 +249,19 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     local dynResetX = 8 + maxNameWidth + LT_COL_GAP
     local dynAlltimeX = dynResetX + LT_COL_COUNT + LT_COL_VALUE + LT_COL_GAP
     local dynWidth = 8 + maxNameWidth + LT_COL_GAP + (LT_COL_COUNT + LT_COL_VALUE) * 2 + LT_COL_GAP + 12
+    local showDropPct = MajesticBeastTrackerDB.settings.showDropPercent and trackedKills and next(trackedKills)
+    local dynDropX = dynAlltimeX + LT_COL_COUNT + LT_COL_VALUE + LT_COL_GAP
+    if showDropPct then dynWidth = dynWidth + LS_COL_DROP + LT_COL_GAP end
+    -- Build reverse map for drop %
+    local itemToBeast = {}
+    if showDropPct then
+        for beastName, items in pairs(ns.BEAST_LOOT) do
+            for _, id in ipairs(items) do
+                if not itemToBeast[id] then itemToBeast[id] = {} end
+                itemToBeast[id][#itemToBeast[id] + 1] = beastName
+            end
+        end
+    end
 
     local idx = 0
     local yOff = -20
@@ -254,6 +285,14 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
     headerRow.alltimeCount:ClearAllPoints()
     headerRow.alltimeCount:SetPoint("LEFT", headerRow, "LEFT", dynAlltimeX, 0)
     headerRow.alltimeValue:SetText("")
+    if showDropPct then
+        headerRow.dropPercent:ClearAllPoints()
+        headerRow.dropPercent:SetPoint("LEFT", headerRow, "LEFT", dynDropX, 0)
+        headerRow.dropPercent:SetText("|cffffd700Drop %|r")
+        headerRow.dropPercent:Show()
+    else
+        headerRow.dropPercent:Hide()
+    end
     headerRow:Show()
     yOff = yOff - LT_ROW_HEIGHT
 
@@ -288,6 +327,33 @@ function ns.ShowLootTooltip(anchor, title, resetTable, allTimeTable, savedPrices
             row.alltimeValue:ClearAllPoints()
             row.alltimeValue:SetPoint("LEFT", row, "LEFT", dynAlltimeX + LT_COL_COUNT, 0)
             row.alltimeValue:SetText(ai and ai.priceText ~= "" and ai.priceText or "")
+            if showDropPct and ref.itemID then
+                local beasts = itemToBeast[ref.itemID]
+                if beasts then
+                    local totalKills, totalDrops = 0, 0
+                    for _, bn in ipairs(beasts) do
+                        totalKills = totalKills + (trackedKills[bn] or 0)
+                        if trackedPerBeast and trackedPerBeast[bn] then
+                            totalDrops = totalDrops + (trackedPerBeast[bn][ref.itemID] or 0)
+                        end
+                    end
+                    row.dropPercent:ClearAllPoints()
+                    row.dropPercent:SetPoint("LEFT", row, "LEFT", dynDropX, 0)
+                    if totalKills > 0 then
+                        local pct = (totalDrops / totalKills) * 100
+                        row.dropPercent:SetText(FormatDropRate(pct))
+                        row.dropPercent:SetTextColor(0.7, 0.9, 1)
+                    else
+                        row.dropPercent:SetText("-")
+                        row.dropPercent:SetTextColor(0.4, 0.4, 0.4)
+                    end
+                    row.dropPercent:Show()
+                else
+                    row.dropPercent:Hide()
+                end
+            else
+                row.dropPercent:Hide()
+            end
             row:Show()
             yOff = yOff - LT_ROW_HEIGHT
         end
@@ -1263,6 +1329,35 @@ local lsHistoryBtn = CreateToolbarButton(lsToolbar,
 lsHistoryBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
 lsHistoryBtn:SetPoint("RIGHT", lsBreakdownBtn, "LEFT", -2, 0)
 
+-- Drop % toggle button
+local lsDropPctBtn = CreateToolbarButton(lsToolbar,
+    MEDIA_PATH .. "Icon_Coins",
+    function(self)
+        ns.EnsureDB()
+        local on = MajesticBeastTrackerDB.settings.showDropPercent
+        GameTooltip:AddLine("Drop %", 1, 1, 1)
+        GameTooltip:AddLine(on and "Click to hide drop rates" or "Click to show drop rates", 0.5, 0.8, 1, true)
+        if on then
+            local fmt = MajesticBeastTrackerDB.settings.dropPercentFormat and "per kill" or "percentage"
+            GameTooltip:AddLine("Shift-click: switch format (now: " .. fmt .. ")", 0.5, 0.5, 0.5, true)
+        end
+    end,
+    nil, nil)
+lsDropPctBtn:SetSize(LS_TOOLBAR_HEIGHT, LS_TOOLBAR_HEIGHT)
+lsDropPctBtn:SetPoint("RIGHT", lsHistoryBtn, "LEFT", -2, 0)
+lsDropPctBtn.icon:SetTexCoord(0, 1, 0, 1)
+lsDropPctBtn:SetScript("OnClick", function()
+    ns.EnsureDB()
+    if IsShiftKeyDown() then
+        -- Shift-click: toggle format (% vs /kill)
+        MajesticBeastTrackerDB.settings.dropPercentFormat = not MajesticBeastTrackerDB.settings.dropPercentFormat
+    else
+        MajesticBeastTrackerDB.settings.showDropPercent = not MajesticBeastTrackerDB.settings.showDropPercent
+    end
+    lsDropPctBtn.icon:SetAlpha(MajesticBeastTrackerDB.settings.showDropPercent and 1.0 or 0.4)
+    ns._populateLootSummary()
+end)
+
 -- Export CSV button
 local lsExportBtn = CreateToolbarButton(lsToolbar,
     MEDIA_PATH .. "Icon_ExportData",
@@ -1897,6 +1992,11 @@ local function CreateLootSummaryRow(parent)
     row.alltimeValue:SetPoint("LEFT", row, "LEFT", LS_ALLTIME_X + LS_COL_COUNT, 0)
     row.alltimeValue:SetWidth(LS_COL_VALUE)
     row.alltimeValue:SetJustifyH("LEFT")
+    -- Drop % (optional column, positioned dynamically)
+    row.dropPercent = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.dropPercent:SetWidth(LS_COL_DROP)
+    row.dropPercent:SetJustifyH("RIGHT")
+    row.dropPercent:Hide()
     return row
 end
 
@@ -1950,7 +2050,10 @@ local function PopulateLootSummary()
             return
         end
     else
-        resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset = ns.GetGlobalLoot()
+        local globalTrackedKills, globalTrackedPerBeast
+        resetLoot, allTimeLoot, globalPrices, globalPerBeast, globalPerBeastReset, globalTrackedKills, globalTrackedPerBeast = ns.GetGlobalLoot()
+        ns._lsTrackedKills = globalTrackedKills
+        ns._lsTrackedPerBeast = globalTrackedPerBeast
         lsPageLeft:Hide()
         lsPageRight:Hide()
         UpdateExportAnchor()
@@ -2024,6 +2127,28 @@ local function PopulateLootSummary()
     headerRow.alltimeCount:ClearAllPoints()
     headerRow.alltimeCount:SetPoint("LEFT", headerRow, "LEFT", dynAlltimeX, 0)
     headerRow.alltimeValue:SetText("")
+    -- Drop % header (only when not in history mode and tracked kills exist)
+    local showDropPct = not isHistory and MajesticBeastTrackerDB.settings.showDropPercent and ns._lsTrackedKills and next(ns._lsTrackedKills)
+    local dynDropX = dynAlltimeX + LS_COL_COUNT + LS_COL_VALUE + LS_COL_GAP
+    if showDropPct then
+        headerRow.dropPercent:ClearAllPoints()
+        headerRow.dropPercent:SetPoint("LEFT", headerRow, "LEFT", dynDropX, 0)
+        headerRow.dropPercent:SetText("|cffffd700Drop %|r")
+        headerRow.dropPercent:Show()
+        dynWidth = dynWidth + LS_COL_DROP + LS_COL_GAP
+    else
+        headerRow.dropPercent:Hide()
+    end
+    -- Build reverse map: itemID → beast names (for drop % lookup)
+    local itemToBeast = {}
+    if showDropPct then
+        for beastName, items in pairs(ns.BEAST_LOOT) do
+            for _, id in ipairs(items) do
+                if not itemToBeast[id] then itemToBeast[id] = {} end
+                itemToBeast[id][#itemToBeast[id] + 1] = beastName
+            end
+        end
+    end
     headerRow:Show()
     yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
 
@@ -2080,6 +2205,36 @@ local function PopulateLootSummary()
                 row.alltimeValue:SetText("")
             end
 
+            -- Drop % column
+            if showDropPct and ref and ref.itemID then
+                local beasts = itemToBeast[ref.itemID]
+                if beasts then
+                    local totalKills = 0
+                    local totalDrops = 0
+                    for _, beastName in ipairs(beasts) do
+                        totalKills = totalKills + (ns._lsTrackedKills[beastName] or 0)
+                        if ns._lsTrackedPerBeast and ns._lsTrackedPerBeast[beastName] then
+                            totalDrops = totalDrops + (ns._lsTrackedPerBeast[beastName][ref.itemID] or 0)
+                        end
+                    end
+                    row.dropPercent:ClearAllPoints()
+                    row.dropPercent:SetPoint("LEFT", row, "LEFT", dynDropX, 0)
+                    if totalKills > 0 then
+                        local pct = (totalDrops / totalKills) * 100
+                        row.dropPercent:SetText(FormatDropRate(pct))
+                        row.dropPercent:SetTextColor(0.7, 0.9, 1)
+                    else
+                        row.dropPercent:SetText("-")
+                        row.dropPercent:SetTextColor(0.4, 0.4, 0.4)
+                    end
+                    row.dropPercent:Show()
+                else
+                    row.dropPercent:Hide()
+                end
+            else
+                row.dropPercent:Hide()
+            end
+
             row:Show()
             yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
         end
@@ -2133,6 +2288,7 @@ local function PopulateLootSummary()
         divRow.resetValue:SetText("")
         divRow.alltimeCount:SetText("")
         divRow.alltimeValue:SetText("")
+        divRow.dropPercent:Hide()
         divRow:Show()
         yOff = yOff - 10
         local perResetData = globalPerBeastReset or {}
@@ -2185,6 +2341,7 @@ local function PopulateLootSummary()
                 beastHeader.resetValue:SetText("")
                 beastHeader.alltimeCount:SetText("")
                 beastHeader.alltimeValue:SetText("")
+                beastHeader.dropPercent:Hide()
                 beastHeader:Show()
                 yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT - 2
                 -- Reset font for item rows back to small after header
@@ -2235,6 +2392,24 @@ local function PopulateLootSummary()
                     beastRow.alltimeCount:SetText(ac and ("x" .. ac) or "")
                     beastRow.alltimeCount:SetTextColor(0.9, 0.9, 0.9)
                     beastRow.alltimeValue:SetText("")
+                    -- Drop % per beast (more accurate than combined)
+                    if showDropPct then
+                        local beastKills = ns._lsTrackedKills and ns._lsTrackedKills[lure.name] or 0
+                        local trackedCount = ns._lsTrackedPerBeast and ns._lsTrackedPerBeast[lure.name] and ns._lsTrackedPerBeast[lure.name][id] or 0
+                        beastRow.dropPercent:ClearAllPoints()
+                        beastRow.dropPercent:SetPoint("LEFT", beastRow, "LEFT", dynDropX, 0)
+                        if beastKills > 0 then
+                            local pct = (trackedCount / beastKills) * 100
+                            beastRow.dropPercent:SetText(FormatDropRate(pct))
+                            beastRow.dropPercent:SetTextColor(0.7, 0.9, 1)
+                        else
+                            beastRow.dropPercent:SetText("-")
+                            beastRow.dropPercent:SetTextColor(0.4, 0.4, 0.4)
+                        end
+                        beastRow.dropPercent:Show()
+                    else
+                        beastRow.dropPercent:Hide()
+                    end
                     beastRow:Show()
                     yOff = yOff - LOOT_SUMMARY_ROW_HEIGHT
                 end
@@ -2247,11 +2422,45 @@ local function PopulateLootSummary()
         ns.lootSummary.rows[i]:Hide()
     end
 
+    -- Drop % bottom bar (fixed, not scrollable)
+    local lsFooterHeight = 0
+    if showDropPct then
+        local totalTracked = 0
+        for _, k in pairs(ns._lsTrackedKills) do totalTracked = totalTracked + k end
+        if not ns._lsFooterBar then
+            local bar = CreateFrame("Frame", nil, ns.lootSummary, "BackdropTemplate")
+            bar:SetHeight(18)
+            bar:SetPoint("BOTTOMLEFT", ns.lootSummary, "BOTTOMLEFT", 4, 4)
+            bar:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -4, 4)
+            local bg = bar:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0, 0, 0, 0.4)
+            local sep = bar:CreateTexture(nil, "ARTWORK")
+            sep:SetHeight(1)
+            sep:SetPoint("TOPLEFT", bar, "TOPLEFT")
+            sep:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
+            sep:SetColorTexture(0.82, 0.71, 0.35, 0.3)
+            local text = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetFont(text:GetFont(), 8)
+            text:SetPoint("CENTER", bar, "CENTER", 0, 0)
+            text:SetTextColor(0.7, 0.65, 0.5)
+            bar.text = text
+            ns._lsFooterBar = bar
+        end
+        ns._lsFooterBar.text:SetText("Drop % based on " .. totalTracked .. " tracked kills — data collected from v2.0.1 onwards")
+        ns._lsFooterBar:Show()
+        lsFooterHeight = 22
+    else
+        if ns._lsFooterBar then ns._lsFooterBar:Hide() end
+    end
+
     local contentH = math.abs(yOff) + 8
     lootSumChild:SetHeight(contentH)
     lootSumChild:SetWidth(dynWidth - 24)
-    local windowH = math.min(contentH + lsHeaderHeight + 4, LOOT_SUMMARY_MAX_HEIGHT)
+    local windowH = math.min(contentH + lsHeaderHeight + 4 + lsFooterHeight, LOOT_SUMMARY_MAX_HEIGHT)
     ns.lootSummary:SetSize(dynWidth, windowH)
+    -- Adjust scroll area to not overlap footer bar
+    lootSumScroll:SetPoint("BOTTOMRIGHT", ns.lootSummary, "BOTTOMRIGHT", -12, 4 + lsFooterHeight)
     ns.lootSummary._dynWidth = dynWidth
 
 end

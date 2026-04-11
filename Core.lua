@@ -406,11 +406,19 @@ local function RecordLoot(beastName, diffs)
         if not charData.loot.killBuffsReset then charData.loot.killBuffsReset = {} end
         charData.loot.killBuffsReset[beastName] = activeBuffs
     end
+    -- Track kill count per beast (for drop % calculation)
+    if not charData.loot.trackedKills then charData.loot.trackedKills = {} end
+    charData.loot.trackedKills[beastName] = (charData.loot.trackedKills[beastName] or 0) + 1
+    -- Track per-beast items separately for drop % (independent of allTime)
+    if not charData.loot.trackedPerBeast then charData.loot.trackedPerBeast = {} end
+    if not charData.loot.trackedPerBeast[beastName] then charData.loot.trackedPerBeast[beastName] = {} end
+
     for id, count in pairs(diffs) do
         charData.loot.thisReset[id] = (charData.loot.thisReset[id] or 0) + count
         charData.loot.allTime[id] = (charData.loot.allTime[id] or 0) + count
         beastLoot[id] = (beastLoot[id] or 0) + count
         beastResetLoot[id] = (beastResetLoot[id] or 0) + count
+        charData.loot.trackedPerBeast[beastName][id] = (charData.loot.trackedPerBeast[beastName][id] or 0) + count
         -- Snapshot price at loot time (only if TSM available and no price yet this reset)
         if ns.GetTSMPrice and not charData.loot.prices[id] then
             charData.loot.prices[id] = ns.GetTSMPrice(id)
@@ -488,7 +496,24 @@ function ns.GetGlobalLoot()
             end
         end
     end
-    return globalReset, globalAllTime, globalPrices, globalPerBeast, globalPerBeastReset
+    -- Aggregate tracked kills/loot (for drop % calculation)
+    local globalTrackedKills = {}
+    local globalTrackedPerBeast = {}
+    for _, charData in pairs(MajesticBeastTrackerDB.chars) do
+        local loot = ns.GetCharLoot(charData)
+        if loot then
+            for beastName, kills in pairs(loot.trackedKills or {}) do
+                globalTrackedKills[beastName] = (globalTrackedKills[beastName] or 0) + kills
+            end
+            for beastName, items in pairs(loot.trackedPerBeast or {}) do
+                if not globalTrackedPerBeast[beastName] then globalTrackedPerBeast[beastName] = {} end
+                for id, count in pairs(items) do
+                    globalTrackedPerBeast[beastName][id] = (globalTrackedPerBeast[beastName][id] or 0) + count
+                end
+            end
+        end
+    end
+    return globalReset, globalAllTime, globalPrices, globalPerBeast, globalPerBeastReset, globalTrackedKills, globalTrackedPerBeast
 end
 
 -- Accumulated loot diffs (collected across multiple LOOT_CLOSED events)
@@ -1164,6 +1189,9 @@ ns.TestGearStats = TestGearStats
 -- Returns: remainingSeconds (0 if not active), isActive
 -- Cached: result stored for 10 seconds (tooltip scan is expensive)
 local enchantCache = { time = 0, remaining = 0, active = false }
+function ns.InvalidateEnchantCache()
+    enchantCache.time = 0
+end
 function ns.GetToolEnchantRemaining()
     local now = GetTime()
     if now - enchantCache.time < 10 then
