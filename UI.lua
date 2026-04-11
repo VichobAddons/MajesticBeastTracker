@@ -198,6 +198,7 @@ frame:SetScript("OnLeave", OnFrameLeave)
 frame:SetScript("OnHide", function()
     if ns.lootSummary then ns.lootSummary:Hide() end
     if ns.lootEditor then ns.lootEditor:Hide() end
+    if ns.gearPopup then ns.gearPopup:Hide() end
     if MBT_SettingsDropdown then MBT_SettingsDropdown:Hide() end
     if MBT_SettingsSubmenu then MBT_SettingsSubmenu:Hide() end
 end)

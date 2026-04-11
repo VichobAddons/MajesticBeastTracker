@@ -437,11 +437,7 @@ local function InitSettings()
     --------------------------------------------------------
     local _, isDisplayExpanded = createExpandableSection(layout, "Display")
 
-    local s2d = Settings.RegisterAddOnSetting(category, "MBT_showKnowledge", "showKnowledge",
-        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Show Weekly Knowledge", true)
-    local cb2d = Settings.CreateCheckbox(category, s2d, "Show incomplete weekly knowledge quests in the main tracker window.")
-    s2d:SetValueChangedCallback(function() ns.InvalidateLayout() end)
-    cb2d:AddShownPredicate(isDisplayExpanded)
+    -- Weekly Knowledge removed from main window (visible in character detail popup)
 
     local s2b = Settings.RegisterAddOnSetting(category, "MBT_hideInCombat", "hideInCombat",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Hide in Combat", false)

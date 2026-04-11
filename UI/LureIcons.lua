@@ -273,7 +273,7 @@ for i = 1, #LURES do
     box:Hide()
     lureBoxes[i] = box
 
-    local priceLabel = box:CreateFontString(nil, "OVERLAY")
+    local priceLabel = headerIcons[i]:CreateFontString(nil, "OVERLAY")
     priceLabel:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
     priceLabel:SetTextColor(1, 0.84, 0)
     priceLabel:SetJustifyH("CENTER")

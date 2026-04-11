@@ -93,7 +93,6 @@ local function DefineCategories()
 
     sdCategories[#sdCategories + 1] = { name = "Display", items = function()
         return {
-            { text = "Show Weekly Knowledge", get = function() return s.showKnowledge ~= false end, set = function() s.showKnowledge = not (s.showKnowledge ~= false) end },
             { text = "Hide in Combat", get = function() return s.hideInCombat end, set = function() s.hideInCombat = not s.hideInCombat end },
             { text = "Disable in Instances", get = function() return s.disableInInstance ~= false end, set = function() s.disableInInstance = not (s.disableInInstance ~= false) end },
             { text = "Lock Frame", get = function() return s.locked end, set = function() s.locked = not s.locked end },

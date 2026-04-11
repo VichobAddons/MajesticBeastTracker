@@ -776,60 +776,7 @@ function ns.LayoutUI(state)
         end
     end
 
-    -- TSM total label: text updated in RefreshStatus (needs rBtn._missing)
-
-    -- Weekly knowledge lines
-    local weeklyMainLines = ns.weeklyMainLines
-    local showKnowledge = MajesticBeastTrackerDB.settings.showKnowledge ~= false
-    local curCharData = MajesticBeastTrackerDB.chars[currentChar]
-    local hasWeeklyData = showKnowledge and curCharData and curCharData.weeklies
-    local weeklyExpired = curCharData and curCharData.weeklyResetTime and GetServerTime() > curCharData.weeklyResetTime
-    local dmfUp = ns.IsDarkmoonFaireUp and ns.IsDarkmoonFaireUp()
-
-    if hasWeeklyData and not weeklyExpired then
-        local visible = {}
-        for i, wk in ipairs(WEEKLIES) do
-            if wk.dmf and not dmfUp then
-                weeklyMainLines[i]:Hide()
-            else
-                local val = curCharData.weeklies[wk.key]
-                local isDone = false
-                if wk.mode == "each" then
-                    isDone = (val or 0) >= #wk.questIDs
-                else
-                    isDone = val and true or false
-                end
-                if isDone then
-                    weeklyMainLines[i]:Hide()
-                else
-                    local status
-                    if wk.mode == "each" then
-                        local count = val or 0
-                        status = wk.label .. " |cff888888(" .. (#wk.questIDs * wk.kp) .. " KP)|r |cffffff00" .. count .. "/" .. #wk.questIDs .. "|r"
-                    else
-                        status = wk.label .. " |cff888888(" .. wk.kp .. " KP)|r |cffff4444todo|r"
-                    end
-                    visible[#visible + 1] = { idx = i, text = status }
-                end
-            end
-        end
-        local lineSpacing = 11
-        local weeklyStartY = statsY - 10
-        for r, entry in ipairs(visible) do
-            local line = weeklyMainLines[entry.idx]
-            line:SetText(entry.text)
-            line:ClearAllPoints()
-            line:SetPoint("RIGHT", frame, "TOPLEFT", w - PAD - 4, weeklyStartY - (r - 1) * lineSpacing)
-            line:Show()
-        end
-        if #visible > 0 then
-            frame:SetHeight(h + #visible * lineSpacing + 6)
-        end
-    else
-        for i = 1, #WEEKLIES do
-            weeklyMainLines[i]:Hide()
-        end
-    end
+    -- Weekly knowledge removed from main window (visible in character detail popup)
 end
 
 ------------------------------------------------------
