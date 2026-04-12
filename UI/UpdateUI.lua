@@ -196,12 +196,7 @@ function ns.HideAllRows()
     end
 end
 
--- Pre-create character rows at load time (avoids spike during LayoutUI)
-C_Timer.After(0, function()
-    for i = 1, 20 do
-        if not charRows[i] then charRows[i] = CreateCharRow(i) end
-    end
-end)
+-- Character rows created lazily in LayoutUI/RefreshStatus when needed
 
 ------------------------------------------------------
 -- Layout state
@@ -217,7 +212,13 @@ ns._layoutDirty = true  -- force initial layout
 
 function ns.InvalidateLayout()
     ns._layoutDirty = true
-    ns.UpdateUI()
+    if not ns._layoutPending then
+        ns._layoutPending = true
+        C_Timer.After(0.1, function()
+            ns._layoutPending = nil
+            ns.UpdateUI()
+        end)
+    end
 end
 
 ------------------------------------------------------
@@ -329,12 +330,14 @@ local function computeState()
         end
         return false
     end
+    local readyMap = {}
+    for _, key in ipairs(keys) do
+        readyMap[key] = hasReadyBeast(key)
+    end
     table.sort(keys, function(a, b)
         if a == currentChar then return true end
         if b == currentChar then return false end
-        local aReady = hasReadyBeast(a)
-        local bReady = hasReadyBeast(b)
-        if aReady ~= bReady then return aReady end
+        if readyMap[a] ~= readyMap[b] then return readyMap[a] end
         return a < b
     end)
 
@@ -412,10 +415,10 @@ local function computeState()
     end
     local hasTSMTotal = allPriced and grandTotal > 0
 
-    -- Bottom bar height: compute hasAnyStats + actualBarH
-    local profStats = ns.CalculateProfessionStats and ns.CalculateProfessionStats() or nil
-    local hasAnyStats = profStats and (profStats.Skill > 0 or profStats.Perception > 0 or profStats.Finesse > 0 or profStats.Deftness > 0)
-    local actualBarH = (hasAnyStats and hasTSMTotal) and 36 or 20
+    -- Bottom bar height: hasAnyStats = current char is a skinner (cheap check, no tooltip scan)
+    local curCharData = MajesticBeastTrackerDB.chars[currentChar]
+    local hasAnyStats = curCharData and curCharData.hasSkinning
+    local actualBarH = 24
     h = TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + visibleRows * ROW_HEIGHT + actualBarH + PAD + 10
 
     -- Loot tracking state
@@ -761,7 +764,7 @@ function ns.LayoutUI(state)
     local hasAnyStats = state.hasAnyStats
 
     -- Stats centered inside bottom bar
-    local statsOffsetY = state.hasTSMTotal and 8 or 0
+    local statsOffsetY = ns.tsmTotalLabel:IsShown() and 6 or 0
     if hasAnyStats and profStats then
         local visibleStats = {}
         for i, stat in ipairs(STAT_LABELS) do
@@ -1324,21 +1327,24 @@ function ns.RefreshStatus(state)
     if state.hasTSMTotal then
         ns.tsmTotalLabel:SetText("Total needed: " .. ns.FormatGold(state.grandTotal))
         ns.tsmTotalLabel:ClearAllPoints()
-        ns.tsmTotalLabel:SetPoint("CENTER", ns.tsmTotalLabel:GetParent(), "CENTER", 0, -8)
+        ns.tsmTotalLabel:SetPoint("CENTER", ns.tsmTotalLabel:GetParent(), "CENTER", 0, -6)
         ns.tsmTotalLabel:Show()
     else
         ns.tsmTotalLabel:Hide()
     end
 
-    -- Deferred bar height correction (catches stale bag counts)
+    -- Reposition stats based on TSM label visibility
+    local newStatsY = ns.tsmTotalLabel:IsShown() and 6 or 0
     local bottomBar = ns.tsmTotalLabel:GetParent()
-    local expectedBarH = (state.hasAnyStats and ns.tsmTotalLabel:IsShown()) and 36 or 20
-    if math.floor(bottomBar:GetHeight() + 0.5) ~= expectedBarH and not ns._barHeightPending then
-        ns._barHeightPending = true
-        C_Timer.After(0.1, function()
-            ns._barHeightPending = nil
-            ns.InvalidateLayout()
-        end)
+    for _, st in ipairs(ns.statsTexts) do
+        if st:IsShown() then
+            local _, _, _, _, oldY = st:GetPoint()
+            if oldY and math.abs(oldY - newStatsY) > 1 then
+                local point, rel, relPoint, x = st:GetPoint()
+                st:ClearAllPoints()
+                st:SetPoint(point, rel, relPoint, x, newStatsY)
+            end
+        end
     end
 
     -- Travel button icon textures + cooldown sweeps
