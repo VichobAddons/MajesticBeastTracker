@@ -662,6 +662,7 @@ local auraFrame = CreateFrame("Frame")
 auraFrame:RegisterEvent("UNIT_AURA")
 auraFrame:RegisterEvent("BAG_UPDATE")
 auraFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+auraFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 auraFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 auraFrame:RegisterEvent("SKILL_LINES_CHANGED")
 local lastAuraUpdate = 0
@@ -678,6 +679,15 @@ auraFrame:SetScript("OnEvent", function(_, event, unit)
         -- Tool enchant may have changed — invalidate cache and relayout
         if ns.InvalidateEnchantCache then ns.InvalidateEnchantCache() end
         ns.InvalidateLayout()
+        return
+    end
+    if event == "ZONE_CHANGED_NEW_AREA" then
+        -- Enchant state may reset briefly during zone change
+        if ns.InvalidateEnchantCache then ns.InvalidateEnchantCache() end
+        C_Timer.After(2, function()
+            if ns.InvalidateEnchantCache then ns.InvalidateEnchantCache() end
+            ns.InvalidateLayout()
+        end)
         return
     end
     -- BAG_UPDATE, TRAIT_CONFIG_UPDATED, SKILL_LINES_CHANGED trigger layout

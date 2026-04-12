@@ -315,9 +315,26 @@ local function computeState()
             keys[#keys + 1] = key
         end
     end
+    -- Check if a character has any beast ready to kill (no active cooldown)
+    local function hasReadyBeast(charKey)
+        local cData = MajesticBeastTrackerDB.chars[charKey]
+        if not cData then return false end
+        for li, lure in ipairs(LURES) do
+            if not lureSkipped[li] then
+                local ts = cData.lures[lure.name]
+                if not ts or ns.IsLureReady(ts) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
     table.sort(keys, function(a, b)
         if a == currentChar then return true end
         if b == currentChar then return false end
+        local aReady = hasReadyBeast(a)
+        local bReady = hasReadyBeast(b)
+        if aReady ~= bReady then return aReady end
         return a < b
     end)
 
