@@ -1,0 +1,44 @@
+name: Feature Request
+description: Suggest an idea for Majestic Beast Tracker
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like to see?
+      description: A clear description of the feature or improvement.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this useful?
+      description: "How would this help your skinning workflow? e.g. \"I have 12 skinners and...\""
+    validations:
+      required: true
+
+  - type: textarea
+    id: how
+    attributes:
+      label: How should it work?
+      description: If you have a specific idea, describe how it should look or behave.
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / Examples
+      description: If applicable, add screenshots or examples from other addons.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context about the feature request.
+    validations:
+      required: false
