@@ -1,5 +1,49 @@
 # Majestic Beast Tracker
 
+## [v2.0.1](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.1) (2026-04-12)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v2.0.0...v2.0.1) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Performance overhaul, drop rate tracking, character row scrolling, and multiple bug fixes
+
+### Performance
+- **Significantly reduced CPU usage** — Layout and refresh logic separated; layout only runs when UI structure changes, not on every update
+- **Event debouncing** — Rapid bag/inventory events coalesced instead of triggering individual full updates
+- **Combat optimization** — Heavy events unregistered during combat, re-registered after
+- **Cached calculations** — Profession stats, item icons, item names, and tool enchant state cached with smart invalidation
+
+### Drop Rate Tracking (NEW)
+- **Drop % column** — Optional column in Loot Summary showing personal drop rates per item
+- **Two display modes** — Percentage (capped at 100%) or per-kill average (e.g. 2.3/kill), toggle via Shift-click or Settings
+- **Per-character and global** — Drop rates shown in character loot tooltips and global Loot Summary
+- **Beast breakdown** — Per-beast drop rates in the breakdown view
+- **Tracked from v2.0.1** — Kill counter starts fresh to ensure accurate data; footer shows sample size
+
+### Character Row Scrolling (NEW)
+- **Scrollable character list** — Configurable max visible rows (5-30) with gold-themed scrollbar
+- **Smart sorting** — Characters with beasts ready to kill shown first, characters on cooldown sorted to bottom
+
+### Consumable Improvements
+- **Locale-safe buff detection** — Consumable buffs detected via spell IDs instead of English names
+- **Per-consumable stock ranges** — Tea (0-5), Phial (0-10), Root Crab (0-200), Razorstone (0-5)
+- **Disabled consumables excluded** — Hidden consumables no longer appear in Auctionator shopping list
+- **Razorstone timer** — Shows "Active" when enchant has more than 30 minutes remaining
+
+### CSV Export
+- **Full history export** — All 90 days of history plus current reset and AllTime remainder
+- **Character metadata** — Class and level included in export
+- **Import improvements** — Creates missing characters, supports append mode, imports TSM prices
+
+### Bug Fixes
+- Fix Auctionator shopping list crash with spell-only consumables (Sharpen Your Knife)
+- Fix secret value taint error in dungeons/instances
+- Fix Sharpen Your Knife button losing spell type after clicking
+- Fix "Done" status showing when lures are in bags but beast not killed
+- Fix tool icon not hiding when Razorstone enchant is active
+- Fix tool icon reappearing after zone change (hearthstone, teleport)
+- Fix character detail popup not closing when main frame hides
+- Fix TSM price labels disappearing when lure borders are hidden
+- Fix settings toggles not updating the tracker layout
+
 ## [v2.0.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.0) (2026-04-06)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v1.6.0...v2.0.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

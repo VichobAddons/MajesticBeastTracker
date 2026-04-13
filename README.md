@@ -26,6 +26,7 @@ If you have multiple skinners, it's impossible to remember which character has u
 
 ### Loot Tracking & Economy
 - **Automatic loot tracking** — Tracks skinning reagents from beast kills per character (daily + all-time)
+- **Drop rate tracking** — Optional column showing personal drop rates per item (percentage or per-kill format)
 - **Loot editor** — Click goblin icon to view/edit loot counts with quality tier icons, manual input via EditBox
 - **TSM price integration** — Loot values snapshotted at loot time using TradeSkillMaster prices
 - **Total reagent cost** — Shows how much gold you need to craft remaining lures
@@ -47,9 +48,11 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Consumable Stock Targets** — Per-item stock sliders in settings to define how many consumables to keep on hand
 
 ### Consumables
-- **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, and Root Crab with live buff timers
+- **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, Root Crab, Refulgent Razorstone, and Sharpen Your Knife
 - **Stackable buff support** — Root Crab shows remaining time + bag count, can keep clicking to stack
-- **Real-time timers** — Buff countdowns update every second
+- **Sharpen Your Knife charges** — Shows charge count with cooldown timer
+- **Razorstone tool enchant** — Shows active/remaining time, click to apply enchant to skinning tool
+- **Per-consumable stock** — Configurable stock targets for Auctionator shopping list
 
 ### Travel & Shortcuts
 - **Travel buttons** — Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
@@ -72,11 +75,13 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Hide characters** — Right-click to hide a character from the tracker without deleting data
 - **Show Hidden Characters** — Toggle to temporarily reveal hidden characters
 - **Remove characters** — Right-click to permanently remove a character
+- **Scrollable character list** — Configurable max visible rows (5-30) with scrollbar for large rosters
+- **Smart sorting** — Characters with beasts ready to kill shown first, cooldown characters sorted last
 
 ### UI & Settings
 - **Auto-hide** — Tracker fades out when mouse leaves, fades back in on hover
 - **Compact bottom bar** — Consumables, travel icons, and profession stats in a single row
-- **Adaptive stats layout** — Stats wrap to two rows when the tracker is narrow
+- **Stats in bottom bar** — Profession stats displayed in the bottom bar alongside Total needed
 - **Golden hover highlights** — Border highlights on lure icons, travel buttons, and consumable icons
 - **Zone labels** — Color-coded zone names below each lure column
 - **Minimap button** — Left-click toggles window, right-click opens settings
