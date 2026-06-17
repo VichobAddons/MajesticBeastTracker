@@ -760,6 +760,7 @@ init:SetScript("OnEvent", function()
     else
         -- Delay show to check if current char has skinning
         C_Timer.After(1, function()
+            if InCombatLockdown() then return end
             ns.EnsureDB()
             local hideNonSkinner = MajesticBeastTrackerDB.settings.hideNonSkinner
             if hideNonSkinner == nil then hideNonSkinner = true end -- default on
@@ -821,6 +822,14 @@ function ns.HideFrame()
         ns.wormholeBtn:Hide()
         ns.mageTeleportBtn:Hide()
         ns.vulperaReturnBtn:Hide()
+    end
+end
+
+function ns.ToggleFrame()
+    if frame:IsShown() then
+        ns.HideFrame()
+    else
+        ns.ShowFrame()
     end
 end
 

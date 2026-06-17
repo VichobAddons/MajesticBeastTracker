@@ -1,4 +1,4 @@
-## Interface: 120001, 120005
+## Interface: 120001, 120005, 120007
 ## Title: MBT Dev
 ## Notes: Development build of Majestic Beast Tracker
 ## Author: Vichob
@@ -24,3 +24,4 @@ Components\CalendarPicker.lua
 LootUI.lua
 Components\GearPopup.lua
 Settings.lua
+Bindings.xml

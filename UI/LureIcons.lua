@@ -124,28 +124,74 @@ for i, lure in ipairs(LURES) do
             GameTooltip:AddLine("In bags: " .. bags, 1, 1, 1)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click: Use lure", 0.5, 0.8, 1)
-        GameTooltip:AddLine("Shift-click: Open recipe / Craft", 0.5, 0.8, 1)
-        GameTooltip:AddLine("Right-click: Set waypoint", 0.5, 0.8, 1)
+        local s = MajesticBeastTrackerDB and MajesticBeastTrackerDB.settings or {}
+        local COMBO_LABELS = {
+            lmb = "Click", shift_lmb = "Shift-click", ctrl_lmb = "Ctrl-click", alt_lmb = "Alt-click",
+            rmb = "Right-click", shift_rmb = "Shift+Right-click", ctrl_rmb = "Ctrl+Right-click", alt_rmb = "Alt+Right-click",
+            mmb = "Middle-click", shift_mmb = "Shift+Middle-click", ctrl_mmb = "Ctrl+Middle-click", alt_mmb = "Alt+Middle-click",
+        }
+        local function fmt(combo) return COMBO_LABELS[combo] or combo end
+        if (s.lureClickUse or "lmb") ~= "none" then
+            GameTooltip:AddLine(fmt(s.lureClickUse or "lmb") .. ": Use lure", 0.5, 0.8, 1)
+        end
+        if (s.lureClickCraft or "shift_lmb") ~= "none" then
+            GameTooltip:AddLine(fmt(s.lureClickCraft or "shift_lmb") .. ": Open recipe / Craft", 0.5, 0.8, 1)
+        end
+        if (s.lureClickWaypoint or "rmb") ~= "none" then
+            GameTooltip:AddLine(fmt(s.lureClickWaypoint or "rmb") .. ": Set waypoint", 0.5, 0.8, 1)
+        end
         GameTooltip:Show()
     end)
     iconFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- PreClick: shift = open recipe (block item use), right = waypoint (block item use)
+    -- Build click combo string: e.g. "lmb", "shift_lmb", "ctrl_rmb", "alt_mmb"
+    local function GetClickCombo(button)
+        local mod = ""
+        if IsShiftKeyDown() then mod = "shift_"
+        elseif IsControlKeyDown() then mod = "ctrl_"
+        elseif IsAltKeyDown() then mod = "alt_"
+        end
+        local btn = button == "LeftButton" and "lmb"
+            or button == "RightButton" and "rmb"
+            or button == "MiddleButton" and "mmb"
+        if not btn then return nil end
+        return mod .. btn
+    end
+
+    -- PreClick: determine action based on user-configured combo, block item use if not "use"
     iconFrame:SetScript("PreClick", function(self, button)
         if InCombatLockdown() then return end
-        if button == "RightButton" or IsShiftKeyDown() then
+        local combo = GetClickCombo(button)
+        if not combo then return end
+        local s = MajesticBeastTrackerDB and MajesticBeastTrackerDB.settings or {}
+        local action = "nothing"
+        if combo == (s.lureClickUse or "lmb") then
+            -- Auto-craft if no lure in bags
+            local lureName = C_Item.GetItemNameByID(lure.itemID)
+            local count = lureName and C_Item.GetItemCount(lureName) or C_Item.GetItemCount(lure.itemID)
+            if not count or count == 0 then
+                action = "craft"
+            else
+                action = "use"
+            end
+        elseif combo == (s.lureClickCraft or "shift_lmb") then
+            action = "craft"
+        elseif combo == (s.lureClickWaypoint or "rmb") then
+            action = "waypoint"
+        end
+        self._pendingAction = action
+        if action ~= "use" then
             self:SetAttribute("type", nil)
         end
     end)
     iconFrame:SetScript("PostClick", function(self, button)
-        -- Restore secure type
         if not InCombatLockdown() then
             self:SetAttribute("type", "item")
         end
-        if IsShiftKeyDown() and button == "LeftButton" then
+        local action = self._pendingAction
+        self._pendingAction = nil
+        if action == "craft" then
             local now = GetTime()
-            -- Throttle AnyUp/AnyDown pair (< 0.1s apart)
             if (now - (self._lastPostClick or 0)) < 0.1 then return end
             self._lastPostClick = now
             if lure.recipeID then
@@ -155,7 +201,7 @@ for i, lure in ipairs(LURES) do
                     C_TradeSkillUI.OpenRecipe(lure.recipeID)
                 end
             end
-        elseif button == "RightButton" then
+        elseif action == "waypoint" then
             local now = GetTime()
             if (now - (self._lastWaypoint or 0)) < 0.5 then return end
             self._lastWaypoint = now

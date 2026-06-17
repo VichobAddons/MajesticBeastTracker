@@ -1,0 +1,16 @@
+<Bindings>
+    <Binding name="MBT_TOGGLE_WINDOW" header="MBT_HEADER" description="Toggle the tracker window" category="Majestic Beast Tracker">
+        if MajesticBeastTracker_ns and MajesticBeastTracker_ns.ToggleFrame then MajesticBeastTracker_ns.ToggleFrame() end
+    </Binding>
+    <Binding name="MBT_NEXT_WAYPOINT" description="Set waypoint to next beast in route" category="Majestic Beast Tracker">
+        if MajesticBeastTracker_ns and MajesticBeastTracker_ns.SetNextRouteWaypoint then MajesticBeastTracker_ns.SetNextRouteWaypoint() end
+    </Binding>
+    <Binding name="MBT_LOOT_SUMMARY" description="Open Loot Summary window" category="Majestic Beast Tracker">
+        if MajesticBeastTracker_ns and MajesticBeastTracker_ns.ToggleLootSummary then MajesticBeastTracker_ns.ToggleLootSummary() end
+    </Binding>
+    <Binding name="CLICK MBT_LureIcon1:LeftButton" description="Use Eversong Lure (Shift = craft)" category="Majestic Beast Tracker" />
+    <Binding name="CLICK MBT_LureIcon2:LeftButton" description="Use Zul'Aman Lure (Shift = craft)" category="Majestic Beast Tracker" />
+    <Binding name="CLICK MBT_LureIcon3:LeftButton" description="Use Harandar Lure (Shift = craft)" category="Majestic Beast Tracker" />
+    <Binding name="CLICK MBT_LureIcon4:LeftButton" description="Use Voidstorm Lure (Shift = craft)" category="Majestic Beast Tracker" />
+    <Binding name="CLICK MBT_LureIcon5:LeftButton" description="Use Grand Beast Lure (Shift = craft)" category="Majestic Beast Tracker" />
+</Bindings>

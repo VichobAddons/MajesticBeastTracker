@@ -6,6 +6,20 @@
 
 local addonName, ns = ...
 
+-- Expose ns globally for Bindings.xml
+_G.MajesticBeastTracker_ns = ns
+
+-- Keybinding names (for localization in Key Bindings UI)
+_G.BINDING_HEADER_MBT_HEADER = "Majestic Beast Tracker"
+_G.BINDING_NAME_MBT_TOGGLE_WINDOW = "Toggle Tracker Window"
+_G.BINDING_NAME_MBT_NEXT_WAYPOINT = "Set Next Beast Waypoint"
+_G.BINDING_NAME_MBT_LOOT_SUMMARY = "Open Loot Summary"
+_G["BINDING_NAME_CLICK MBT_LureIcon1:LeftButton"] = "Use/Craft Eversong Lure"
+_G["BINDING_NAME_CLICK MBT_LureIcon2:LeftButton"] = "Use/Craft Zul'Aman Lure"
+_G["BINDING_NAME_CLICK MBT_LureIcon3:LeftButton"] = "Use/Craft Harandar Lure"
+_G["BINDING_NAME_CLICK MBT_LureIcon4:LeftButton"] = "Use/Craft Voidstorm Lure"
+_G["BINDING_NAME_CLICK MBT_LureIcon5:LeftButton"] = "Use/Craft Grand Beast Lure"
+
 -- Lure data: ordered by Talented Tracker unlock threshold
 local LURES = {
     { npcID = 245688, itemID = 238652, recipeID = 1225943, questID = 88545, name = "Eversong",    color = "|cff00ff96", colorRGB = {0, 1, 0.59},       requiredPoints = 1,  waypoint = { map = 2395, x = 0.4195, y = 0.8005 },
@@ -181,6 +195,7 @@ local function CheckInstance()
         if ns.frame and ns.frame:IsShown() then ns.frame:Hide() end
     end
 end
+ns.CheckInstance = CheckInstance
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")

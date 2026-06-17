@@ -94,7 +94,7 @@ local function DefineCategories()
     sdCategories[#sdCategories + 1] = { name = "Display", items = function()
         return {
             { text = "Hide in Combat", get = function() return s.hideInCombat end, set = function() s.hideInCombat = not s.hideInCombat end },
-            { text = "Disable in Instances", get = function() return s.disableInInstance ~= false end, set = function() s.disableInInstance = not (s.disableInInstance ~= false) end },
+            { text = "Disable in Instances", get = function() return s.disableInInstance ~= false end, set = function() s.disableInInstance = not (s.disableInInstance ~= false); if ns.CheckInstance then ns.CheckInstance() end end },
             { text = "Lock Frame", get = function() return s.locked end, set = function() s.locked = not s.locked end },
             { text = "Chat Notifications", get = function() return s.chatNotify ~= false end, set = function() s.chatNotify = not (s.chatNotify ~= false) end },
             { text = "Hide on Non-Skinners", get = function() return s.hideNonSkinner end, set = function() s.hideNonSkinner = not s.hideNonSkinner end },

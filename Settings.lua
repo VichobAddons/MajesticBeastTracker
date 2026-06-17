@@ -444,6 +444,15 @@ local function InitSettings()
     local cb2b = Settings.CreateCheckbox(category, s2b, "Automatically hide the tracker window during combat.")
     cb2b:AddShownPredicate(isDisplayExpanded)
 
+    local sDisableInst = Settings.RegisterAddOnSetting(category, "MBT_disableInInstance", "disableInInstance",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Disable in Instances", true)
+    local cbDisableInst = Settings.CreateCheckbox(category, sDisableInst, "Disable the tracker inside dungeons, raids, PvP, arenas, scenarios, and Delves. Disable this to keep the tracker active in instances.")
+    sDisableInst:SetValueChangedCallback(function()
+        if ns.CheckInstance then ns.CheckInstance() end
+        ns.InvalidateLayout()
+    end)
+    cbDisableInst:AddShownPredicate(isDisplayExpanded)
+
     local sAutoHide = Settings.RegisterAddOnSetting(category, "MBT_autoHide", "autoHide",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Auto Hide", false)
     local cbAutoHide = Settings.CreateCheckbox(category, sAutoHide, "Fade out the tracker when the mouse is not hovering over it. Hover to show.")
@@ -497,6 +506,60 @@ local function InitSettings()
         ns.InvalidateLayout()
     end)
     slMaxRows:AddShownPredicate(isDisplayExpanded)
+
+    --------------------------------------------------------
+    -- Expandable: Lure Icon Actions
+    --------------------------------------------------------
+    local _, isLureActionsExpanded = createExpandableSection(layout, "Lure Icon Actions")
+
+    -- Defaults
+    if MajesticBeastTrackerDB.settings.lureClickUse == nil then MajesticBeastTrackerDB.settings.lureClickUse = "lmb" end
+    if MajesticBeastTrackerDB.settings.lureClickCraft == nil then MajesticBeastTrackerDB.settings.lureClickCraft = "shift_lmb" end
+    if MajesticBeastTrackerDB.settings.lureClickWaypoint == nil then MajesticBeastTrackerDB.settings.lureClickWaypoint = "rmb" end
+
+    local CLICK_COMBOS = {
+        { value = "lmb",        label = "Left-click" },
+        { value = "shift_lmb",  label = "Shift + Left-click" },
+        { value = "ctrl_lmb",   label = "Ctrl + Left-click" },
+        { value = "alt_lmb",    label = "Alt + Left-click" },
+        { value = "rmb",        label = "Right-click" },
+        { value = "shift_rmb",  label = "Shift + Right-click" },
+        { value = "ctrl_rmb",   label = "Ctrl + Right-click" },
+        { value = "alt_rmb",    label = "Alt + Right-click" },
+        { value = "mmb",        label = "Middle-click" },
+        { value = "shift_mmb",  label = "Shift + Middle-click" },
+        { value = "ctrl_mmb",   label = "Ctrl + Middle-click" },
+        { value = "alt_mmb",    label = "Alt + Middle-click" },
+        { value = "none",       label = "Disabled" },
+    }
+
+    local function MakeActionDropdown(actionKey, label, defaultCombo, otherKeys)
+        local function GetOptions()
+            local container = Settings.CreateControlTextContainer()
+            local s = MajesticBeastTrackerDB.settings
+            -- Collect combos used by OTHER actions (mutex)
+            local usedByOthers = {}
+            for _, k in ipairs(otherKeys) do
+                local v = s[k]
+                if v and v ~= "none" then usedByOthers[v] = true end
+            end
+            for _, c in ipairs(CLICK_COMBOS) do
+                if not usedByOthers[c.value] or c.value == s[actionKey] then
+                    container:Add(c.value, c.label)
+                end
+            end
+            return container:GetData()
+        end
+        local setting = Settings.RegisterAddOnSetting(category, "MBT_" .. actionKey, actionKey,
+            MajesticBeastTrackerDB.settings, Settings.VarType.String, label, defaultCombo)
+        local init = Settings.CreateDropdown(category, setting, GetOptions, "Click combination for " .. label:lower() .. " action on lure icons.")
+        init:AddShownPredicate(isLureActionsExpanded)
+        return setting
+    end
+
+    MakeActionDropdown("lureClickUse", "Use Lure", "lmb", { "lureClickCraft", "lureClickWaypoint" })
+    MakeActionDropdown("lureClickCraft", "Craft Lure", "shift_lmb", { "lureClickUse", "lureClickWaypoint" })
+    MakeActionDropdown("lureClickWaypoint", "Set Waypoint", "rmb", { "lureClickUse", "lureClickCraft" })
 
     --------------------------------------------------------
     -- Expandable: Data Management
