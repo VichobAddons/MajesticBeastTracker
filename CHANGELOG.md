@@ -1,5 +1,13 @@
 # Majestic Beast Tracker
 
+## [v2.0.3](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.3) (2026-06-17)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v2.0.2...v2.0.3) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Add WoW 12.0.7 interface support
+
+### Compatibility
+- **12.0.7 support** — TOC updated to support the 12.0.7 patch alongside existing 12.0.1 and 12.0.5
+
 ## [v2.0.2](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.2) (2026-04-12)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v2.0.1...v2.0.2) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 
