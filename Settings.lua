@@ -305,6 +305,12 @@ local function InitSettings()
     sMissing:SetValueChangedCallback(function() ns.InvalidateLayout() end)
     cbMissing:AddShownPredicate(isReagentsExpanded)
 
+    local sAlwaysCounts = Settings.RegisterAddOnSetting(category, "MBT_alwaysShowReagentCounts", "alwaysShowReagentCounts",
+        MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Always Show Counts", false)
+    local cbAlwaysCounts = Settings.CreateCheckbox(category, sAlwaysCounts, "Keep reagent numbers and colors visible even when a lure is Ready or Done — useful when stocking up reagents for the week ahead.")
+    sAlwaysCounts:SetValueChangedCallback(function() ns.InvalidateLayout() end)
+    cbAlwaysCounts:AddShownPredicate(isReagentsExpanded)
+
     local sAHFill = Settings.RegisterAddOnSetting(category, "MBT_ahAutofillQuantity", "ahAutofillQuantity",
         MajesticBeastTrackerDB.settings, Settings.VarType.Boolean, "Autofill AH Quantity", true)
     local cbAHFill = Settings.CreateCheckbox(category, sAHFill, "Automatically fill the Auction House buy quantity with the number of missing reagents when browsing commodities.")

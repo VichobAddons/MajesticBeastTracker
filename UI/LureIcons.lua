@@ -123,6 +123,39 @@ for i, lure in ipairs(LURES) do
         if bags > 0 then
             GameTooltip:AddLine("In bags: " .. bags, 1, 1, 1)
         end
+        -- AH price comparison: lure craft cost vs majestic drop values (TSM or Auctionator)
+        if ns.GetAHPrice then
+            local craftCost, costComplete = 0, true
+            if lure.reagents then
+                for _, reagent in ipairs(lure.reagents) do
+                    local p = ns.GetAHPrice(reagent.itemID)
+                    if p then craftCost = craftCost + p * reagent.count else costComplete = false end
+                end
+            end
+            local drops = {}
+            local majestics = ns.MAJESTIC_LOOT and ns.MAJESTIC_LOOT[lure.name]
+            if majestics then
+                for _, id in ipairs(majestics) do
+                    local itemName = C_Item.GetItemNameByID(id)
+                    if not itemName then C_Item.RequestLoadItemDataByID(id) end
+                    local p = ns.GetAHPrice(id)
+                    if itemName and p then
+                        drops[#drops + 1] = { name = itemName, price = p }
+                    end
+                end
+                table.sort(drops, function(a, b) return a.price > b.price end)
+            end
+            if (costComplete and craftCost > 0) or #drops > 0 then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("AH Prices", 1, 0.84, 0)
+                if costComplete and craftCost > 0 then
+                    GameTooltip:AddDoubleLine("Lure craft cost", ns.FormatGold(craftCost), 0.8, 0.8, 0.8, 1, 1, 1)
+                end
+                for _, d in ipairs(drops) do
+                    GameTooltip:AddDoubleLine(d.name, ns.FormatGold(d.price), 0.64, 0.21, 0.93, 0.2, 0.9, 0.4)
+                end
+            end
+        end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Click: Use lure", 0.5, 0.8, 1)
         GameTooltip:AddLine("Shift-click: Open recipe / Craft", 0.5, 0.8, 1)

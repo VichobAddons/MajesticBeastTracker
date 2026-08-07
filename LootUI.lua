@@ -52,6 +52,17 @@ function ns.GetTSMPrice(itemID)
     return nil
 end
 
+-- Helper: get AH unit price from any available source: TSM, then Auctionator scan data
+function ns.GetAHPrice(itemID)
+    local price = ns.GetTSMPrice(itemID)
+    if price then return price end
+    if Auctionator and Auctionator.API and Auctionator.API.v1 and Auctionator.API.v1.GetAuctionPriceByItemID then
+        local ok, p = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "MajesticBeastTracker", itemID)
+        if ok and p and p > 0 then return p end
+    end
+    return nil
+end
+
 -- Helper: build loot tooltip lines from item count table
 function ns.AddLootTooltipLines(lootTable, header, savedPrices)
     if not lootTable then return 0 end

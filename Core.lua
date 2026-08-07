@@ -60,6 +60,20 @@ local BEAST_LOOT = {
 }
 ns.BEAST_LOOT = BEAST_LOOT
 
+-- Majestic-tier drops (the valuable rares) per beast, derived from BEAST_LOOT
+-- 238522 Peerless Plumage, 238523 Carving Canine, 238525 Fantastic Fur,
+-- 238528 Majestic Claw, 238529 Majestic Hide, 238530 Majestic Fin
+local MAJESTIC_SET = { [238522] = true, [238523] = true, [238525] = true, [238528] = true, [238529] = true, [238530] = true }
+local MAJESTIC_LOOT = {}  -- [beastName] = { itemID, ... }
+for beast, items in pairs(BEAST_LOOT) do
+    local t = {}
+    for _, id in ipairs(items) do
+        if MAJESTIC_SET[id] then t[#t + 1] = id end
+    end
+    MAJESTIC_LOOT[beast] = t
+end
+ns.MAJESTIC_LOOT = MAJESTIC_LOOT
+
 -- All tracked loot item IDs (fast set lookup)
 local TRACKED_LOOT = {}
 for _, items in pairs(BEAST_LOOT) do
@@ -1261,16 +1275,16 @@ local function CalculateProfessionStats()
     if not ok or not configID or configID == 0 then return stats end
 
     -- Talent stats: per-point bonuses from TalentData paths
+    -- Uses ownPoints (node's own invested points): root tree totals include children,
+    -- which would wrongly grant the root's stat for points spent in sub-paths
     local breakdown = ns.GetTalentBreakdown and ns.GetTalentBreakdown()
     if breakdown then
         for _, path in ipairs(ns.GetTalentPaths()) do
-            local pts = breakdown.paths[path.name] or 0
-            if pts > 0 and path.perPoint then
-                -- Per-point bonus (root paths count invested points, sub-paths count node rank)
-                local invested = path.isRoot and math.max(pts - 1, 0) or math.max(pts - 1, 0)
-                if invested > 0 then
-                    stats[path.perPoint] = (stats[path.perPoint] or 0) + invested
-                end
+            local invested = (breakdown.ownPoints and breakdown.ownPoints[path.name])
+                or breakdown.paths[path.name] or 0
+            if invested > 0 and path.perPoint then
+                local amount = path.perPointAmount or 1
+                stats[path.perPoint] = (stats[path.perPoint] or 0) + invested * amount
             end
         end
     end
@@ -1313,13 +1327,17 @@ local function CalculateProfessionStats()
     -- Buff stats from active auras (tooltip scanning, locale-safe via spell IDs)
     local STAT_BUFFS = {
         { spellID = 1269152 },   -- Sanguithorn Tea "Relaxed"
+        { spellID = 1269171 },   -- Argentleaf Tea "Relaxed" (+Finesse)
         { spellID = 1236763 },   -- Haranir Phial of Perception
+        { spellID = 1236767 },   -- Haranir Phial of Finesse
         { spellID = 1235216 },   -- Root Crab "Midnight Perception"
     }
+    local seenAuras = {}  -- both teas' buffs are named "Relaxed"; scan each aura once
     for _, buff in ipairs(STAT_BUFFS) do
         local buffName = C_Spell.GetSpellName(buff.spellID)
         local auraData = buffName and C_UnitAuras.GetAuraDataBySpellName("player", buffName, "HELPFUL") or nil
-        if auraData and auraData.auraInstanceID then
+        if auraData and auraData.auraInstanceID and not seenAuras[auraData.auraInstanceID] then
+            seenAuras[auraData.auraInstanceID] = true
             local tip = MBT_BuffScanTip
             tip:SetOwner(UIParent, "ANCHOR_NONE")
             tip:ClearLines()

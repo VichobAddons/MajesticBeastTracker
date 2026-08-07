@@ -59,6 +59,7 @@ local function DefineCategories()
             { text = "Show Reagent Icons", get = function() return s.showReagents ~= false end, set = function() s.showReagents = not (s.showReagents ~= false) end },
             { text = "Count All Characters", get = function() return s.reagentAllChars end, set = function() s.reagentAllChars = not s.reagentAllChars end },
             { text = "Show Missing Count", get = function() return s.showMissingCount end, set = function() s.showMissingCount = not s.showMissingCount end },
+            { text = "Always Show Counts", get = function() return s.alwaysShowReagentCounts end, set = function() s.alwaysShowReagentCounts = not s.alwaysShowReagentCounts end },
             { text = "Autofill AH Quantity", get = function() return s.ahAutofillQuantity end, set = function() s.ahAutofillQuantity = not s.ahAutofillQuantity end },
         }
     end }

@@ -14,7 +14,7 @@ local MIDNIGHT_SKILL_LINE = 2917
 ------------------------------------------------------
 
 -- Tree roots (3 main specializations)
-local TREE_THOROUGH_TANNING = 106089   -- +1 Perception per point (root)
+local TREE_THOROUGH_TANNING = 106089   -- +1 Skill per point (root)
 local TREE_GAINFUL_GATHERING = 106059  -- +1 Deftness per point (root)
 local TREE_TALENTED_TRACKER = 106119   -- +1 Skill per point (root), lure unlocks
 
@@ -25,23 +25,24 @@ local PATH_LASTING_LEATHER = 106088   -- +1 Skill per point (leathery creatures)
 -- Sub-specializations of Gainful Gathering
 local PATH_DEDICATED_DIFFUSER = 106056  -- +1 Deftness per point (essence creatures)
 local PATH_TROPHY_TAKER = 106057       -- +1 Perception per point (bone creatures)
-local PATH_CAREFUL_CARVING = 106058    -- +1 Perception per point (plating creatures)
+local PATH_CAREFUL_CARVING = 106058    -- +2 Finesse per point (meat carving)
 
 -- Sub-specializations of Talented Tracker
 local PATH_COMPONENT_COLLECTOR = 106117  -- +1 Finesse per point (renowned beasts)
 local PATH_MAJESTIC_MATERIALS = 106118   -- +1 Perception per point (renowned beasts)
 
 -- All paths in display order
+-- perPointAmount defaults to 1 when omitted
 local ALL_PATHS = {
     -- Thorough Tanning
-    { id = TREE_THOROUGH_TANNING,  name = "Thorough Tanning",   isRoot = true,  tree = "tanning",  perPoint = "Perception" },
+    { id = TREE_THOROUGH_TANNING,  name = "Thorough Tanning",   isRoot = true,  tree = "tanning",  perPoint = "Skill" },
     { id = PATH_SUPERB_SCALES,     name = "Superb Scales",      isRoot = false, tree = "tanning",  perPoint = "Skill" },
     { id = PATH_LASTING_LEATHER,   name = "Lasting Leather",     isRoot = false, tree = "tanning",  perPoint = "Skill" },
     -- Gainful Gathering
     { id = TREE_GAINFUL_GATHERING, name = "Gainful Gathering",  isRoot = true,  tree = "gathering", perPoint = "Deftness" },
     { id = PATH_DEDICATED_DIFFUSER, name = "Dedicated Diffuser", isRoot = false, tree = "gathering", perPoint = "Deftness" },
     { id = PATH_TROPHY_TAKER,      name = "Trophy Taker",       isRoot = false, tree = "gathering", perPoint = "Perception" },
-    { id = PATH_CAREFUL_CARVING,    name = "Careful Carving",    isRoot = false, tree = "gathering", perPoint = "Perception" },
+    { id = PATH_CAREFUL_CARVING,    name = "Careful Carving",    isRoot = false, tree = "gathering", perPoint = "Finesse", perPointAmount = 2 },
     -- Talented Tracker
     { id = TREE_TALENTED_TRACKER,  name = "Talented Tracker",   isRoot = true,  tree = "tracker",  perPoint = "Skill" },
     { id = PATH_COMPONENT_COLLECTOR, name = "Component Collector", isRoot = false, tree = "tracker", perPoint = "Finesse" },
@@ -62,7 +63,7 @@ local PERK_BONUSES = {
     [106062] = { Skill = 15 },     -- 30pts
     [106061] = { Deftness = 10 },  -- 35pts
     [106060] = { Skill = 20, Perception = 30 },  -- 40pts (major)
-    [106068] = { Skill = 5 },      -- unlock
+    [106068] = {},  -- unlock (no stat shown in game UI)
 
     -- Lasting Leather (106088): +Skill/+Deftness leathery creatures
     [106076] = { Deftness = 5 },
@@ -73,7 +74,7 @@ local PERK_BONUSES = {
     [106071] = { Skill = 15 },
     [106070] = { Deftness = 10 },
     [106069] = { Skill = 20, Perception = 30 },  -- major
-    [106077] = { Skill = 5 },      -- unlock
+    [106077] = {},  -- unlock (no stat shown in game UI)
 
     -- Thorough Tanning root (106089): +Skill perks
     [106085] = { Skill = 5 },
@@ -91,7 +92,7 @@ local PERK_BONUSES = {
     [106038] = { Perception = 10 },
     [106037] = { Perception = 10 },
     [106036] = { Perception = 15, Deftness = 30 },  -- major
-    [106043] = { Perception = 5 },  -- unlock
+    [106043] = {},  -- unlock: species-specific reagents (no stat shown in game UI)
 
     -- Careful Carving (106058): +Perception
     [106033] = { Perception = 5 },
@@ -101,7 +102,7 @@ local PERK_BONUSES = {
     [106029] = { Perception = 10 },
     [106028] = { Perception = 10 },
     [106035] = { Perception = 15, Deftness = 30 },  -- major (40pts perk, recheck ID)
-    [106034] = { Perception = 5 },  -- unlock
+    [106034] = {},  -- unlock: Carve Meat (no stat shown in game UI)
 
     -- Gainful Gathering root (106059): +Deftness perks
     [106054] = { Deftness = 5 },
@@ -118,7 +119,7 @@ local PERK_BONUSES = {
     [106093] = { Finesse = 10 },
     [106092] = { Finesse = 10 },
     [106091] = { Finesse = 15, Deftness = 30 },  -- major
-    [106098] = { Finesse = 5 },  -- unlock
+    [106098] = {},  -- unlock (no stat shown in game UI)
 
     -- Majestic Materials (106118): +Perception renowned beasts
     [106104] = { Perception = 5 },
@@ -127,7 +128,7 @@ local PERK_BONUSES = {
     [106101] = { Perception = 10 },
     [106100] = { Perception = 10 },
     [106099] = { Perception = 15, Skill = 30 },  -- major
-    [106105] = { Perception = 5 },  -- unlock
+    [106105] = {},  -- unlock (no stat shown in game UI)
 
     -- Talented Tracker root (106119): +Skill perks
     [106115] = { Skill = 5 },
@@ -217,6 +218,7 @@ function ns.GetTalentBreakdown()
 
     local result = {
         paths = {},
+        ownPoints = {},  -- points invested in the node itself (roots excl. children) — use for per-point stats
         trees = { tanning = 0, gathering = 0, tracker = 0 },
         tracker = 0,
         totalPoints = 0,
@@ -230,6 +232,7 @@ function ns.GetTalentBreakdown()
             points = GetNodePoints(configID, path.id)
         end
         result.paths[path.name] = points
+        result.ownPoints[path.name] = GetNodePoints(configID, path.id)
         if path.isRoot then
             result.trees[path.tree] = points
         end

@@ -34,6 +34,7 @@ local CONSUMABLES = {
     { itemID = 238367, name = "Root Crab", buffSpellID = 1235216, minLevel = 80, stackable = true, stockMax = 200, stockStep = 5 },
     { itemID = 237372, name = "Refulgent Razorstone", minLevel = 80, isToolEnchant = true, stockMax = 5, stockStep = 1 },
     { spellID = 1223388, name = "Sharpen Your Knife", isSpell = true, minLevel = 80 },
+    { spellID = 1226037, name = "Carve Meat", isSpell = true, minLevel = 80 },
 }
 local NUM_EXTRA_COLS = #CONSUMABLES
 ns.CONSUMABLE_ITEMS = CONSUMABLES

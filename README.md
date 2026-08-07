@@ -46,16 +46,17 @@ If you have multiple skinners, it's impossible to remember which character has u
 - **Autofill AH Quantity** — Automatically fills the buy quantity when browsing reagents or consumables in the Auction House
 - **Auctionator Shopping List** — One-click button creates an "MBT Reagents" shopping list in Auctionator with all missing reagents and consumables
 - **Consumable Stock Targets** — Per-item stock sliders in settings to define how many consumables to keep on hand
+- **Lure profitability** — Lure tooltips compare the AH craft cost against the AH value of the beast's Majestic drops (TSM or Auctionator prices)
 
 ### Consumables
-- **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, Root Crab, Refulgent Razorstone, and Sharpen Your Knife
+- **Consumable tracking** — Track Sanguithorn Tea, Haranir Phial of Perception, Root Crab, Refulgent Razorstone, Sharpen Your Knife, and Carve Meat
 - **Stackable buff support** — Root Crab shows remaining time + bag count, can keep clicking to stack
 - **Sharpen Your Knife charges** — Shows charge count with cooldown timer
 - **Razorstone tool enchant** — Shows active/remaining time, click to apply enchant to skinning tool
 - **Per-consumable stock** — Configurable stock targets for Auctionator shopping list
 
 ### Travel & Shortcuts
-- **Travel buttons** — Quick-access Hearthstone, Arcantina Key, and Wormhole Generator (Engineering) with cooldowns
+- **Travel buttons** — Quick-access Hearthstone, Arcantina Key, Wormhole Generator (Engineering), and Path of the Windrunners (Keystone Hero) with cooldowns
 - **Lure shortcuts** — Click to use lure, Shift-click to open recipe/craft, Right-click to set waypoint
 - **Map waypoints** — Right-click lure icon to set a waypoint to the beast location (Works great with [WaypointUI](https://www.curseforge.com/wow/addons/waypointui))
 

@@ -359,18 +359,8 @@ local function computeState()
         and math.max(BASE_NAME_COL_WIDTH / totalVisibleCons, ns.CONS_ITEM_WIDTH)
         or ns.CONS_ITEM_WIDTH
     local consWidth = totalVisibleCons * consSpacing
-    local dynamicNameColWidth = math.max(BASE_NAME_COL_WIDTH, consWidth)
 
-    -- Frame dimensions
-    local n = math.max(#keys, 1)
-    local MAX_VISIBLE_ROWS = ns.MAX_VISIBLE_ROWS or 15
-    local visibleRows = math.min(n, MAX_VISIBLE_ROWS)
-    local goblinColWidth = 18
-    local w = PAD * 2 + 8 + dynamicNameColWidth + numVisibleLures * COL_WIDTH + goblinColWidth
-    local h -- set after actualBarH is computed
-    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + visibleRows * ROW_HEIGHT + 2)
-
-    -- Travel buttons list
+    -- Travel buttons list (built before column width: the travel row also widens the name column)
     local activeTravelBtns = {}
     for _, btn in ipairs(ns.travelButtons) do
         activeTravelBtns[#activeTravelBtns + 1] = btn
@@ -387,6 +377,20 @@ local function computeState()
     if playerRaceID == 35 then
         activeTravelBtns[#activeTravelBtns + 1] = ns.vulperaReturnBtn
     end
+    if ns.PATH_WINDRUNNERS and IsPlayerSpell(ns.PATH_WINDRUNNERS.spellID) then
+        activeTravelBtns[#activeTravelBtns + 1] = ns.pathWindrunnersBtn
+    end
+    local travelWidth = #activeTravelBtns * (ns.TRAVEL_ICON_SIZE + ns.TRAVEL_SPACING)
+    local dynamicNameColWidth = math.max(BASE_NAME_COL_WIDTH, consWidth, travelWidth)
+
+    -- Frame dimensions
+    local n = math.max(#keys, 1)
+    local MAX_VISIBLE_ROWS = ns.MAX_VISIBLE_ROWS or 15
+    local visibleRows = math.min(n, MAX_VISIBLE_ROWS)
+    local goblinColWidth = 18
+    local w = PAD * 2 + 8 + dynamicNameColWidth + numVisibleLures * COL_WIDTH + goblinColWidth
+    local h -- set after actualBarH is computed
+    local divY = -(TOOLBAR_HEIGHT + TITLE_HEIGHT + 2 + headerH + visibleRows * ROW_HEIGHT + 2)
 
     -- Compute TSM grand total (used by both LayoutUI for bar height and RefreshStatus for label)
     local grandTotal = 0
@@ -728,6 +732,7 @@ function ns.LayoutUI(state)
     ns.wormholeBtn:Hide()
     ns.mageTeleportBtn:Hide()
     ns.vulperaReturnBtn:Hide()
+    ns.pathWindrunnersBtn:Hide()
 
     -- Travel box positioning
     local numTravel = #activeTravelBtns
@@ -977,13 +982,16 @@ function ns.RefreshStatus(state)
             for _, cData in pairs(MajesticBeastTrackerDB.chars) do
                 if ns.CanSeeLure(cData, i) then anyEligible = true; break end
             end
+            -- alwaysShowReagentCounts: keep numeric counts visible even when Done/Ready
+            -- (for stocking up ahead of time); "Locked" always wins
+            local alwaysShowCounts = MajesticBeastTrackerDB.settings.alwaysShowReagentCounts
             local singleLabel
             if not anyEligible then
                 singleLabel = "|cff666666Locked|r"
             elseif numNeedKill == 0 then
-                singleLabel = "|cff00ff00Done|r"
+                if not alwaysShowCounts then singleLabel = "|cff00ff00Done|r" end
             elseif not anyMissing then
-                singleLabel = "|cff00ff00Ready|r"
+                if not alwaysShowCounts then singleLabel = "|cff00ff00Ready|r" end
             end
             for j, rBtn in ipairs(reagentIcons[i]) do
                 if rBtn.countText and lure.reagents[j] then
@@ -1007,6 +1015,8 @@ function ns.RefreshStatus(state)
                         local missing = rBtn._missing or 0
                         if missing > 0 then
                             rBtn.countText:SetText("|cffff3333-" .. missing .. "|r")
+                        elseif alwaysShowCounts then
+                            rBtn.countText:SetText("|cff00ff00" .. (rBtn._have or 0) .. "|r")
                         else
                             rBtn.countText:SetText("|cff00ff00" .. ns.CHECKMARK_ICON .. "|r")
                         end

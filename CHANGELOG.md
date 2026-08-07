@@ -1,5 +1,30 @@
 # Majestic Beast Tracker
 
+## [v2.1.0](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.1.0) (2026-08-07)
+[Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v2.0.3...v2.1.0) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
+
+- Profession stat fixes, AH price comparison for lures, Carve Meat and Path of the Windrunners buttons, always-visible reagent counts
+
+### Profession Stat Fixes
+- **Careful Carving corrected** — Now grants +2 Finesse per point (was wrongly +1 Perception)
+- **Thorough Tanning corrected** — Root now grants +1 Skill per point (was wrongly +1 Perception)
+- **No more double-counting** — Points in sub-paths no longer also grant the tree root's per-point stat
+- **Unlock breakpoints fixed** — Unlock perks (Sharpen Your Knife, species reagents, Carve Meat, lures) no longer add phantom +5 stats
+- **Argentleaf Tea detected** — Relaxed buff (+Finesse) now included in profession stats
+- **Haranir Phial of Finesse detected** — Now included in profession stats alongside the Perception phial
+
+### AH Price Comparison (NEW)
+- **Lure profitability at a glance** — Lure tooltips now show the lure's craft cost vs. the AH value of its Majestic drops (Hide, Claw, Fin, Fantastic Fur, Peerless Plumage, Carving Canine)
+- **Works without TSM** — Prices come from TSM when available, otherwise from Auctionator scan data
+
+### New Buttons
+- **Carve Meat** — Track the Carve Meat cooldown next to Sharpen Your Knife in the consumable bar (own show/hide toggle in settings)
+- **Path of the Windrunners** — Travel button for the Windrunner Spire teleport, shown when the Keystone Hero spell is known
+
+### Reagent Display
+- **Always Show Counts** — New optional setting keeps reagent numbers and colors visible even when lures are Ready/Done, so you can see your stock while gathering for the week ahead
+- **Travel bar layout** — The panel now widens automatically when many travel buttons are shown instead of overflowing
+
 ## [v2.0.3](https://github.com/VichobAddons/MajesticBeastTracker/tree/v2.0.3) (2026-06-17)
 [Full Changelog](https://github.com/VichobAddons/MajesticBeastTracker/compare/v2.0.2...v2.0.3) [Previous Releases](https://github.com/VichobAddons/MajesticBeastTracker/releases)
 

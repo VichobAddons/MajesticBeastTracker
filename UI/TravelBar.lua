@@ -17,6 +17,8 @@ local WORMHOLE_ITEM = { itemID = 248485, name = "Wormhole Generator: Quel'Thalas
 local MAGE_TELEPORT = { spellID = 1259190, name = "Teleport: Silvermoon City", isSpell = true, requiresClass = "MAGE" }
 -- Vulpera Return to Camp (conditional on race)
 local VULPERA_RETURN = { spellID = 312372, name = "Return to Camp", isSpell = true, requiresRace = "Vulpera" }
+-- Path of the Windrunners: Windrunner Spire teleport, Eversong access (conditional on knowing the spell)
+local PATH_WINDRUNNERS = { spellID = 1254400, name = "Path of the Windrunners", isSpell = true, requiresKnown = true }
 
 local TRAVEL_ICON_SIZE = 22
 local TRAVEL_SPACING = 3
@@ -287,13 +289,16 @@ local function RestoreCustomHearthstone()
 end
 C_Timer.After(3, RestoreCustomHearthstone)
 
--- Conditional travel buttons (created but shown based on class/profession/race)
+-- Conditional travel buttons (created but shown based on class/profession/race/spell)
 local wormholeBtn = CreateTravelButton(#TRAVEL_ITEMS + 1, WORMHOLE_ITEM)
 local mageTeleportBtn = CreateTravelButton(#TRAVEL_ITEMS + 2, MAGE_TELEPORT)
 local vulperaReturnBtn = CreateTravelButton(#TRAVEL_ITEMS + 3, VULPERA_RETURN)
+local pathWindrunnersBtn = CreateTravelButton(#TRAVEL_ITEMS + 4, PATH_WINDRUNNERS)
 
 -- Expose for UpdateUI
 ns.travelButtons = travelButtons
 ns.wormholeBtn = wormholeBtn
 ns.mageTeleportBtn = mageTeleportBtn
 ns.vulperaReturnBtn = vulperaReturnBtn
+ns.pathWindrunnersBtn = pathWindrunnersBtn
+ns.PATH_WINDRUNNERS = PATH_WINDRUNNERS
